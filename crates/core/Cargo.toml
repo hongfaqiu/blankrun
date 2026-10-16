@@ -1,0 +1,10 @@
+[package]
+name = "nightblank-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Platform-agnostic core: state machine, config, schedule, wake policy"
+
+[dependencies]
+serde = { version = "1", default-features = false, features = ["derive", "std"] }
+toml = { version = "0.8", default-features = false, features = ["parse", "display"] }

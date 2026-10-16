@@ -1,0 +1,23 @@
+[package]
+name = "nightblank"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "nightblank"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", default-features = false, features = [] }
+
+[dependencies]
+nightblank-core = { path = "../crates/core" }
+# 只开必要特性：wry(WebView) + 托盘 + 资源压缩。不开 devtools/updater/plugin 等。
+tauri = { version = "2", default-features = false, features = ["wry", "tray-icon", "compression", "common-controls-v6"] }
+
+[target.'cfg(windows)'.dependencies]
+# windows-sys 比 windows crate 轻（仅 FFI 声明），按需开 feature
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_Power", "Win32_UI_WindowsAndMessaging"] }
+
+# macOS：M0 原型阶段再按需加 objc2 / core-graphics；先不引入，保持依赖最小
