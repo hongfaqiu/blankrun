@@ -8,7 +8,7 @@
 
 <p align="center"><a href="https://blankrun.cosfoc.com">Website</a> · <a href="https://github.com/hongfaqiu/blankrun/releases">Download</a> · macOS + Windows · MIT</p>
 
-> **Status: v0.1.1. Blanking, keep-awake, wake and restore have been checked on a MacBook Air M4 (macOS 26.5) and a dual-monitor Windows 11 desktop. The installers are unsigned.** [Download the latest version](https://github.com/hongfaqiu/blankrun/releases/latest)
+> **Status: v0.1.2. Blanking, keep-awake, wake and restore have been checked on a MacBook Air M4 (macOS 26.5) and a dual-monitor Windows 11 desktop. The installers are unsigned.** [Download the latest version](https://github.com/hongfaqiu/blankrun/releases/latest)
 
 <p align="center"><img src="docs/screenshots/popover-mac-en.png" width="380" alt="Menu bar panel"> <img src="docs/screenshots/popover-mac-en-dark.png" width="380" alt="Menu bar panel (dark)"></p>
 

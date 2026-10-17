@@ -8,7 +8,7 @@
 
 <p align="center"><a href="https://blankrun.cosfoc.com">官网</a> · <a href="https://github.com/hongfaqiu/blankrun/releases">下载</a> · macOS + Windows · MIT</p>
 
-> **状态：v0.1.1。息屏、防睡眠、唤醒和恢复已在 MacBook Air M4（macOS 26.5）和一台双屏 Windows 11 台式机上验证过。安装包未签名。** [下载最新版](https://github.com/hongfaqiu/blankrun/releases/latest)
+> **状态：v0.1.2。息屏、防睡眠、唤醒和恢复已在 MacBook Air M4（macOS 26.5）和一台双屏 Windows 11 台式机上验证过。安装包未签名。** [下载最新版](https://github.com/hongfaqiu/blankrun/releases/latest)
 
 <p align="center"><img src="design/png/popover-mac.png" width="380" alt="菜单栏面板"> <img src="design/png/popover-mac-dark.png" width="380" alt="菜单栏面板（深色）"></p>
 
