@@ -19,6 +19,9 @@ use tauri::{
 };
 
 type Eng = Arc<Mutex<Engine>>;
+/// 弹出面板最近一次弹出的时间（platform::now_ms）
+static SHOWN_AT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+use std::sync::atomic::Ordering::Relaxed;
 /// 托盘菜单项，界面切换语言后由 apply_locale 改文字
 struct Tray { blank: MenuItem<tauri::Wry>, settings: MenuItem<tauri::Wry>, quit: MenuItem<tauri::Wry> }
 
@@ -148,6 +151,7 @@ fn toggle_popover(app: &AppHandle, anchor: tauri::Rect) {
     // Mac 菜单栏在上：面板在图标下方；Windows 任务栏通常在下：面板在图标上方
     let y = if pos.y < pw.1 { pos.y + size.height + 4.0 } else { pos.y - pw.1 - 8.0 };
     let _ = w.set_position(PhysicalPosition::new(x.max(0.0), y.max(0.0)));
+    SHOWN_AT.store(platform::now_ms(), Relaxed);
     let _ = w.show();
     let _ = w.set_focus();
     let _ = w.emit("nb://shown", ());
@@ -168,6 +172,32 @@ fn cli(tx: mpsc::Sender<Msg>) {
     if let Some(d) = delay { after(1, Msg::Blank { delay_s: d as u32 }); }
     if let Some(w) = num("--wake-after") { after(1 + delay.unwrap_or(0) + w, Msg::Wake); }
     if let Some(q) = num("--quit-after") { after(q, Msg::Quit); }
+}
+
+/// 托盘图标：和 App 图标同一个圆环（site/favicon.svg 的形状），运行时画出来，不带 PNG 解码器。
+/// Mac 用模板图（系统按菜单栏深浅自动着色）；Windows 按任务栏主题选深色或浅色。
+fn tray_icon() -> (tauri::image::Image<'static>, bool) {
+    let n: u32 = if cfg!(target_os = "macos") { 44 } else { 32 };
+    #[cfg(windows)]
+    let rgb = if platform::taskbar_light() { [0x1E, 0x1E, 0x28] } else { [0xEC, 0xEC, 0xEE] };
+    #[cfg(not(windows))]
+    let rgb = [0u8, 0, 0];
+    let s = n as f32 / 32.0;
+    let mut px = Vec::with_capacity((n * n * 4) as usize);
+    for y in 0..n {
+        for x in 0..n {
+            // 4×4 超采样抗锯齿：外圆 (16,16) r=14 减去内圆 (17,14.5) r=5.5
+            let mut hit = 0;
+            for sy in 0..4 { for sx in 0..4 {
+                let (fx, fy) = ((x as f32 + (sx as f32 + 0.5) / 4.0) / s, (y as f32 + (sy as f32 + 0.5) / 4.0) / s);
+                let outer = (fx - 16.0).powi(2) + (fy - 16.0).powi(2) <= 14.0f32.powi(2);
+                let inner = (fx - 17.0).powi(2) + (fy - 14.5).powi(2) <= 5.5f32.powi(2);
+                if outer && !inner { hit += 1; }
+            } }
+            px.extend_from_slice(&[rgb[0], rgb[1], rgb[2], (hit * 255 / 16) as u8]);
+        }
+    }
+    (tauri::image::Image::new_owned(px, n, n), cfg!(target_os = "macos"))
 }
 
 fn main() {
@@ -227,8 +257,10 @@ fn main() {
             app.manage(Tray { blank: blank.clone(), settings: settings.clone(), quit: quit.clone() });
             let menu_tx = tx.clone();
 
+            let (icon, template) = tray_icon();
             TrayIconBuilder::with_id("main")
-                .icon(app.default_window_icon().cloned().expect("icon"))
+                .icon(icon)
+                .icon_as_template(template)
                 .tooltip(tt[3])
                 .menu(&menu)
                 .show_menu_on_left_click(false)
@@ -250,7 +282,8 @@ fn main() {
             // 设置等窗口关闭时只隐藏，应用继续驻留托盘；遮罩窗口由引擎 destroy
             WindowEvent::CloseRequested { api, .. } if !w.label().starts_with("overlay-") => { api.prevent_close(); let _ = w.hide(); }
             // 菜单栏面板失焦即收起
-            WindowEvent::Focused(false) if w.label() == "popover" => { let _ = w.hide(); }
+            // （Windows 上点托盘图标后任务栏会先抢回一下焦点：刚弹出的 400ms 内不算失焦）
+            WindowEvent::Focused(false) if w.label() == "popover" && platform::now_ms() > SHOWN_AT.load(Relaxed) + 400 => { let _ = w.hide(); }
             _ => {}
         })
         .invoke_handler(tauri::generate_handler![

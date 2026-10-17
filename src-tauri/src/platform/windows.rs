@@ -285,3 +285,13 @@ pub fn system_locale() -> String {
         String::from_utf16_lossy(&buf[..end])
     }
 }
+
+/// 任务栏是不是浅色主题（决定托盘图标用深色还是浅色）；读不到按深色任务栏处理
+pub fn taskbar_light() -> bool {
+    use windows_sys::Win32::System::Registry::{RegGetValueW, HKEY_CURRENT_USER, RRF_RT_REG_DWORD};
+    let w = |s: &str| s.encode_utf16().chain([0]).collect::<Vec<u16>>();
+    let (key, val) = (w("Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize"), w("SystemUsesLightTheme"));
+    let (mut v, mut n) = (0u32, 4u32);
+    let r = unsafe { RegGetValueW(HKEY_CURRENT_USER, key.as_ptr(), val.as_ptr(), RRF_RT_REG_DWORD, std::ptr::null_mut(), &mut v as *mut _ as *mut _, &mut n) };
+    r == 0 && v != 0
+}

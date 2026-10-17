@@ -10,7 +10,8 @@ fn main() {
             println!("cargo:rerun-if-changed={}", p.display());
             let src = std::fs::read_to_string(&p).unwrap_or_default();
             // 显示名取文件里的 "_name": "..."（用该语言自己的写法，例如「简体中文」）
-            let name = src.split("\"_name\"").nth(1)
+            // 只认真正的词条 `"_name": "…"`（文件头注释里也会出现 "_name" 字样）
+            let name = src.split("\"_name\":").nth(1)
                 .and_then(|r| r.split('"').nth(1)).unwrap_or(&code).to_string();
             assert!(!code.is_empty() && !code.contains([';', '=']) && !name.contains([';', '=']), "bad locale file {}", p.display());
             list.push(format!("{code}={name}"));

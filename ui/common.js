@@ -10,7 +10,12 @@ const h = (tag, cls, text) => { const e = document.createElement(tag); if (cls) 
 let OS = "mac", INFO = null;
 /** 平台样式 + 按配置加载界面语言。onLang 在之后每次切换语言时调用（不用重启） */
 async function initPlatform(onLang) {
-  const [info, c] = await Promise.all([invoke("get_info"), invoke("get_config")]);
+  // 配置里声明的窗口可能在引擎状态注册之前就加载完页面（Windows 上很常见），这时命令会报错：稍等重试
+  let info, c;
+  for (let i = 0; ; i++) {
+    try { [info, c] = await Promise.all([invoke("get_info"), invoke("get_config")]); break; }
+    catch (e) { if (i >= 100) throw e; await new Promise((r) => setTimeout(r, 100)); }
+  }
   INFO = info; OS = info.os;
   document.body.classList.add(OS === "win" ? "win" : OS === "mac" ? "mac" : "linux");
   await setLocale(c.general.language);

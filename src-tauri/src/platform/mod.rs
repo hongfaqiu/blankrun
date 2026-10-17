@@ -68,7 +68,7 @@ pub use macos::{emergency_restore, local_time, raise_overlay, reveal, system_loc
 #[cfg(windows)]
 mod windows;
 #[cfg(windows)]
-pub use self::windows::{emergency_restore, local_time, reveal, system_locale, Native};
+pub use self::windows::{emergency_restore, local_time, reveal, system_locale, taskbar_light, Native};
 
 #[cfg(not(any(target_os = "macos", windows)))]
 mod stub;
