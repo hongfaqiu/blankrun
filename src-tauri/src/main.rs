@@ -290,6 +290,8 @@ fn main() {
             app.manage(Tray { blank: blank.clone(), settings: settings.clone(), quit: quit.clone() });
             let menu_tx = tx.clone();
 
+            #[cfg(target_os = "macos")]
+            platform::prefer_tray_position();
             let (icon, template) = tray_icon();
             TrayIconBuilder::with_id("main")
                 .icon(icon)

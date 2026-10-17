@@ -437,3 +437,22 @@ pub fn notch_span() -> Option<(f64, f64)> {
         (l.w > 0.0 && r.w > 0.0).then_some((l.x + l.w, r.x))
     }
 }
+
+/// 新装时菜单栏图标默认排在所有图标的最左边，菜单栏满时会被挤到刘海后面（MacBook 上很常见）。
+/// 第一次运行时给它一个靠右的位置（离右边缘 260 点，在系统图标旁边）；用户 ⌘ 拖动后系统会自己改写这个值。
+pub fn prefer_tray_position() {
+    unsafe {
+        let cls = objc_getClass(c"NSUserDefaults".as_ptr());
+        if cls.is_null() { return; }
+        let d = msg0(cls, "standardUserDefaults");
+        if d.is_null() { return; }
+        let key = cfstr("NSStatusItem Preferred Position Item-0");
+        let get: extern "C" fn(Id, Id, CFStringRef) -> Id = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
+        if get(d, sel("objectForKey:"), key).is_null() {
+            let set: extern "C" fn(Id, Id, f64, CFStringRef) = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
+            set(d, sel("setDouble:forKey:"), 260.0, key);
+            crate::nblog!("tray: first run, preferred position set near the right edge");
+        }
+        CFRelease(key);
+    }
+}

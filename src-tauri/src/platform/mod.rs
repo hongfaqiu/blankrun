@@ -63,7 +63,7 @@ pub fn now_ms() -> u64 { T0.get_or_init(Instant::now).elapsed().as_millis() as u
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(target_os = "macos")]
-pub use macos::{emergency_restore, instance_lock, local_time, notch_span, raise_overlay, reveal, system_locale, Native};
+pub use macos::{emergency_restore, instance_lock, local_time, notch_span, prefer_tray_position, raise_overlay, reveal, system_locale, Native};
 
 #[cfg(windows)]
 mod windows;
