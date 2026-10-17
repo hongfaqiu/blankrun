@@ -39,6 +39,8 @@
         case "get_config": return JSON.parse(JSON.stringify(cfg));
         case "save_config": Object.assign(cfg, args.cfg); setTimeout(() => window.__emit("nb://config", null), 0); return null;
         case "get_status": return status;
+        case "skip_tonight": status.schedule.skipped = true; window.__emit("nb://status", status); return null;
+        case "unskip": status.schedule.skipped = false; window.__emit("nb://status", status); return null;
         case "get_diagnostics": return { caps, perms: os === "mac" ? [true, q.get("perm") !== "no"] : null, monitors: ["Built-in Retina Display", "DELL U2723QE", "LG HDR 4K"], modern_standby: os === "win", last_session: { start_unix: 1792596600, end_unix: 1792625400, lit: 2, by_schedule: true, power_off: true } };
         default: return null;
       }

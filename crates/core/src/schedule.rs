@@ -36,6 +36,13 @@ pub fn minutes_until_start(cfg: &ScheduleConfig, weekday: u8, minute: u16) -> Op
     })
 }
 
+/// 距本时段（正在时段内）或下一个时段结束还有多少分钟；用来给「跳过今晚」定一个过期时间
+pub fn minutes_until_end(cfg: &ScheduleConfig, weekday: u8, minute: u16) -> Option<u32> {
+    let e = parse_hhmm(&cfg.end)? as u32;
+    if in_window(cfg, weekday, minute) { return Some((e + 1440 - minute as u32) % 1440).filter(|m| *m > 0).or(Some(1440)); }
+    Some(minutes_until_start(cfg, weekday, minute)? + duration_min(cfg)?)
+}
+
 /// 时段长度（分钟），跨午夜自动加一天
 pub fn duration_min(cfg: &ScheduleConfig) -> Option<u32> {
     let (s, e) = (parse_hhmm(&cfg.start)? as u32, parse_hhmm(&cfg.end)? as u32);
@@ -63,6 +70,8 @@ impl Tracker {
     }
     /// 本时段（或即将到来的下一个时段）不再自动息屏
     pub fn suppress(&mut self) { self.suppressed = true; }
+    /// 撤销「跳过今晚」：如果现在正在时段内，下一次 update 会重新发出 Start
+    pub fn unsuppress(&mut self) { self.suppressed = false; self.was_in = false; }
     pub fn suppressed(&self) -> bool { self.suppressed }
 }
 
@@ -103,5 +112,41 @@ mod tests {
         assert_eq!(t.update(&c, 1, 23 * 60 + 30), None);
         assert_eq!(t.update(&c, 2, 7 * 60 + 30), None);
         assert_eq!(t.update(&c, 2, 23 * 60 + 30), Some(Edge::Start));
+    }
+
+    #[test]
+    fn skip_and_unskip() {
+        let mut c = ScheduleConfig::default();
+        c.enabled = true; // 每天 23:30–07:30
+        // 时段开始前跳过，再撤销：到点照常息屏
+        let mut t = Tracker::default();
+        assert_eq!(t.update(&c, 0, 22 * 60), None);
+        t.suppress();
+        assert!(t.suppressed());
+        t.unsuppress();
+        assert!(!t.suppressed());
+        assert_eq!(t.update(&c, 0, 23 * 60 + 30), Some(Edge::Start));
+
+        // 时段内跳过（或手动唤醒），再撤销：马上重新开始
+        let mut t = Tracker::default();
+        assert_eq!(t.update(&c, 0, 23 * 60 + 40), Some(Edge::Start));
+        t.suppress();
+        assert_eq!(t.update(&c, 0, 23 * 60 + 41), None);
+        t.unsuppress();
+        assert_eq!(t.update(&c, 0, 23 * 60 + 42), Some(Edge::Start));
+        assert_eq!(t.update(&c, 1, 7 * 60 + 30), Some(Edge::End));
+
+        // 跳过后关掉再打开计划：跳过标记被清掉
+        let mut t = Tracker::default();
+        t.suppress();
+        let mut off = c.clone();
+        off.enabled = false;
+        t.update(&off, 0, 22 * 60);
+        assert!(!t.suppressed());
+
+        // 过期时间
+        assert_eq!(minutes_until_end(&c, 0, 23 * 60 + 40), Some(7 * 60 + 50));
+        assert_eq!(minutes_until_end(&c, 0, 22 * 60), Some(90 + 480));
+        assert_eq!(minutes_until_end(&off, 0, 22 * 60), None);
     }
 }

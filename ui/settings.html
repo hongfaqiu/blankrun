@@ -21,6 +21,7 @@
   <section id="general">
     <h1 data-i18n="g.title"></h1>
     <p class="lead" data-i18n="g.lead"></p>
+    <p class="notice" id="trayHidden" hidden data-i18n="g.tray_hidden"></p>
     <div class="group">
       <div class="r"><div class="t"><span><span data-i18n="g.launch"></span> <span class="soon" data-i18n="soon.next"></span></span><small data-i18n="g.launch_note"></small></div><div class="c"><button class="toggle" role="switch" data-k="general.launch_at_login"></button></div></div>
       <div class="r"><div class="t"><span data-i18n="g.lang"></span></div><div class="c"><span class="select"><select data-k="general.language" id="langSel"></select></span></div></div>
@@ -93,10 +94,10 @@
     <h1 data-i18n="s.title"></h1>
     <p class="lead" data-i18n="s.lead"></p>
     <div class="group">
-      <div class="r"><div class="t"><span class="with-dot"><span class="dot" id="schedDot"></span><span data-i18n="s.auto"></span></span><small id="schedNext"></small></div><div class="c"><button class="btn ghost" id="skipBtn" hidden data-i18n="s.skip"></button><button class="toggle" role="switch" data-k="schedule.enabled" data-i18n-aria="s.auto"></button></div></div>
+      <div class="r"><div class="t"><span class="with-dot"><span class="dot" id="schedDot"></span><span data-i18n="s.auto"></span></span><small id="schedNext"></small></div><div class="c"><button class="btn ghost" id="skipBtn" hidden data-i18n="s.skip"></button><button class="btn ghost" id="unskipBtn" hidden data-i18n="s.unskip"></button><button class="toggle" role="switch" data-k="schedule.enabled" data-i18n-aria="s.auto"></button></div></div>
       <div class="r col">
         <div class="time-row">
-          <div class="big-time"><input type="text" class="tf" inputmode="numeric" maxlength="5" spellcheck="false" data-i18n-aria="s.start_aria" data-time="schedule.start"><span class="a">→</span><input type="text" class="tf" inputmode="numeric" maxlength="5" spellcheck="false" data-i18n-aria="s.end_aria" data-time="schedule.end"></div>
+          <div class="big-time"><span class="tp" data-time="schedule.start"><select class="hh" data-i18n-aria="s.start_h"></select><span class="c">:</span><select class="mm" data-i18n-aria="s.start_m"></select></span><span class="a">→</span><span class="tp" data-time="schedule.end"><select class="hh" data-i18n-aria="s.end_h"></select><span class="c">:</span><select class="mm" data-i18n-aria="s.end_m"></select></span></div>
           <span class="small muted" id="schedDur"></span>
         </div>
         <div>

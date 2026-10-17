@@ -19,9 +19,6 @@ use tauri::{
 };
 
 type Eng = Arc<Mutex<Engine>>;
-/// 弹出面板最近一次弹出的时间（platform::now_ms）
-static SHOWN_AT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-use std::sync::atomic::Ordering::Relaxed;
 /// 托盘菜单项，界面切换语言后由 apply_locale 改文字
 struct Tray { blank: MenuItem<tauri::Wry>, settings: MenuItem<tauri::Wry>, quit: MenuItem<tauri::Wry> }
 
@@ -66,6 +63,8 @@ fn blank_now(tx: State<Tx>, delay_s: u32) { send(&tx, Msg::Blank { delay_s }) }
 fn cancel(tx: State<Tx>) { send(&tx, Msg::Cancel) }
 #[tauri::command]
 fn skip_tonight(tx: State<Tx>) { send(&tx, Msg::SkipTonight) }
+#[tauri::command]
+fn unskip(tx: State<Tx>) { send(&tx, Msg::Unskip) }
 #[tauri::command]
 fn overlay_input(tx: State<Tx>) { send(&tx, Msg::OverlayInput) }
 #[tauri::command]
@@ -132,6 +131,35 @@ impl Engine {
     }
 }
 
+/// 托盘图标是否真的看得见。macOS 菜单栏放不下时，图标会被挤到刘海后面（系统不报错），
+/// 这时直接打开设置窗口并提示，免得用户找不到入口。
+fn check_tray(app: AppHandle) {
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(1500));
+        let app2 = app.clone();
+        let _ = app.run_on_main_thread(move || {
+            let Some(tray) = app2.tray_by_id("main") else { nblog!("tray: not created"); return };
+            let rect = tray.rect().ok().flatten();
+            let scale = app2.primary_monitor().ok().flatten().map(|m| m.scale_factor()).unwrap_or(1.0);
+            let pos = rect.map(|r| (r.position.to_logical::<f64>(scale), r.size.to_logical::<f64>(scale)));
+            #[cfg(target_os = "macos")]
+            let notch = platform::notch_span();
+            #[cfg(not(target_os = "macos"))]
+            let notch: Option<(f64, f64)> = None;
+            let hidden = match (pos, notch) {
+                (None, _) => true,
+                (Some((p, sz)), Some((l, r))) => p.x + sz.width > l && p.x < r,
+                (Some((p, _)), None) => p.x < 0.0,
+            };
+            nblog!("tray: rect={:?} notch={notch:?} hidden={hidden}", pos.map(|(p, s)| (p.x, p.y, s.width, s.height)));
+            if hidden {
+                show_settings(&app2, None);
+                let _ = app2.emit("nb://tray_hidden", ());
+            }
+        });
+    });
+}
+
 fn show_settings(app: &AppHandle, section: Option<&str>) {
     if let Some(p) = app.get_webview_window("popover") { let _ = p.hide(); }
     if let Some(w) = app.get_webview_window("settings") {
@@ -151,7 +179,6 @@ fn toggle_popover(app: &AppHandle, anchor: tauri::Rect) {
     // Mac 菜单栏在上：面板在图标下方；Windows 任务栏通常在下：面板在图标上方
     let y = if pos.y < pw.1 { pos.y + size.height + 4.0 } else { pos.y - pw.1 - 8.0 };
     let _ = w.set_position(PhysicalPosition::new(x.max(0.0), y.max(0.0)));
-    SHOWN_AT.store(platform::now_ms(), Relaxed);
     let _ = w.show();
     let _ = w.set_focus();
     let _ = w.emit("nb://shown", ());
@@ -217,6 +244,12 @@ fn main() {
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
             let cfg_path = app.path().app_config_dir()?.join("config.toml");
+            // 单实例：已经在运行就请它把设置窗口拿出来，自己退出（Windows 上避免出现两个托盘图标）
+            if let Some(d) = cfg_path.parent() { let _ = std::fs::create_dir_all(d); }
+            if !platform::instance_lock(&cfg_path.with_file_name("instance.lock")) {
+                let _ = std::fs::write(cfg_path.with_file_name("show.request"), "1");
+                std::process::exit(0);
+            }
             let cfg = std::fs::read_to_string(&cfg_path).ok().and_then(|s| Config::from_toml(&s).ok()).unwrap_or_default();
             let codes: Vec<&str> = locales().iter().map(|(c, _)| *c).collect();
             let tt = tray_text(&blankrun_core::locale::resolve(&cfg.general.language, &platform::system_locale(), &codes));
@@ -276,18 +309,16 @@ fn main() {
                     _ => {}
                 })
                 .build(app)?;
+            check_tray(app.handle().clone());
             Ok(())
         })
         .on_window_event(|w, e| match e {
             // 设置等窗口关闭时只隐藏，应用继续驻留托盘；遮罩窗口由引擎 destroy
             WindowEvent::CloseRequested { api, .. } if !w.label().starts_with("overlay-") => { api.prevent_close(); let _ = w.hide(); }
-            // 菜单栏面板失焦即收起
-            // （Windows 上点托盘图标后任务栏会先抢回一下焦点：刚弹出的 400ms 内不算失焦）
-            WindowEvent::Focused(false) if w.label() == "popover" && platform::now_ms() > SHOWN_AT.load(Relaxed) + 400 => { let _ = w.hide(); }
             _ => {}
         })
         .invoke_handler(tauri::generate_handler![
-            get_info, get_config, save_config, get_status, blank_now, cancel, skip_tonight, overlay_input, wake_now, quit,
+            get_info, get_config, save_config, get_status, blank_now, cancel, skip_tonight, unskip, overlay_input, wake_now, quit,
             get_diagnostics, request_permission, reveal_config, export_diagnostics, open_settings, hide_window,
             finish_onboarding, apply_locale
         ])
@@ -297,6 +328,9 @@ fn main() {
     app.run(|app, ev| match ev {
         // 没有可见窗口时不要退出（托盘常驻）
         RunEvent::ExitRequested { api, code: None, .. } => api.prevent_exit(),
+        // 再次打开 App（Finder / 程序坞 / 聚焦搜索）：打开设置窗口，菜单栏图标被挡住时也不会找不到
+        #[cfg(target_os = "macos")]
+        RunEvent::Reopen { .. } => { nblog!("reopen: showing settings"); show_settings(app, None) }
         RunEvent::Exit => {
             // 主线程上不能阻塞等锁（引擎线程可能正在等主线程）：拿不到锁就做无锁的紧急恢复
             match app.try_state::<Eng>().map(|e| e.inner().clone()) {

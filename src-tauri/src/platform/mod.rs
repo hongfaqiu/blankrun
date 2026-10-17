@@ -63,16 +63,16 @@ pub fn now_ms() -> u64 { T0.get_or_init(Instant::now).elapsed().as_millis() as u
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(target_os = "macos")]
-pub use macos::{emergency_restore, local_time, raise_overlay, reveal, system_locale, Native};
+pub use macos::{emergency_restore, instance_lock, local_time, notch_span, raise_overlay, reveal, system_locale, Native};
 
 #[cfg(windows)]
 mod windows;
 #[cfg(windows)]
-pub use self::windows::{emergency_restore, local_time, reveal, system_locale, taskbar_light, Native};
+pub use self::windows::{emergency_restore, instance_lock, local_time, reveal, system_locale, taskbar_light, Native};
 
 #[cfg(not(any(target_os = "macos", windows)))]
 mod stub;
 #[cfg(not(any(target_os = "macos", windows)))]
-pub use stub::{emergency_restore, local_time, reveal, system_locale, Native};
+pub use stub::{emergency_restore, instance_lock, local_time, reveal, system_locale, Native};
 
 pub const OS: &str = if cfg!(target_os = "macos") { "mac" } else if cfg!(windows) { "win" } else { "linux" };

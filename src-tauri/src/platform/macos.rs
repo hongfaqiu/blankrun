@@ -407,3 +407,33 @@ pub fn system_locale() -> String {
         out
     }
 }
+
+/// 单实例：对 lock 文件加独占锁，进程退出时系统自动释放。已有实例在运行返回 false。
+pub fn instance_lock(path: &std::path::Path) -> bool {
+    let Ok(c) = CString::new(path.as_os_str().as_encoded_bytes()) else { return true };
+    unsafe {
+        let fd = libc::open(c.as_ptr(), libc::O_RDWR | libc::O_CREAT, 0o644);
+        if fd < 0 { return true; }
+        libc::flock(fd, libc::LOCK_EX | libc::LOCK_NB) == 0 // fd 故意不关，锁随进程存在
+    }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct NSRect { x: f64, y: f64, w: f64, h: f64 }
+
+/// 主屏刘海占用的横向范围（点）：(左, 右)。没有刘海或拿不到返回 None。
+/// auxiliaryTopLeftArea / auxiliaryTopRightArea 是刘海两侧可用的菜单栏区域（macOS 12+）。
+/// 只在 arm64 上调用：x86_64 上返回结构体要用 objc_msgSend_stret，而 Intel Mac 也没有刘海。
+pub fn notch_span() -> Option<(f64, f64)> {
+    if !cfg!(target_arch = "aarch64") { return None; }
+    unsafe {
+        let cls = objc_getClass(c"NSScreen".as_ptr());
+        if cls.is_null() { return None; }
+        let screen = msg0(cls, "mainScreen");
+        if screen.is_null() || !responds(screen, "auxiliaryTopLeftArea") { return None; }
+        let f: extern "C" fn(Id, Id) -> NSRect = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
+        let (l, r) = (f(screen, sel("auxiliaryTopLeftArea")), f(screen, sel("auxiliaryTopRightArea")));
+        (l.w > 0.0 && r.w > 0.0).then_some((l.x + l.w, r.x))
+    }
+}

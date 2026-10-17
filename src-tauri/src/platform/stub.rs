@@ -33,3 +33,5 @@ pub fn system_locale() -> String {
     ["LC_ALL", "LC_MESSAGES", "LANG"].iter().filter_map(|k| std::env::var(k).ok()).find(|v| !v.is_empty() && v != "C" && v != "POSIX")
         .map(|v| v.split('.').next().unwrap_or("").replace('_', "-")).unwrap_or_default()
 }
+
+pub fn instance_lock(_path: &std::path::Path) -> bool { true }

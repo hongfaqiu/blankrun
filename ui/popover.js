@@ -30,8 +30,10 @@ function renderStatus() {
   $("#blankSub").textContent = t((s.displays > 1 ? "p.sub_n" : "p.sub") + (s.keyboard ? "_kbd" : ""), { n: s.displays });
 
   const sc = s.schedule;
-  $("#planToggle").classList.toggle("on", sc.enabled);
-  $("#planToggle").setAttribute("aria-checked", sc.enabled);
+  // 开关表示「今晚会不会自动息屏」：跳过今晚时显示为关，再点一下就恢复
+  const on = sc.enabled && !sc.skipped;
+  $("#planToggle").classList.toggle("on", on);
+  $("#planToggle").setAttribute("aria-checked", on);
   $("#planDot").classList.toggle("standby", sc.enabled && !sc.skipped);
   document.body.classList.toggle("plan-off", !sc.enabled);
   const pt = $("#planTime"); pt.replaceChildren(sc.start, h("span", "arrow", "→"), sc.end);
@@ -50,11 +52,14 @@ $("#blankBtn").addEventListener("click", async () => {
 $("#cancelBtn").addEventListener("click", () => invoke("cancel"));
 $("#planToggle").addEventListener("click", async () => {
   cfg = await invoke("get_config");
-  cfg.schedule.enabled = !cfg.schedule.enabled;
-  await invoke("save_config", { cfg });
+  if (cfg.schedule.enabled && status && status.schedule.skipped) await invoke("unskip");
+  else { cfg.schedule.enabled = !cfg.schedule.enabled; await invoke("save_config", { cfg }); }
+  await new Promise((r) => setTimeout(r, 250)); // 等引擎处理完
   status = await invoke("get_status"); renderStatus();
 });
 $("#openSettings").addEventListener("click", () => invoke("open_settings", { section: null }));
+$("#planTime").addEventListener("click", () => invoke("open_settings", { section: "schedule" }));
+$("#closeBtn").addEventListener("click", () => invoke("hide_window"));
 $$("[data-open]").forEach((b) => b.addEventListener("click", () => invoke("open_settings", { section: b.dataset.open })));
 $("#quitBtn").addEventListener("click", () => invoke("quit"));
 document.addEventListener("keydown", (e) => {

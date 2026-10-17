@@ -37,7 +37,13 @@ function render() {
   $$("[data-radio]").forEach((g) => $$(".pick", g).forEach((r) => $(".radio", r).classList.toggle("on", r.dataset.v === getK(g.dataset.radio))));
   $$(".field[data-num]").forEach((f) => { const i = $("input", f); if (document.activeElement !== i) i.value = getK(f.dataset.num); });
   $$("input[data-range]").forEach((r) => (r.value = getK(r.dataset.range)));
-  $$("input[data-time]").forEach((t) => { if (document.activeElement !== t) t.value = getK(t.dataset.time); });
+  $$(".tp").forEach((tp) => {
+    const [hh, mm] = getK(tp.dataset.time).split(":");
+    const m = $(".mm", tp);
+    // 分钟按 5 分钟一档；配置里是别的分钟数（手改 config.toml）时也要能显示
+    if (![...m.options].some((o) => o.value === mm)) m.append(new Option(mm, mm));
+    $(".hh", tp).value = hh; m.value = mm;
+  });
   $$(".recorder[data-hk]").forEach((r) => { r.classList.toggle("rec", recording === r); renderKeys($(".keys", r), getK(r.dataset.hk)); });
 
   const w = cfg.wake;
@@ -68,6 +74,7 @@ function renderStatus() {
   const sc = status.schedule, en = cfg.schedule.enabled;
   $("#schedDot").classList.toggle("standby", en && !sc.skipped);
   $("#skipBtn").hidden = !en || sc.skipped;
+  $("#unskipBtn").hidden = !en || !sc.skipped;
   const v = { start: cfg.schedule.start, end: cfg.schedule.end };
   let next = t("s.next_off");
   if (en) {
@@ -185,13 +192,9 @@ document.addEventListener("change", (e) => {
     const f = t.closest(".field");
     const v = Math.round(+t.value);
     change(f.dataset.num, Number.isFinite(v) ? Math.min(+f.dataset.max, Math.max(+f.dataset.min, v)) : getK(f.dataset.num));
-  } else if (t.matches("input[data-time]")) {
-    // 接受 "2330"、"7:30"、"07:30"，统一成 HH:MM
-    const raw = t.value.trim().replace("：", ":");
-    const m = /^(\d{1,2}):?(\d{2})$/.exec(raw);
-    const ok = m && +m[1] < 24 && +m[2] < 60;
-    t.classList.toggle("bad", !ok);
-    if (ok) { t.blur(); change(t.dataset.time, `${pad2(+m[1])}:${m[2]}`); }
+  } else if (t.closest(".tp")) {
+    const tp = t.closest(".tp");
+    change(tp.dataset.time, `${$(".hh", tp).value}:${$(".mm", tp).value}`);
   }
 });
 document.addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target.matches("input")) e.target.blur(); });
@@ -212,6 +215,7 @@ document.addEventListener("keydown", (e) => {
 
 $("#reveal").addEventListener("click", () => invoke("reveal_config"));
 $("#skipBtn").addEventListener("click", async () => { await invoke("skip_tonight"); toast(t("toast.skipped")); });
+$("#unskipBtn").addEventListener("click", async () => { await invoke("unskip"); toast(t("toast.unskipped")); });
 $("#exportDiag").addEventListener("click", async () => {
   await loadDiag();
   const info = await invoke("get_info");
@@ -223,6 +227,13 @@ $("#exportDiag").addEventListener("click", async () => {
     "\n[config]", JSON.stringify(cfg, null, 2)].join("\n");
   try { const p = await invoke("export_diagnostics", { text }); toast(t("toast.exported", { p })); } catch (e) { toast(t("toast.export_fail", { e })); }
 });
+
+// 时间选择：小时 00–23，分钟 5 分钟一档
+$$(".tp").forEach((tp) => {
+  for (let i = 0; i < 24; i++) $(".hh", tp).append(new Option(pad2(i), pad2(i)));
+  for (let i = 0; i < 60; i += 5) $(".mm", tp).append(new Option(pad2(i), pad2(i)));
+});
+listen("nb://tray_hidden", () => { $("#trayHidden").hidden = false; });
 
 (async () => {
   const info = await initPlatform(() => { renderLangs(); render(); renderCaps(); renderLast(); });

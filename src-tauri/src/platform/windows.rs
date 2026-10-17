@@ -295,3 +295,12 @@ pub fn taskbar_light() -> bool {
     let r = unsafe { RegGetValueW(HKEY_CURRENT_USER, key.as_ptr(), val.as_ptr(), RRF_RT_REG_DWORD, std::ptr::null_mut(), &mut v as *mut _ as *mut _, &mut n) };
     r == 0 && v != 0
 }
+
+/// 单实例：命名互斥量（随进程释放）。已有实例在运行返回 false。
+pub fn instance_lock(_path: &std::path::Path) -> bool {
+    use windows_sys::Win32::Foundation::{GetLastError, ERROR_ALREADY_EXISTS};
+    use windows_sys::Win32::System::Threading::CreateMutexW;
+    let name: Vec<u16> = "Local\\com.cosfoc.blankrun".encode_utf16().chain([0]).collect();
+    let h = unsafe { CreateMutexW(std::ptr::null(), 0, name.as_ptr()) };
+    !h.is_null() && unsafe { GetLastError() } != ERROR_ALREADY_EXISTS // 句柄故意不关
+}

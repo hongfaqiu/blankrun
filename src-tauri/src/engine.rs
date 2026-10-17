@@ -25,6 +25,8 @@ pub enum Msg {
     Cancel,
     Wake,
     SkipTonight,
+    /// 撤销「跳过今晚」
+    Unskip,
     Quit,
 }
 
@@ -82,19 +84,44 @@ impl Engine {
         plat.configure(&cfg);
         let kbd_available = plat.capabilities().iter().any(|c| c.id == "kbd" && c.status == "ok");
         let mtime = std::fs::metadata(&cfg_path).and_then(|m| m.modified()).ok();
-        Self {
+        let mut e = Self {
             sm: StateMachine::new(cfg.wake.lock_on_wake), policy: WakePolicy::new(&cfg), plat, cfg, cfg_path,
             cfg_mtime: mtime, last_session: None, tracker: Tracker::default(), countdown: None, power_off: false,
             overlay_on: false, power_off_at: None, reblank_at: None, hook_ok: true, session: None, last_hint: None,
             last_sched_check: None, last_cfg_check: None, last_status: None, kbd_available,
             displays: 1, last_mon_check: None, keep_display: false, last_asleep: None, settle_until: None,
+        };
+        let until = std::fs::read_to_string(e.skip_path()).ok().and_then(|s| s.trim().parse::<u64>().ok());
+        match until {
+            Some(u) if u > unix_now() => { e.tracker.suppress(); nblog!("schedule: still skipped ({}s left)", u - unix_now()); }
+            Some(_) => { let _ = std::fs::remove_file(e.skip_path()); }
+            None => {}
         }
+        e
     }
 
     pub fn marker_path(&self) -> PathBuf { self.cfg_path.with_file_name("blanking.state") }
+    /// 「跳过今晚」的过期时间（unix 秒），重启后照样有效
+    fn skip_path(&self) -> PathBuf { self.cfg_path.with_file_name("skip.until") }
+
+    fn skip(&mut self) {
+        self.tracker.suppress();
+        let (wd, min) = platform::local_time();
+        if let Some(m) = schedule::minutes_until_end(&self.cfg.schedule, wd, min) {
+            let _ = std::fs::write(self.skip_path(), (unix_now() + m as u64 * 60).to_string());
+        }
+        nblog!("schedule: skipped until the current/next window ends");
+    }
+    fn unskip(&mut self) {
+        self.tracker.unsuppress();
+        let _ = std::fs::remove_file(self.skip_path());
+        nblog!("schedule: skip undone");
+    }
 
     /// 配置变化（设置页保存或外部编辑 config.toml）
     pub fn set_config(&mut self, cfg: Config) {
+        // 计划从关到开：之前的「跳过」作废
+        if cfg.schedule.enabled && !self.cfg.schedule.enabled && self.tracker.suppressed() { self.unskip(); }
         self.plat.configure(&cfg);
         self.policy.configure(&cfg);
         self.cfg = cfg;
@@ -194,7 +221,7 @@ impl Engine {
         if let Some(mut s) = self.session.take() {
             // 时段内被手动唤醒：本时段不再自动息屏
             let (wd, min) = platform::local_time();
-            if schedule::in_window(&self.cfg.schedule, wd, min) { self.tracker.suppress(); }
+            if schedule::in_window(&self.cfg.schedule, wd, min) { self.skip(); }
             s.end_unix = Some(unix_now());
             self.last_session = Some(s);
         }
@@ -230,7 +257,8 @@ impl Engine {
             Msg::Blank { delay_s } => self.arm(app, delay_s, false),
             Msg::Cancel => self.cancel(app),
             Msg::Wake => self.wake(app, "requested"),
-            Msg::SkipTonight => self.tracker.suppress(),
+            Msg::SkipTonight => self.skip(),
+            Msg::Unskip => self.unskip(),
             Msg::Quit => {
                 nblog!("quit");
                 self.shutdown(app);
@@ -294,7 +322,10 @@ impl Engine {
         if self.last_sched_check.is_none_or(|t| now - t >= Duration::from_secs(1)) {
             self.last_sched_check = Some(now);
             let (wd, min) = platform::local_time();
-            match self.tracker.update(&self.cfg.schedule, wd, min) {
+            let was_skipped = self.tracker.suppressed();
+            let edge = self.tracker.update(&self.cfg.schedule, wd, min);
+            if was_skipped && !self.tracker.suppressed() { let _ = std::fs::remove_file(self.skip_path()); }
+            match edge {
                 // TODO: skip_when_fullscreen_video 需要平台检测全屏视频；remind_before_min 需要系统通知
                 Some(Edge::Start) if self.sm.state == State::Idle => self.arm(app, 0, true),
                 Some(Edge::End) if self.session.as_ref().is_some_and(|s| s.by_schedule) => self.wake(app, "schedule ended"),
@@ -312,6 +343,9 @@ impl Engine {
                 }
             }
         }
+        // 再次打开 App（第二个实例）留下的请求：把设置窗口拿到前面
+        let req = self.cfg_path.with_file_name("show.request");
+        if std::fs::remove_file(&req).is_ok() { nblog!("second launch: showing settings"); crate::show_settings(app, None); }
         if self.last_mon_check.is_none_or(|t| now - t >= Duration::from_secs(5)) {
             self.last_mon_check = Some(now);
             self.displays = app.available_monitors().map(|m| m.len().max(1)).unwrap_or(1);
