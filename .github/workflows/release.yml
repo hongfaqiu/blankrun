@@ -97,6 +97,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
         run: |
+          # 多个路径的产物上传后会保留子目录（dmg/、macos/），先摊平
+          find dist -mindepth 2 -type f -exec mv {} dist/ \;
           # 再附一份不带版本号的副本，官网用 releases/latest/download/<名字> 固定链接下载最新版
           for f in dist/*_universal.dmg; do cp "$f" dist/BlankRun_universal.dmg; done
           for f in dist/*_x64-setup.exe; do cp "$f" dist/BlankRun_x64-setup.exe; done
