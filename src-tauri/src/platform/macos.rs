@@ -1,7 +1,7 @@
-//! macOS 实现（**未在真机上编译或测试**，这台开发机是 Linux）。见 RESEARCH.md §2。
+//! macOS 实现。见 RESEARCH.md §2。2026-10 在 MacBook Air M4 / macOS 26.5 上实测过关屏、防睡眠、背光探测。
 //! 为了体积不引入 objc2 / core-foundation 等 crate，只手写用到的几个 C/ObjC 符号。
 //! - 防睡眠：IOPMAssertion PreventUserIdleSystemSleep（= caffeinate -i）；ac_only 时用 PreventSystemSleep（只在接电源时生效）。
-//! - 关屏：IODisplayWrangler 的 IORequestIdle（= pmset displaysleepnow），找不到时退回执行 pmset。
+//! - 关屏：pmset displaysleepnow（IODisplayWrangler 的 IORequestIdle 在新系统上无效）。
 //! - 恢复：IOPMAssertionDeclareUserActivity 点亮屏幕。
 //! - 键盘背光：运行时 dlopen 私有的 CoreBrightness.framework，KeyboardBrightnessClient，每个方法先 respondsToSelector，缺任何一个就降级为"只关屏幕"。
 //! - 输入：CGEventTap（会话级、主动过滤），需要「辅助功能」权限；回调吞掉所有事件并翻译后送进引擎。
@@ -22,7 +22,6 @@ type CFStringRef = *const c_void;
 extern "C" {
     fn CFStringCreateWithCString(alloc: *const c_void, s: *const c_char, enc: u32) -> CFStringRef;
     fn CFRelease(cf: *const c_void);
-    static kCFBooleanTrue: *const c_void;
     static kCFRunLoopDefaultMode: CFStringRef;
     fn CFRunLoopGetCurrent() -> *mut c_void;
     fn CFRunLoopAddSource(rl: *mut c_void, source: *mut c_void, mode: CFStringRef);
@@ -40,10 +39,6 @@ extern "C" {
     fn IOPMAssertionCreateWithName(ty: CFStringRef, level: u32, name: CFStringRef, id: *mut u32) -> i32;
     fn IOPMAssertionRelease(id: u32) -> i32;
     fn IOPMAssertionDeclareUserActivity(name: CFStringRef, ty: u32, id: *mut u32) -> i32;
-    fn IOServiceMatching(name: *const c_char) -> *mut c_void;
-    fn IOServiceGetMatchingService(main_port: u32, matching: *mut c_void) -> u32;
-    fn IORegistryEntrySetCFProperty(entry: u32, key: CFStringRef, val: *const c_void) -> i32;
-    fn IOObjectRelease(o: u32) -> i32;
 }
 
 type TapCb = extern "C" fn(proxy: *mut c_void, ty: u32, event: *mut c_void, user: *mut c_void) -> *mut c_void;
@@ -230,18 +225,9 @@ fn declare_user_activity() {
     }
 }
 
+/// 关屏 = `pmset displaysleepnow`。
+/// 实测 macOS 26 / M4：给 IODisplayWrangler 写 IORequestIdle 返回成功但屏幕不会睡，所以直接用系统命令。
 fn display_sleep_now() -> Result {
-    unsafe {
-        let svc = IOServiceGetMatchingService(0, IOServiceMatching(c"IODisplayWrangler".as_ptr()));
-        if svc != 0 {
-            let key = cfstr("IORequestIdle");
-            let r = IORegistryEntrySetCFProperty(svc, key, kCFBooleanTrue);
-            CFRelease(key);
-            IOObjectRelease(svc);
-            if r == 0 { return Ok(()); }
-        }
-    }
-    // 兜底：系统命令本身
     let st = std::process::Command::new("/usr/bin/pmset").arg("displaysleepnow").status().map_err(|e| e.to_string())?;
     if st.success() { Ok(()) } else { Err(format!("pmset displaysleepnow: {st}")) }
 }
@@ -275,9 +261,11 @@ impl Platform for Native {
             let Some(cur) = kb_get() else { return Ok(()) }; // 不支持：降级，只关屏幕
             if KB_SAVED.load(Relaxed) == u32::MAX { KB_SAVED.store(cur.to_bits(), Relaxed); }
             if !kb_set(0.0) { return Err("setBrightness:forKeyboard: failed".into()); }
+            crate::nblog!("keyboard backlight {cur} -> 0 (now {:?})", kb_get());
         } else {
             let bits = KB_SAVED.swap(u32::MAX, Relaxed);
             if bits != u32::MAX && !kb_set(f32::from_bits(bits)) { return Err("restoring keyboard backlight failed".into()); }
+            if bits != u32::MAX { crate::nblog!("keyboard backlight restored to {} (now {:?})", f32::from_bits(bits), kb_get()); }
         }
         Ok(())
     }
