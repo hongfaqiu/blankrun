@@ -397,9 +397,12 @@ impl Engine {
         if self.last_cfg_check.is_none_or(|t| now - t >= Duration::from_secs(2)) {
             self.last_cfg_check = Some(now);
             let m = std::fs::metadata(&self.cfg_path).and_then(|m| m.modified()).ok();
-            if m.is_some() && m != self.cfg_mtime {
+            if m != self.cfg_mtime {
                 self.cfg_mtime = m;
-                if let Some(c) = std::fs::read_to_string(&self.cfg_path).ok().and_then(|s| Config::from_toml(&s).ok()) {
+                // 文件被删掉 = 回到默认设置（和第一次启动一样）
+                let c = if m.is_none() { nblog!("config file removed, using defaults"); Some(Config::default()) }
+                    else { std::fs::read_to_string(&self.cfg_path).ok().and_then(|s| Config::from_toml(&s).ok()) };
+                if let Some(c) = c {
                     self.set_config(c);
                     let _ = app.emit("nb://config", ());
                 }
