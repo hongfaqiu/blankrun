@@ -499,6 +499,7 @@ impl Engine {
                         if *n >= 2 {
                             // 接受了 D6=4 却没真关（或有信号就自己醒）：记下来，以后只用遮罩，也不再发断电指令（免得闪）
                             self.mark_unresponsive(&id);
+                            let _ = app.emit("nb://config", ());
                             continue;
                         }
                         nblog!("monitor {id}: lit again, powering off");

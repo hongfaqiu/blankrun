@@ -325,6 +325,8 @@ listen("nb://tray_hidden", () => { $("#trayHidden").hidden = false; });
   loadDiag();
   listen("nb://status", (s) => { status = s; renderStatus(); drawTrack($("#track"), cfg.schedule.start, cfg.schedule.end, s.now_min); });
   // 外部编辑 config.toml 后同步
-  listen("nb://config", async () => { if (saveTimer) return; cfg = await invoke("get_config"); render(); });
+  listen("nb://config", async () => { if (saveTimer) return; cfg = await invoke("get_config"); render(); refreshMonitors(); });
+  // 窗口重新打开时显示器列表可能已变（插拔、息屏中自动识别出不响应断电的屏）
+  addEventListener("focus", () => refreshMonitors());
   listen("nb://nav", (id) => { location.hash = "#" + id; show(id); });
 })();

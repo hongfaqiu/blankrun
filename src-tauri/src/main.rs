@@ -298,7 +298,11 @@ fn main() {
                 std::process::exit(0);
             }
             log::init(cfg_path.with_file_name("blankrun.log"));
-            let cfg = std::fs::read_to_string(&cfg_path).ok().and_then(|s| Config::from_toml(&s).map_err(|e| nblog!("config.toml ignored, using defaults: {e}")).ok()).unwrap_or_default();
+            let cfg = std::fs::read_to_string(&cfg_path).ok().and_then(|s| Config::from_toml(&s).map_err(|e| {
+                // 坏掉的配置先留一份，免得下次保存把用户手改的内容整个冲掉
+                let _ = std::fs::copy(&cfg_path, cfg_path.with_extension("toml.broken"));
+                nblog!("config.toml ignored, using defaults (copy kept as config.toml.broken): {e}")
+            }).ok()).unwrap_or_default();
             let codes: Vec<&str> = locales().iter().map(|(c, _)| *c).collect();
             let tt = tray_text(&blankrun_core::locale::resolve(&cfg.general.language, &platform::system_locale(), &codes));
             let lang = blankrun_core::locale::resolve(&cfg.general.language, &platform::system_locale(), &codes);
