@@ -76,7 +76,7 @@ src-tauri/              Tauri 2 托盘/菜单栏应用
   src/platform/stub.rs  其他平台 no-op，仅供编译检查
 ui/                     正式界面：原生 HTML/JS/CSS，无框架、无打包器、无内联样式（CSP）
   popover / settings / overlay / onboarding .html + 各自的 .js/.css，共享 nb.css、common.js
-site/                   官网（静态 HTML/CSS，部署到 Cloudflare Pages）
+site/                   官网（静态 HTML/CSS）；push 到 main 后由 Cloudflare Pages（项目 blankrun-site）自动部署到 blankrun.cosfoc.com
 design/                 设计稿；design/preview/ 用假的 __TAURI__ 在 Chrome 里渲染 ui/ 检查布局
 ```
 配置文件位置：系统应用配置目录下的 `com.cosfoc.blankrun/config.toml`。
