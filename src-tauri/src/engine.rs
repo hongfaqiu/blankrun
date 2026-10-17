@@ -124,6 +124,10 @@ pub struct Engine {
     mon_relit: std::collections::HashMap<String, u32>,
     /// 本次息屏 id → 显示名（no_ddc / prefs 按显示名记）
     mon_labels: std::collections::HashMap<String, String>,
+    /// 本次息屏 id → show_overlays 编号
+    mon_idx: std::collections::HashMap<String, usize>,
+    /// 远程模式下已确认断电、撤掉了遮罩的屏
+    uncovered: std::collections::HashSet<String>,
     rdp_logged: bool,
 }
 
@@ -143,7 +147,7 @@ impl Engine {
             last_sched_check: None, last_cfg_check: None, last_status: None, kbd_available,
             displays: 1, last_mon_check: None, keep_display: false, last_asleep: None, settle_until: None,
             trigger: "manual", history: History::default(), last_heartbeat: None,
-            overlay_idx: vec![], mon_off_plan: vec![], mon_off: vec![], last_mon_reassert: None, mon_relit: Default::default(), mon_labels: Default::default(), rdp_logged: false,
+            overlay_idx: vec![], mon_off_plan: vec![], mon_off: vec![], last_mon_reassert: None, mon_relit: Default::default(), mon_labels: Default::default(), mon_idx: Default::default(), uncovered: Default::default(), rdp_logged: false,
         };
         // 息屏记录；上次息屏中途崩溃/强退的那一条记为 crash
         e.history = History::from_json(&std::fs::read_to_string(e.history_path()).unwrap_or_default());
@@ -301,6 +305,8 @@ impl Engine {
         self.power_off = plan.global_off;
         self.mon_relit.clear();
         self.mon_labels = mons.iter().map(|(m, _, _)| (m.id.clone(), m.label.clone())).collect();
+        self.mon_idx = mons.iter().enumerate().map(|(i, (m, _, _))| (m.id.clone(), i)).collect();
+        self.uncovered.clear();
         self.overlay_idx = plan.per.iter().enumerate().filter(|(_, m)| **m != Method::Skip).map(|(i, _)| i).collect();
         self.mon_off_plan = plan.per.iter().zip(&mons).filter(|(m, _)| **m == Method::Off).map(|(_, (m, x, y))| (m.id.clone(), *x, *y)).collect();
         for ((m, _, _), how) in mons.iter().zip(&plan.per) { nblog!("plan: {} ({}) virtual={} power={:?} -> {how:?}", m.id, m.label, m.virtual_, m.power); }
@@ -493,7 +499,19 @@ impl Engine {
             if !self.policy.is_holding() {
                 for (id, x, y) in self.mon_off.clone() {
                     if self.mon_relit.get(&id).copied().unwrap_or(0) >= 2 { continue; }
-                    if self.plat.monitor_lit(&id, x, y) == Some(true) {
+                    let lit = self.plat.monitor_lit(&id, x, y);
+                    let idx = self.mon_idx.get(&id).copied();
+                    // 远程模式：确认这块屏真的断电了，就撤掉它的遮罩——远程软件抓的是显卡画面，遮罩在它眼里也是黑的
+                    if lit == Some(false) && self.cfg.wake.allow_remote && !self.uncovered.contains(&id) {
+                        if let Some(i) = idx {
+                            if let Some(w) = app.get_webview_window(&format!("overlay-{i}")) { let _ = w.destroy(); }
+                            self.uncovered.insert(id.clone());
+                            nblog!("monitor {id}: confirmed off, overlay removed so a remote view shows the desktop");
+                        }
+                    }
+                    if lit == Some(true) {
+                        // 被点亮了：先把遮罩盖回去
+                        if self.uncovered.remove(&id) { if let Some(i) = idx { show_overlays(app, &[i]); } }
                         let n = self.mon_relit.entry(id.clone()).or_insert(0);
                         *n += 1;
                         if *n >= 2 {

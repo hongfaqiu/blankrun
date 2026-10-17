@@ -137,7 +137,7 @@ NB_LOCALE("en", {
   "w.inside": "",
   "w.remote_label": "Remote control",
   "w.remote": "Allow remote control",
-  "w.remote_note": "Keyboard and mouse input from remote tools like Sunlogin, ToDesk or Parsec passes through without waking, and the screens here stay off. Trade-off: keys simulated by other apps aren't blocked either",
+  "w.remote_note": "Keyboard and mouse input from remote tools like Sunlogin, ToDesk or Parsec passes through without waking, and the screens here stay off. Once a display is confirmed powered off via DDC/CI, its overlay is removed so the remote view shows the desktop. Displays that can only be covered stay black in the remote view too, so switch the remote client to a powered-off display or a virtual display. Trade-off: keys simulated by other apps aren't blocked either",
   "w.after_label": "After waking",
   "w.lock": "Lock immediately",
   "w.lock_note.mac": "Unlock with your password or Touch ID. Good for computers in shared spaces",
