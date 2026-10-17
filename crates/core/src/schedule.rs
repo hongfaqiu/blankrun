@@ -81,6 +81,8 @@ impl Tracker {
 pub struct Reminder { fired: bool }
 
 impl Reminder {
+    /// 这一轮提醒已经弹过（还没被重置）
+    pub fn fired(&self) -> bool { self.fired }
     pub fn update(&mut self, cfg: &ScheduleConfig, weekday: u8, minute: u16) -> Option<u32> {
         let r = cfg.remind_before_min;
         if !cfg.enabled || r == 0 { self.fired = false; return None; }
@@ -103,6 +105,8 @@ pub enum Waiting { Postponed, Fullscreen }
 impl Gate {
     /// 推迟到 now + by（开始前、开始后都可以）
     pub fn postpone(&mut self, now_ms: u64, by_ms: u64) { self.until_ms = now_ms + by_ms; }
+    /// 改了计划时间：之前的推迟作废（还在等的开始不受影响）
+    pub fn clear_postpone(&mut self) { self.until_ms = 0; }
     pub fn on_start(&mut self) { self.pending = true; }
     /// 时段结束 / 跳过今晚：什么都不等了
     pub fn reset(&mut self) { self.pending = false; self.until_ms = 0; }
@@ -214,6 +218,7 @@ mod tests {
 
     #[test]
     fn gate() {
+        { let mut g = Gate::default(); g.postpone(0, 1000); g.clear_postpone(); g.on_start(); assert!(g.poll(10, false)); }
         let mut g = Gate::default();
         assert!(!g.poll(0, false)); // 没到开始
         g.on_start();

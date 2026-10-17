@@ -72,6 +72,7 @@ pub struct Engine {
     policy: WakePolicy,
     tracker: Tracker,
     reminder: Reminder,
+    remind_open: bool,
     gate: Gate,
     /// 全屏视频检测结果的缓存（每 5 秒查一次）
     fullscreen: (Option<Instant>, bool),
@@ -107,7 +108,7 @@ impl Engine {
         let mtime = std::fs::metadata(&cfg_path).and_then(|m| m.modified()).ok();
         let mut e = Self {
             sm: StateMachine::new(cfg.wake.lock_on_wake), policy: WakePolicy::new(&cfg), plat, cfg, cfg_path,
-            cfg_mtime: mtime, last_session: None, tracker: Tracker::default(), reminder: Reminder::default(), gate: Gate::default(), fullscreen: (None, false),
+            cfg_mtime: mtime, last_session: None, tracker: Tracker::default(), reminder: Reminder::default(), remind_open: false, gate: Gate::default(), fullscreen: (None, false),
             hotkey_dirty: true, fullscreen_logged: false, login: None, countdown: None, power_off: false,
             overlay_on: false, power_off_at: None, reblank_at: None, hook_ok: true, session: None, last_hint: None,
             last_sched_check: None, last_cfg_check: None, last_status: None, kbd_available,
@@ -153,6 +154,8 @@ impl Engine {
     pub fn set_config(&mut self, cfg: Config) {
         // 计划从关到开：之前的「跳过」作废
         if cfg.schedule.enabled && !self.cfg.schedule.enabled && self.tracker.suppressed() { self.unskip(); }
+        let (a, b) = (&cfg.schedule, &self.cfg.schedule);
+        if a.start != b.start || a.end != b.end || a.days != b.days || a.enabled != b.enabled { self.gate.clear_postpone(); }
         let login_changed = cfg.general.launch_at_login != self.cfg.general.launch_at_login;
         if cfg.general.blank_now_hotkey != self.cfg.general.blank_now_hotkey { self.hotkey_dirty = true; }
         self.plat.configure(&cfg);
@@ -386,8 +389,10 @@ impl Engine {
             }
             self.fullscreen_logged = waiting == Some(Waiting::Fullscreen);
             if self.sm.state == State::Idle && !self.tracker.suppressed() {
-                if let Some(m) = self.reminder.update(&self.cfg.schedule, wd, min) { nblog!("schedule: reminder, {m} min left"); show_reminder(app); }
+                if let Some(m) = self.reminder.update(&self.cfg.schedule, wd, min) { nblog!("schedule: reminder, {m} min left"); show_reminder(app); self.remind_open = true; }
             }
+            // 计划被关掉或改到更晚：已经弹出的提醒不再成立
+            if self.remind_open && !self.reminder.fired() && !schedule::in_window(&self.cfg.schedule, wd, min) { hide_reminder(app); self.remind_open = false; }
         }
         if self.last_cfg_check.is_none_or(|t| now - t >= Duration::from_secs(2)) {
             self.last_cfg_check = Some(now);
@@ -436,6 +441,10 @@ impl Engine {
         let (left, total) = self.countdown.map_or((0, 0), |(at, t)| {
             (at.saturating_duration_since(Instant::now()).as_secs_f32().ceil() as u32, t)
         });
+        let in_win = schedule::in_window(s, wd, min);
+        let until_min = schedule::minutes_until_start(s, wd, min);
+        let now = platform::now_ms();
+        let postponed_min = self.gate.postponed_until(now).map(|t| ((t - now) as f64 / 60_000.0).ceil() as u32);
         Status {
             state: match self.sm.state {
                 State::Idle => "idle",
@@ -448,16 +457,18 @@ impl Engine {
             now_min: min,
             schedule: SchedStatus {
                 enabled: s.enabled, start: s.start.clone(), end: s.end.clone(),
-                in_window: schedule::in_window(s, wd, min),
-                until_min: schedule::minutes_until_start(s, wd, min),
+                in_window: in_win,
+                until_min,
                 duration_min: schedule::duration_min(s),
                 skipped: self.tracker.suppressed(),
                 waiting: match self.gate.waiting(platform::now_ms(), self.fullscreen.1) {
-                    Some(Waiting::Postponed) => Some("postponed"),
+                    // 还没到开始时间：推迟只在比开始更晚时才值得显示
+                    Some(Waiting::Postponed) if in_win || postponed_min > until_min => Some("postponed"),
+                    Some(Waiting::Postponed) => None,
                     Some(Waiting::Fullscreen) => Some("fullscreen"),
                     None => None,
                 },
-                postponed_min: self.gate.postponed_until(platform::now_ms()).map(|t| ((t - platform::now_ms()) as f64 / 60_000.0).ceil() as u32),
+                postponed_min,
             },
             displays: self.displays,
             keyboard: self.kbd_available && self.cfg.lights.keyboard_backlight,
