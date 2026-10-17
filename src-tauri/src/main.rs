@@ -66,6 +66,8 @@ fn skip_tonight(tx: State<Tx>) { send(&tx, Msg::SkipTonight) }
 #[tauri::command]
 fn unskip(tx: State<Tx>) { send(&tx, Msg::Unskip) }
 #[tauri::command]
+fn postpone(tx: State<Tx>, min: u32) { send(&tx, Msg::Postpone { min: min.clamp(1, 240) }) }
+#[tauri::command]
 fn overlay_input(tx: State<Tx>) { send(&tx, Msg::OverlayInput) }
 #[tauri::command]
 fn wake_now(tx: State<Tx>) { send(&tx, Msg::Wake) }
@@ -236,6 +238,8 @@ fn main() {
     let (tx, rx) = mpsc::channel::<Msg>();
     let input_tx = tx.clone();
     platform::set_input_sink(Box::new(move |i| { let _ = input_tx.send(Msg::Input(i)); }));
+    let hk_tx = tx.clone();
+    platform::set_hotkey_sink(Box::new(move || { let _ = hk_tx.send(Msg::Hotkey); }));
 
     let app = tauri::Builder::default()
         .setup(move |app| {
@@ -320,7 +324,7 @@ fn main() {
             _ => {}
         })
         .invoke_handler(tauri::generate_handler![
-            get_info, get_config, save_config, get_status, blank_now, cancel, skip_tonight, unskip, overlay_input, wake_now, quit,
+            get_info, get_config, save_config, get_status, blank_now, cancel, skip_tonight, unskip, postpone, overlay_input, wake_now, quit,
             get_diagnostics, request_permission, reveal_config, export_diagnostics, open_settings, hide_window,
             finish_onboarding, apply_locale
         ])

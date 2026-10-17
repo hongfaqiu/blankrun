@@ -27,7 +27,7 @@ libc = "0.2"
 windows-sys = { version = "0.59", features = [
   "Win32_Foundation", "Win32_System_Power", "Win32_UI_WindowsAndMessaging", "Win32_UI_Input_KeyboardAndMouse",
   "Win32_System_LibraryLoader", "Win32_System_Threading", "Win32_System_SystemServices",
-  "Win32_System_SystemInformation", "Win32_System_Shutdown", "Win32_Globalization", "Win32_System_Registry", "Win32_Security",
+  "Win32_System_SystemInformation", "Win32_System_Shutdown", "Win32_Globalization", "Win32_System_Registry", "Win32_Security", "Win32_UI_Shell",
 ] }
 
 # macOS：不引入 objc2 / core-graphics，platform/macos.rs 手写少量 FFI，保持依赖最小

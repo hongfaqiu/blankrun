@@ -12,7 +12,8 @@
   };
   const status = {
     state, countdown_left: 272, countdown_total: 300, now_min: 20 * 60 + 43,
-    schedule: { enabled: true, start: "23:30", end: "07:30", in_window: false, until_min: 167, duration_min: 480, skipped: false },
+    schedule: { enabled: true, start: "23:30", end: "07:30", in_window: false, until_min: 167, duration_min: 480, skipped: false, waiting: null, postponed_min: null },
+    hotkey_error: q.get("hkerr") || null, login: false,
     displays: 2, keyboard: os === "mac", power_off: true,
   };
   const caps = os === "mac" ? [
@@ -40,6 +41,7 @@
         case "save_config": Object.assign(cfg, args.cfg); setTimeout(() => window.__emit("nb://config", null), 0); return null;
         case "get_status": return status;
         case "skip_tonight": status.schedule.skipped = true; window.__emit("nb://status", status); return null;
+        case "postpone": status.schedule.waiting = "postponed"; status.schedule.postponed_min = args.min; window.__emit("nb://status", status); return null;
         case "unskip": status.schedule.skipped = false; window.__emit("nb://status", status); return null;
         case "get_diagnostics": return { caps, perms: os === "mac" ? [true, q.get("perm") !== "no"] : null, monitors: ["Built-in Retina Display", "DELL U2723QE", "LG HDR 4K"], modern_standby: os === "win", last_session: { start_unix: 1792596600, end_unix: 1792625400, lit: 2, by_schedule: true, power_off: true } };
         default: return null;

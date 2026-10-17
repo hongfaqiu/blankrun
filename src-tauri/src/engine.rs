@@ -7,7 +7,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use blankrun_core::{
     config::{DisplayMethod, WakeMethod},
-    schedule::{self, Edge, Tracker},
+    schedule::{self, Edge, Gate, Reminder, Tracker, Waiting},
     state::Action,
     wake::{Input, Verdict, WakePolicy},
     Config, Event, State, StateMachine,
@@ -27,6 +27,10 @@ pub enum Msg {
     SkipTonight,
     /// 撤销「跳过今晚」
     Unskip,
+    /// 提醒里点了「推迟」
+    Postpone { min: u32 },
+    /// 「立即息屏」全局快捷键
+    Hotkey,
     Quit,
 }
 
@@ -34,7 +38,13 @@ pub enum Msg {
 pub struct Session { pub start_unix: u64, pub end_unix: Option<u64>, pub lit: u32, pub by_schedule: bool, pub power_off: bool }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
-pub struct SchedStatus { pub enabled: bool, pub start: String, pub end: String, pub in_window: bool, pub until_min: Option<u32>, pub duration_min: Option<u32>, pub skipped: bool }
+pub struct SchedStatus {
+    pub enabled: bool, pub start: String, pub end: String, pub in_window: bool, pub until_min: Option<u32>, pub duration_min: Option<u32>, pub skipped: bool,
+    /// 到点后在等什么："postponed"（推迟中）/ "fullscreen"（全屏视频）
+    pub waiting: Option<&'static str>,
+    /// 推迟还剩几分钟
+    pub postponed_min: Option<u32>,
+}
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct Status {
@@ -46,6 +56,10 @@ pub struct Status {
     pub displays: usize,
     pub keyboard: bool,
     pub power_off: bool,
+    /// 「立即息屏」快捷键注册失败的原因
+    pub hotkey_error: Option<String>,
+    /// 是否已设为开机启动（None = 不支持）
+    pub login: Option<bool>,
 }
 
 pub struct Engine {
@@ -57,6 +71,13 @@ pub struct Engine {
     pub last_session: Option<Session>,
     policy: WakePolicy,
     tracker: Tracker,
+    reminder: Reminder,
+    gate: Gate,
+    /// 全屏视频检测结果的缓存（每 5 秒查一次）
+    fullscreen: (Option<Instant>, bool),
+    hotkey_dirty: bool,
+    fullscreen_logged: bool,
+    login: Option<bool>,
     countdown: Option<(Instant, u32)>,
     power_off: bool,
     overlay_on: bool,
@@ -86,11 +107,14 @@ impl Engine {
         let mtime = std::fs::metadata(&cfg_path).and_then(|m| m.modified()).ok();
         let mut e = Self {
             sm: StateMachine::new(cfg.wake.lock_on_wake), policy: WakePolicy::new(&cfg), plat, cfg, cfg_path,
-            cfg_mtime: mtime, last_session: None, tracker: Tracker::default(), countdown: None, power_off: false,
+            cfg_mtime: mtime, last_session: None, tracker: Tracker::default(), reminder: Reminder::default(), gate: Gate::default(), fullscreen: (None, false),
+            hotkey_dirty: true, fullscreen_logged: false, login: None, countdown: None, power_off: false,
             overlay_on: false, power_off_at: None, reblank_at: None, hook_ok: true, session: None, last_hint: None,
             last_sched_check: None, last_cfg_check: None, last_status: None, kbd_available,
             displays: 1, last_mon_check: None, keep_display: false, last_asleep: None, settle_until: None,
         };
+        e.login = e.plat.launch_at_login();
+        if e.cfg.general.launch_at_login || e.login == Some(true) { e.sync_login(); } // 每次启动重写一遍（App 位置可能变了）
         let until = std::fs::read_to_string(e.skip_path()).ok().and_then(|s| s.trim().parse::<u64>().ok());
         match until {
             Some(u) if u > unix_now() => { e.tracker.suppress(); nblog!("schedule: still skipped ({}s left)", u - unix_now()); }
@@ -104,8 +128,15 @@ impl Engine {
     /// 「跳过今晚」的过期时间（unix 秒），重启后照样有效
     fn skip_path(&self) -> PathBuf { self.cfg_path.with_file_name("skip.until") }
 
+    fn sync_login(&mut self) {
+        let on = self.cfg.general.launch_at_login;
+        match self.plat.set_launch_at_login(on) { Ok(()) => nblog!("launch at login = {on}"), Err(e) => nblog!("launch at login = {on} failed: {e}") }
+        self.login = self.plat.launch_at_login();
+    }
+
     fn skip(&mut self) {
         self.tracker.suppress();
+        self.gate.reset();
         let (wd, min) = platform::local_time();
         if let Some(m) = schedule::minutes_until_end(&self.cfg.schedule, wd, min) {
             let _ = std::fs::write(self.skip_path(), (unix_now() + m as u64 * 60).to_string());
@@ -122,9 +153,12 @@ impl Engine {
     pub fn set_config(&mut self, cfg: Config) {
         // 计划从关到开：之前的「跳过」作废
         if cfg.schedule.enabled && !self.cfg.schedule.enabled && self.tracker.suppressed() { self.unskip(); }
+        let login_changed = cfg.general.launch_at_login != self.cfg.general.launch_at_login;
+        if cfg.general.blank_now_hotkey != self.cfg.general.blank_now_hotkey { self.hotkey_dirty = true; }
         self.plat.configure(&cfg);
         self.policy.configure(&cfg);
         self.cfg = cfg;
+        if login_changed { self.sync_login(); }
     }
 
     pub fn save_config(&mut self, cfg: Config) -> Result<(), String> {
@@ -187,6 +221,7 @@ impl Engine {
     }
 
     fn do_blank(&mut self, app: &AppHandle, by_schedule: bool) {
+        hide_reminder(app);
         let c = &self.cfg;
         // 「只关所选」时只能用遮罩（系统级关屏会把所有屏一起关掉）
         self.power_off = c.display.mode != "selected" && match c.display.method {
@@ -257,8 +292,15 @@ impl Engine {
             Msg::Blank { delay_s } => self.arm(app, delay_s, false),
             Msg::Cancel => self.cancel(app),
             Msg::Wake => self.wake(app, "requested"),
-            Msg::SkipTonight => self.skip(),
+            Msg::SkipTonight => { self.skip(); hide_reminder(app); }
             Msg::Unskip => self.unskip(),
+            Msg::Postpone { min } => {
+                self.gate.postpone(platform::now_ms(), min as u64 * 60_000);
+                nblog!("schedule: postponed {min} min");
+                hide_reminder(app);
+            }
+            Msg::Hotkey if matches!(self.sm.state, State::Idle | State::Armed) => { nblog!("blank-now hotkey"); self.arm(app, 0, false) }
+            Msg::Hotkey => {}
             Msg::Quit => {
                 nblog!("quit");
                 self.shutdown(app);
@@ -327,9 +369,24 @@ impl Engine {
             if was_skipped && !self.tracker.suppressed() { let _ = std::fs::remove_file(self.skip_path()); }
             match edge {
                 // TODO: skip_when_fullscreen_video 需要平台检测全屏视频；remind_before_min 需要系统通知
-                Some(Edge::Start) if self.sm.state == State::Idle => self.arm(app, 0, true),
-                Some(Edge::End) if self.session.as_ref().is_some_and(|s| s.by_schedule) => self.wake(app, "schedule ended"),
+                // 到点不直接息屏，交给 Gate：被推迟或在全屏看视频时先等着
+                Some(Edge::Start) if self.sm.state == State::Idle => self.gate.on_start(),
+                Some(Edge::End) => {
+                    self.gate.reset();
+                    if self.session.as_ref().is_some_and(|s| s.by_schedule) { self.wake(app, "schedule ended"); }
+                }
                 _ => {}
+            }
+            let fs = self.fullscreen_now(now);
+            let waiting = self.gate.waiting(platform::now_ms(), fs);
+            if self.gate.poll(platform::now_ms(), fs) {
+                if self.sm.state == State::Idle && schedule::in_window(&self.cfg.schedule, wd, min) { nblog!("schedule: start"); self.arm(app, 0, true); }
+            } else if waiting == Some(Waiting::Fullscreen) && !self.fullscreen_logged {
+                nblog!("schedule: waiting, a video is playing full screen");
+            }
+            self.fullscreen_logged = waiting == Some(Waiting::Fullscreen);
+            if self.sm.state == State::Idle && !self.tracker.suppressed() {
+                if let Some(m) = self.reminder.update(&self.cfg.schedule, wd, min) { nblog!("schedule: reminder, {m} min left"); show_reminder(app); }
             }
         }
         if self.last_cfg_check.is_none_or(|t| now - t >= Duration::from_secs(2)) {
@@ -342,6 +399,12 @@ impl Engine {
                     let _ = app.emit("nb://config", ());
                 }
             }
+        }
+        if self.hotkey_dirty {
+            self.hotkey_dirty = false;
+            let spec = self.cfg.general.blank_now_hotkey.clone();
+            // Mac 的 Carbon 快捷键必须在主线程注册；不等结果，错误在 status.hotkey_error 里
+            let _ = app.run_on_main_thread(move || platform::apply_blank_hotkey(&spec));
         }
         // 再次打开 App（第二个实例）留下的请求：把设置窗口拿到前面
         let req = self.cfg_path.with_file_name("show.request");
@@ -356,6 +419,16 @@ impl Engine {
             self.last_status = Some(st);
         }
     }
+
+    /// 计划在等着开始、且开了「全屏看视频时跳过」时才去查（每 5 秒一次）
+    fn fullscreen_now(&mut self, now: Instant) -> bool {
+        if !self.cfg.schedule.skip_when_fullscreen_video || !self.gate_pending() { self.fullscreen.1 = false; return false; }
+        if self.fullscreen.0.is_none_or(|t| now - t >= Duration::from_secs(5)) {
+            self.fullscreen = (Some(now), self.plat.fullscreen_video());
+        }
+        self.fullscreen.1
+    }
+    fn gate_pending(&self) -> bool { self.gate.waiting(platform::now_ms(), true).is_some() }
 
     pub fn status(&self) -> Status {
         let (wd, min) = platform::local_time();
@@ -379,10 +452,18 @@ impl Engine {
                 until_min: schedule::minutes_until_start(s, wd, min),
                 duration_min: schedule::duration_min(s),
                 skipped: self.tracker.suppressed(),
+                waiting: match self.gate.waiting(platform::now_ms(), self.fullscreen.1) {
+                    Some(Waiting::Postponed) => Some("postponed"),
+                    Some(Waiting::Fullscreen) => Some("fullscreen"),
+                    None => None,
+                },
+                postponed_min: self.gate.postponed_until(platform::now_ms()).map(|t| ((t - platform::now_ms()) as f64 / 60_000.0).ceil() as u32),
             },
             displays: self.displays,
             keyboard: self.kbd_available && self.cfg.lights.keyboard_backlight,
             power_off: self.power_off,
+            hotkey_error: platform::hotkey_error(),
+            login: self.login,
         }
     }
 }
@@ -441,4 +522,28 @@ fn hide_overlays(app: &AppHandle) {
     for (label, w) in app.webview_windows() {
         if label.starts_with("overlay-") { let _ = w.destroy(); }
     }
+}
+
+/// 开始前提醒：屏幕右上角（Mac）/ 右下角（Windows）的小窗口，带「跳过今晚」「推迟 30 分钟」
+fn show_reminder(app: &AppHandle) {
+    let app2 = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        if let Some(w) = app2.get_webview_window("remind") { let _ = w.show(); let _ = w.emit("nb://shown", ()); return; }
+        let Ok(w) = WebviewWindowBuilder::new(&app2, "remind", WebviewUrl::App("remind.html".into()))
+            .title("BlankRun").inner_size(340.0, 132.0).decorations(false).resizable(false).always_on_top(true)
+            .skip_taskbar(true).focused(false).visible(false).build() else { return };
+        if let Ok(Some(m)) = w.primary_monitor() {
+            let (wa, sc) = (m.work_area(), m.scale_factor());
+            let (ww, wh) = ((340.0 * sc) as i32, (132.0 * sc) as i32);
+            let gap = (12.0 * sc) as i32;
+            let x = wa.position.x + wa.size.width as i32 - ww - gap;
+            let y = if cfg!(target_os = "macos") { wa.position.y + gap } else { wa.position.y + wa.size.height as i32 - wh - gap };
+            let _ = w.set_position(tauri::PhysicalPosition::new(x, y));
+        }
+        let _ = w.show();
+    });
+}
+
+fn hide_reminder(app: &AppHandle) {
+    if let Some(w) = app.get_webview_window("remind") { let _ = w.hide(); }
 }

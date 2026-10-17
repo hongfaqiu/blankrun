@@ -1,5 +1,5 @@
 {
   "identifier": "default",
-  "windows": ["popover", "settings", "onboarding", "overlay-*"],
+  "windows": ["popover", "settings", "onboarding", "overlay-*", "remind"],
   "permissions": ["core:default"]
 }

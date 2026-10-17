@@ -75,6 +75,52 @@ impl Tracker {
     pub fn suppressed(&self) -> bool { self.suppressed }
 }
 
+/// 开始前提醒：距下一次开始不超过 `remind_before_min` 分钟时触发一次（返回剩余分钟数）。
+/// 启动时如果已经在提醒区间里，也会立即提醒一次。
+#[derive(Debug, Default)]
+pub struct Reminder { fired: bool }
+
+impl Reminder {
+    pub fn update(&mut self, cfg: &ScheduleConfig, weekday: u8, minute: u16) -> Option<u32> {
+        let r = cfg.remind_before_min;
+        if !cfg.enabled || r == 0 { self.fired = false; return None; }
+        match minutes_until_start(cfg, weekday, minute) {
+            Some(m) if m > r => { self.fired = false; None }
+            Some(m) if !self.fired => { self.fired = true; Some(m) }
+            _ => None,
+        }
+    }
+}
+
+/// 计划到点时要不要马上息屏。被「推迟」或正在全屏播放视频时先等着；
+/// 条件解除且仍在时段内时再开始。时间用毫秒（任意单调时钟）。
+#[derive(Debug, Default)]
+pub struct Gate { pending: bool, until_ms: u64 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Waiting { Postponed, Fullscreen }
+
+impl Gate {
+    /// 推迟到 now + by（开始前、开始后都可以）
+    pub fn postpone(&mut self, now_ms: u64, by_ms: u64) { self.until_ms = now_ms + by_ms; }
+    pub fn on_start(&mut self) { self.pending = true; }
+    /// 时段结束 / 跳过今晚：什么都不等了
+    pub fn reset(&mut self) { self.pending = false; self.until_ms = 0; }
+    /// true = 现在该息屏了（只返回一次）
+    pub fn poll(&mut self, now_ms: u64, fullscreen: bool) -> bool {
+        if !self.pending || now_ms < self.until_ms || fullscreen { return false; }
+        self.pending = false;
+        true
+    }
+    /// 正在等什么（给界面显示）；推迟优先
+    pub fn waiting(&self, now_ms: u64, fullscreen: bool) -> Option<Waiting> {
+        if now_ms < self.until_ms { Some(Waiting::Postponed) }
+        else if self.pending && fullscreen { Some(Waiting::Fullscreen) }
+        else { None }
+    }
+    pub fn postponed_until(&self, now_ms: u64) -> Option<u64> { (now_ms < self.until_ms).then_some(self.until_ms) }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -148,5 +194,45 @@ mod tests {
         assert_eq!(minutes_until_end(&c, 0, 23 * 60 + 40), Some(7 * 60 + 50));
         assert_eq!(minutes_until_end(&c, 0, 22 * 60), Some(90 + 480));
         assert_eq!(minutes_until_end(&off, 0, 22 * 60), None);
+    }
+
+    #[test]
+    fn reminder() {
+        let mut c = ScheduleConfig::default();
+        c.enabled = true; // 23:30 开始，默认提前 5 分钟
+        let mut r = Reminder::default();
+        assert_eq!(r.update(&c, 0, 23 * 60), None);
+        assert_eq!(r.update(&c, 0, 23 * 60 + 25), Some(5));
+        assert_eq!(r.update(&c, 0, 23 * 60 + 26), None); // 只提醒一次
+        assert_eq!(r.update(&c, 0, 23 * 60 + 31), None); // 时段内
+        assert_eq!(r.update(&c, 1, 12 * 60), None);
+        assert_eq!(r.update(&c, 1, 23 * 60 + 27), Some(3)); // 第二天晚上照常提醒（启动晚了也提醒）
+        c.remind_before_min = 0;
+        let mut r = Reminder::default();
+        assert_eq!(r.update(&c, 0, 23 * 60 + 25), None);
+    }
+
+    #[test]
+    fn gate() {
+        let mut g = Gate::default();
+        assert!(!g.poll(0, false)); // 没到开始
+        g.on_start();
+        assert_eq!(g.waiting(0, true), Some(Waiting::Fullscreen));
+        assert!(!g.poll(0, true)); // 全屏视频：等
+        assert!(g.poll(1000, false)); // 视频结束：开始
+        assert!(!g.poll(2000, false)); // 只一次
+
+        let mut g = Gate::default();
+        g.postpone(0, 30 * 60_000); // 提醒时点了「推迟 30 分钟」
+        g.on_start();
+        assert_eq!(g.waiting(60_000, false), Some(Waiting::Postponed));
+        assert!(!g.poll(60_000, false));
+        assert!(g.poll(30 * 60_000, false));
+
+        let mut g = Gate::default();
+        g.on_start();
+        g.reset(); // 跳过今晚 / 时段结束
+        assert!(!g.poll(0, false));
+        assert_eq!(g.waiting(0, true), None);
     }
 }

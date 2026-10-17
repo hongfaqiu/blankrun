@@ -35,3 +35,5 @@ pub fn system_locale() -> String {
 }
 
 pub fn instance_lock(_path: &std::path::Path) -> bool { true }
+
+pub fn set_blank_hotkey(_h: Option<&blankrun_core::hotkey::Hotkey>) -> super::Result { Ok(()) }

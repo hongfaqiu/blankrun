@@ -48,6 +48,36 @@ pub trait Platform {
     fn persist(&self) -> Option<String> { None }
     /// 启动时调用：上次异常退出留下的状态（RESEARCH.md §5 风险 4）
     fn restore_on_startup(&mut self, _saved: Option<&str>) -> Result { Ok(()) }
+    /// 开机（登录）时启动：Mac 写 LaunchAgent，Windows 写 HKCU\…\Run
+    fn set_launch_at_login(&mut self, _on: bool) -> Result { Err("unsupported".into()) }
+    /// 当前是否已设为开机启动；None = 不支持
+    fn launch_at_login(&self) -> Option<bool> { None }
+    /// 前台有程序在全屏播放视频（或演示、全屏游戏）
+    fn fullscreen_video(&self) -> bool { false }
+}
+
+// ---------- 「立即息屏」全局快捷键 ----------
+type HkSink = Box<dyn Fn() + Send + Sync>;
+static HK_SINK: OnceLock<HkSink> = OnceLock::new();
+static HK_ERR: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+pub fn set_hotkey_sink(f: HkSink) { let _ = HK_SINK.set(f); }
+/// 快捷键回调里调用
+#[cfg_attr(not(any(target_os = "macos", windows)), allow(dead_code))]
+pub fn emit_hotkey() { if let Some(f) = HK_SINK.get() { f() } }
+/// 最近一次注册快捷键的错误（给设置页显示）
+pub fn hotkey_error() -> Option<String> { HK_ERR.lock().ok()?.clone() }
+/// 注册（或注销，hk=None）「立即息屏」快捷键。Mac 上必须在主线程调用。
+pub fn apply_blank_hotkey(spec: &str) {
+    let r = match spec.trim() {
+        "" => set_blank_hotkey(None),
+        s => match blankrun_core::hotkey::Hotkey::parse(s) {
+            Some(h) if h.usable_global() => set_blank_hotkey(Some(&h)),
+            Some(_) => Err("needs Ctrl, Alt or Cmd/Win".into()),
+            None => Err(format!("invalid shortcut {s:?}")),
+        },
+    };
+    match &r { Ok(()) => crate::nblog!("blank-now hotkey {spec:?} registered"), Err(e) => crate::nblog!("blank-now hotkey {spec:?}: {e}") }
+    if let Ok(mut g) = HK_ERR.lock() { *g = r.err(); }
 }
 
 type Sink = Box<dyn Fn(Input) + Send + Sync>;
@@ -63,16 +93,16 @@ pub fn now_ms() -> u64 { T0.get_or_init(Instant::now).elapsed().as_millis() as u
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(target_os = "macos")]
-pub use macos::{emergency_restore, instance_lock, local_time, notch_span, prefer_tray_position, raise_overlay, reveal, system_locale, Native};
+pub use macos::{set_blank_hotkey, emergency_restore, instance_lock, local_time, notch_span, prefer_tray_position, raise_overlay, reveal, system_locale, Native};
 
 #[cfg(windows)]
 mod windows;
 #[cfg(windows)]
-pub use self::windows::{emergency_restore, instance_lock, local_time, reveal, system_locale, taskbar_light, Native};
+pub use self::windows::{set_blank_hotkey, emergency_restore, instance_lock, local_time, reveal, system_locale, taskbar_light, Native};
 
 #[cfg(not(any(target_os = "macos", windows)))]
 mod stub;
 #[cfg(not(any(target_os = "macos", windows)))]
-pub use stub::{emergency_restore, instance_lock, local_time, reveal, system_locale, Native};
+pub use stub::{set_blank_hotkey, emergency_restore, instance_lock, local_time, reveal, system_locale, Native};
 
 pub const OS: &str = if cfg!(target_os = "macos") { "mac" } else if cfg!(windows) { "win" } else { "linux" };

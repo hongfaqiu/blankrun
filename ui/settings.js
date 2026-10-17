@@ -75,6 +75,9 @@ function renderStatus() {
   $("#schedDot").classList.toggle("standby", en && !sc.skipped);
   $("#skipBtn").hidden = !en || sc.skipped;
   $("#unskipBtn").hidden = !en || !sc.skipped;
+  const he = status.hotkey_error;
+  $("#hkErr").hidden = !he;
+  if (he) $("#hkErr").textContent = /already used/.test(he) ? t("g.hk_taken") : /needs/.test(he) ? t("g.hk_mod") : t("g.hk_bad", { e: he });
   const v = { start: cfg.schedule.start, end: cfg.schedule.end };
   let next = t("s.next_off");
   if (en) {

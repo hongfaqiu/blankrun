@@ -182,6 +182,77 @@ impl Platform for Native {
         if saved.is_some() { display_on_now(); }
         Ok(())
     }
+
+    fn set_launch_at_login(&mut self, on: bool) -> Result {
+        use windows_sys::Win32::System::Registry::{RegDeleteKeyValueW, RegSetKeyValueW, HKEY_CURRENT_USER, REG_SZ};
+        let (key, name) = (wide(RUN_KEY), wide("BlankRun"));
+        let r = if on {
+            let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+            let v = wide(&format!("\"{}\"", exe.display()));
+            unsafe { RegSetKeyValueW(HKEY_CURRENT_USER, key.as_ptr(), name.as_ptr(), REG_SZ, v.as_ptr() as *const _, (v.len() * 2) as u32) }
+        } else {
+            match unsafe { RegDeleteKeyValueW(HKEY_CURRENT_USER, key.as_ptr(), name.as_ptr()) } { 2 => 0, r => r } // 2 = 本来就没有
+        };
+        if r == 0 { Ok(()) } else { Err(format!("registry error {r}")) }
+    }
+
+    fn launch_at_login(&self) -> Option<bool> {
+        use windows_sys::Win32::System::Registry::{RegGetValueW, HKEY_CURRENT_USER, RRF_RT_REG_SZ};
+        let (key, name) = (wide(RUN_KEY), wide("BlankRun"));
+        let mut n = 0u32;
+        let r = unsafe { RegGetValueW(HKEY_CURRENT_USER, key.as_ptr(), name.as_ptr(), RRF_RT_REG_SZ, std::ptr::null_mut(), std::ptr::null_mut(), &mut n) };
+        Some(r == 0)
+    }
+
+    fn fullscreen_video(&self) -> bool {
+        use windows_sys::Win32::UI::Shell::{SHQueryUserNotificationState, QUNS_BUSY, QUNS_PRESENTATION_MODE, QUNS_RUNNING_D3D_FULL_SCREEN};
+        let mut st = 0;
+        // BUSY = 有程序全屏（视频、浏览器全屏播放）；D3D 全屏 = 游戏 / 播放器独占全屏；演示模式
+        unsafe { SHQueryUserNotificationState(&mut st) == 0 && matches!(st, QUNS_BUSY | QUNS_RUNNING_D3D_FULL_SCREEN | QUNS_PRESENTATION_MODE) }
+    }
+}
+
+const RUN_KEY: &str = "Software\\Microsoft\\Windows\\CurrentVersion\\Run";
+fn wide(s: &str) -> Vec<u16> { s.encode_utf16().chain([0]).collect() }
+
+// ---------- 「立即息屏」全局快捷键：RegisterHotKey，跑在自己的消息循环线程里 ----------
+static HK_THREAD: std::sync::Mutex<Option<(u32, JoinHandle<()>)>> = std::sync::Mutex::new(None);
+
+fn hk_vk(key: &str) -> Option<u32> {
+    if let Some(i) = LETTERS.iter().position(|k| *k == key) { return Some(0x41 + i as u32); }
+    if let Some(i) = DIGITS.iter().position(|k| *k == key) { return Some(0x30 + i as u32); }
+    if let Some(i) = FKEYS.iter().position(|k| *k == key) { return Some(0x70 + i as u32); }
+    Some(match key { "Esc" => 0x1B, "Space" => 0x20, "Enter" => 0x0D, "Tab" => 0x09, "Backspace" => 0x08, _ => return None })
+}
+
+pub fn set_blank_hotkey(h: Option<&hotkey::Hotkey>) -> Result {
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{RegisterHotKey, UnregisterHotKey, MOD_ALT, MOD_CONTROL, MOD_NOREPEAT, MOD_SHIFT, MOD_WIN};
+    let mut g = HK_THREAD.lock().map_err(|e| e.to_string())?;
+    if let Some((tid, j)) = g.take() { unsafe { PostThreadMessageW(tid, WM_QUIT, 0, 0); } let _ = j.join(); }
+    let Some(h) = h else { return Ok(()) };
+    let vk = hk_vk(&h.key).ok_or_else(|| format!("unsupported key {}", h.key))?;
+    let mut mods = MOD_NOREPEAT;
+    if h.mods & hotkey::CTRL != 0 { mods |= MOD_CONTROL; }
+    if h.mods & hotkey::ALT != 0 { mods |= MOD_ALT; }
+    if h.mods & hotkey::SHIFT != 0 { mods |= MOD_SHIFT; }
+    if h.mods & hotkey::META != 0 { mods |= MOD_WIN; }
+    let (tx, rx) = std::sync::mpsc::channel();
+    let j = std::thread::Builder::new().name("nb-hotkey".into()).spawn(move || unsafe {
+        if RegisterHotKey(std::ptr::null_mut(), 1, mods, vk) == 0 {
+            let _ = tx.send(Err("already used by another app".to_string()));
+            return;
+        }
+        let _ = tx.send(Ok(GetCurrentThreadId()));
+        let mut msg: MSG = std::mem::zeroed();
+        while GetMessageW(&mut msg, std::ptr::null_mut(), 0, 0) > 0 {
+            if msg.message == WM_HOTKEY { super::emit_hotkey(); }
+        }
+        UnregisterHotKey(std::ptr::null_mut(), 1);
+    }).map_err(|e| e.to_string())?;
+    match rx.recv().map_err(|e| e.to_string())? {
+        Ok(tid) => { *g = Some((tid, j)); Ok(()) }
+        Err(e) => { let _ = j.join(); Err(e) }
+    }
 }
 
 /// panic 钩子里调用：不加锁，只做无状态的恢复

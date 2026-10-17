@@ -32,13 +32,35 @@ extern "C" {
     fn CFArrayGetCount(a: *const c_void) -> isize;
     fn CFArrayGetValueAtIndex(a: *const c_void, i: isize) -> *const c_void;
     fn CFStringGetCString(s: CFStringRef, buf: *mut c_char, len: isize, enc: u32) -> u8;
+    fn CFDictionaryGetValue(d: *const c_void, key: *const c_void) -> *const c_void;
+    fn CFDictionaryGetCount(d: *const c_void) -> isize;
+    fn CFDictionaryGetKeysAndValues(d: *const c_void, keys: *mut *const c_void, values: *mut *const c_void);
+    fn CFNumberGetValue(n: *const c_void, ty: isize, out: *mut c_void) -> u8;
 }
+
+#[repr(C)]
+#[derive(Clone, Copy, PartialEq, Default)]
+struct CGRect { x: f64, y: f64, w: f64, h: f64 }
+
+#[link(name = "Carbon", kind = "framework")]
+extern "C" {
+    fn GetApplicationEventTarget() -> *mut c_void;
+    fn InstallEventHandler(target: *mut c_void, h: HkHandler, n: u32, list: *const EventTypeSpec, user: *mut c_void, out: *mut *mut c_void) -> i32;
+    fn RegisterEventHotKey(code: u32, mods: u32, id: EventHotKeyId, target: *mut c_void, opts: u32, out: *mut *mut c_void) -> i32;
+    fn UnregisterEventHotKey(r: *mut c_void) -> i32;
+}
+type HkHandler = extern "C" fn(next: *mut c_void, ev: *mut c_void, user: *mut c_void) -> i32;
+#[repr(C)]
+struct EventTypeSpec { class: u32, kind: u32 }
+#[repr(C)]
+struct EventHotKeyId { sig: u32, id: u32 }
 
 #[link(name = "IOKit", kind = "framework")]
 extern "C" {
     fn IOPMAssertionCreateWithName(ty: CFStringRef, level: u32, name: CFStringRef, id: *mut u32) -> i32;
     fn IOPMAssertionRelease(id: u32) -> i32;
     fn IOPMAssertionDeclareUserActivity(name: CFStringRef, ty: u32, id: *mut u32) -> i32;
+    fn IOPMCopyAssertionsByProcess(out: *mut *const c_void) -> i32;
 }
 
 type TapCb = extern "C" fn(proxy: *mut c_void, ty: u32, event: *mut c_void, user: *mut c_void) -> *mut c_void;
@@ -52,6 +74,12 @@ extern "C" {
     fn CGEventGetIntegerValueField(event: *mut c_void, field: u32) -> i64;
     fn CGEventGetFlags(event: *mut c_void) -> u64;
     fn CGPreflightListenEventAccess() -> bool;
+    fn CGWindowListCopyWindowInfo(opt: u32, rel: u32) -> *const c_void;
+    fn CGRectMakeWithDictionaryRepresentation(d: *const c_void, r: *mut CGRect) -> bool;
+    fn CGDisplayBounds(display: u32) -> CGRect;
+    static kCGWindowLayer: CFStringRef;
+    static kCGWindowBounds: CFStringRef;
+    static kCGWindowOwnerPID: CFStringRef;
     fn CGRequestListenEventAccess() -> bool;
 }
 
@@ -343,6 +371,31 @@ impl Platform for Native {
         Some(if bits == u32::MAX { "kbd=".into() } else { format!("kbd={}", f32::from_bits(bits)) })
     }
 
+    fn set_launch_at_login(&mut self, on: bool) -> Result {
+        let p = launch_agent().ok_or("no HOME")?;
+        if !on { return match std::fs::remove_file(&p) { Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.to_string()), _ => Ok(()) }; }
+        let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+        // 在 .app 里时用 open -a 启动整个 App（LaunchServices），否则直接跑可执行文件
+        let app = exe.ancestors().nth(3).filter(|a| a.extension().is_some_and(|x| x == "app"));
+        let args: Vec<String> = match app {
+            Some(a) => vec!["/usr/bin/open".into(), "-a".into(), a.display().to_string()],
+            None => vec![exe.display().to_string()],
+        };
+        let esc = |s: &str| s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
+        let items: String = args.iter().map(|a| format!("<string>{}</string>", esc(a))).collect();
+        let plist = format!(concat!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
+            "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n",
+            "<plist version=\"1.0\"><dict><key>Label</key><string>com.cosfoc.blankrun</string>",
+            "<key>ProgramArguments</key><array>{}</array><key>RunAtLoad</key><true/></dict></plist>\n"), items);
+        if let Some(d) = p.parent() { std::fs::create_dir_all(d).map_err(|e| e.to_string())?; }
+        std::fs::write(&p, plist).map_err(|e| e.to_string())
+    }
+
+    fn launch_at_login(&self) -> Option<bool> { Some(launch_agent()?.exists()) }
+
+    fn fullscreen_video(&self) -> bool { fullscreen_video() }
+
     fn restore_on_startup(&mut self, saved: Option<&str>) -> Result {
         let Some(s) = saved else { return Ok(()) };
         declare_user_activity();
@@ -454,5 +507,97 @@ pub fn prefer_tray_position() {
             crate::nblog!("tray: first run, preferred position set near the right edge");
         }
         CFRelease(key);
+    }
+}
+
+fn launch_agent() -> Option<std::path::PathBuf> {
+    Some(std::path::PathBuf::from(std::env::var_os("HOME")?).join("Library/LaunchAgents/com.cosfoc.blankrun.plist"))
+}
+
+fn cf_string(s: *const c_void) -> String {
+    if s.is_null() { return String::new(); }
+    let mut buf = [0 as c_char; 256];
+    unsafe {
+        if CFStringGetCString(s, buf.as_mut_ptr(), buf.len() as isize, UTF8) == 0 { return String::new(); }
+        std::ffi::CStr::from_ptr(buf.as_ptr()).to_string_lossy().into_owned()
+    }
+}
+fn cf_i64(n: *const c_void) -> Option<i64> {
+    let mut v = 0i64;
+    (!n.is_null() && unsafe { CFNumberGetValue(n, 4 /* kCFNumberSInt64Type */, &mut v as *mut _ as *mut c_void) } != 0).then_some(v)
+}
+
+/// 全屏看视频：主屏上有别的 App 的窗口铺满整屏，并且有程序正为播放视频阻止屏幕睡眠
+/// （该全屏 App 自己持有 PreventUserIdleDisplaySleep，或断言名里带 video / media / playback，例如 Chrome 的 Video Wake Lock）。
+/// 只看全屏不看断言会把全屏终端也算进去；只看断言会被远程桌面这类常驻断言误判。
+pub fn fullscreen_video() -> bool {
+    let me = std::process::id() as i64;
+    let mut owners: Vec<i64> = Vec::new();
+    unsafe {
+        let screen = CGDisplayBounds(CGMainDisplayID());
+        let list = CGWindowListCopyWindowInfo(1 | 16 /* on screen only, exclude desktop */, 0);
+        if list.is_null() { return false; }
+        for i in 0..CFArrayGetCount(list) {
+            let w = CFArrayGetValueAtIndex(list, i);
+            if cf_i64(CFDictionaryGetValue(w, kCGWindowLayer)) != Some(0) { continue; }
+            let mut r = CGRect::default();
+            if !CGRectMakeWithDictionaryRepresentation(CFDictionaryGetValue(w, kCGWindowBounds), &mut r) || r != screen { continue; }
+            if let Some(pid) = cf_i64(CFDictionaryGetValue(w, kCGWindowOwnerPID)) { if pid != me { owners.push(pid); } }
+        }
+        CFRelease(list);
+        if owners.is_empty() { return false; }
+
+        let mut dict: *const c_void = std::ptr::null();
+        if IOPMCopyAssertionsByProcess(&mut dict) != 0 || dict.is_null() { return false; }
+        let n = CFDictionaryGetCount(dict) as usize;
+        let (mut keys, mut vals) = (vec![std::ptr::null(); n], vec![std::ptr::null(); n]);
+        CFDictionaryGetKeysAndValues(dict, keys.as_mut_ptr(), vals.as_mut_ptr());
+        let (ty_key, name_key) = (cfstr("AssertType"), cfstr("AssertName"));
+        let mut hit = false;
+        'outer: for (k, v) in keys.iter().zip(&vals) {
+            let Some(pid) = cf_i64(*k) else { continue };
+            if pid == me { continue; }
+            for j in 0..CFArrayGetCount(*v) {
+                let a = CFArrayGetValueAtIndex(*v, j);
+                let ty = cf_string(CFDictionaryGetValue(a, ty_key));
+                if ty != "PreventUserIdleDisplaySleep" && ty != "NoDisplaySleepAssertion" { continue; }
+                let name = cf_string(CFDictionaryGetValue(a, name_key)).to_ascii_lowercase();
+                if owners.contains(&pid) || ["video", "media", "playback"].iter().any(|w| name.contains(w)) { hit = true; break 'outer; }
+            }
+        }
+        CFRelease(ty_key); CFRelease(name_key); CFRelease(dict);
+        hit
+    }
+}
+
+// ---------- 「立即息屏」全局快捷键：Carbon RegisterEventHotKey（不需要任何权限） ----------
+static HK_REF: AtomicUsize = AtomicUsize::new(0);
+static HK_HANDLER: AtomicBool = AtomicBool::new(false);
+
+extern "C" fn hk_handler(_next: *mut c_void, _ev: *mut c_void, _user: *mut c_void) -> i32 { super::emit_hotkey(); 0 }
+
+/// 必须在主线程调用
+pub fn set_blank_hotkey(h: Option<&hotkey::Hotkey>) -> Result {
+    unsafe {
+        let old = HK_REF.swap(0, Relaxed);
+        if old != 0 { UnregisterEventHotKey(old as *mut c_void); }
+        let Some(h) = h else { return Ok(()) };
+        let code = (0..128).find(|c| keycode_name(*c) == h.key).ok_or_else(|| format!("unsupported key {}", h.key))? as u32;
+        if !HK_HANDLER.swap(true, Relaxed) {
+            let spec = EventTypeSpec { class: u32::from_be_bytes(*b"keyb"), kind: 5 /* kEventHotKeyPressed */ };
+            InstallEventHandler(GetApplicationEventTarget(), hk_handler, 1, &spec, std::ptr::null_mut(), std::ptr::null_mut());
+        }
+        let mut mods = 0u32;
+        if h.mods & hotkey::META != 0 { mods |= 0x100; }
+        if h.mods & hotkey::SHIFT != 0 { mods |= 0x200; }
+        if h.mods & hotkey::ALT != 0 { mods |= 0x800; }
+        if h.mods & hotkey::CTRL != 0 { mods |= 0x1000; }
+        let mut r: *mut c_void = std::ptr::null_mut();
+        let st = RegisterEventHotKey(code, mods, EventHotKeyId { sig: u32::from_be_bytes(*b"BlRn"), id: 1 }, GetApplicationEventTarget(), 0, &mut r);
+        match st {
+            0 => { HK_REF.store(r as usize, Relaxed); Ok(()) }
+            -9878 => Err("already used by another app".into()),
+            e => Err(format!("RegisterEventHotKey = {e}")),
+        }
     }
 }

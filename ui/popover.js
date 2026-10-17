@@ -37,7 +37,8 @@ function renderStatus() {
   $("#planDot").classList.toggle("standby", sc.enabled && !sc.skipped);
   document.body.classList.toggle("plan-off", !sc.enabled);
   const pt = $("#planTime"); pt.replaceChildren(sc.start, h("span", "arrow", "→"), sc.end);
-  $("#planWhen").textContent = !sc.enabled ? t("p.when_off") : sc.skipped ? t("p.when_skipped") : sc.in_window ? t("p.when_in") : sc.until_min != null ? t("p.when_until", { d: fmtDur(sc.until_min) }) : "";
+  $("#planWhen").textContent = !sc.enabled ? t("p.when_off") : sc.skipped ? t("p.when_skipped") :
+    sc.waiting === "postponed" ? t("p.when_postponed", { d: fmtDur(sc.postponed_min || 0) }) : sc.waiting === "fullscreen" ? t("p.when_fullscreen") : sc.in_window ? t("p.when_in") : sc.until_min != null ? t("p.when_until", { d: fmtDur(sc.until_min) }) : "";
   drawTrack($("#track"), sc.start, sc.end, s.now_min);
 }
 

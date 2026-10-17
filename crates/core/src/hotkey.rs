@@ -38,6 +38,8 @@ impl Hotkey {
         }
         Some(Self { mods, key: key? })
     }
+    /// 能不能当全局快捷键：至少要有 Ctrl / Alt / ⌘(Win) 之一，否则会吞掉正常打字
+    pub fn usable_global(&self) -> bool { self.mods & (CTRL | ALT | META) != 0 }
     /// 修饰键必须完全一致（多按一个 Shift 也不算），主键名一致
     pub fn matches(&self, key: &str, mods: u8) -> bool { self.mods == mods && self.key == key }
 }
@@ -55,5 +57,8 @@ mod tests {
         assert_eq!(Hotkey::parse("Cmd+f5").unwrap(), Hotkey { mods: META, key: "F5".into() });
         assert!(Hotkey::parse("Ctrl+Alt").is_none());
         assert!(Hotkey::parse("A+B").is_none());
+        assert!(Hotkey::parse("Ctrl+Alt+B").unwrap().usable_global());
+        assert!(!Hotkey::parse("Shift+B").unwrap().usable_global());
+        assert!(!Hotkey::parse("B").unwrap().usable_global());
     }
 }
