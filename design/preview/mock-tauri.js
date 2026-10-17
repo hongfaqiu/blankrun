@@ -13,7 +13,7 @@
   const status = {
     state, countdown_left: 272, countdown_total: 300, now_min: 20 * 60 + 43,
     schedule: { enabled: true, start: "23:30", end: "07:30", in_window: false, until_min: 167, duration_min: 480, skipped: false, waiting: null, postponed_min: null },
-    hotkey_error: q.get("hkerr") || null, login: false,
+    hotkey_error: q.get("hkerr") || null, login: false, input_guard: q.get("guard") || "ok",
     displays: 2, keyboard: os === "mac", power_off: true,
   };
   const caps = os === "mac" ? [

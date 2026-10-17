@@ -37,3 +37,6 @@ pub fn system_locale() -> String {
 pub fn instance_lock(_path: &std::path::Path) -> bool { true }
 
 pub fn set_blank_hotkey(_h: Option<&blankrun_core::hotkey::Hotkey>) -> super::Result { Ok(()) }
+
+/// Windows 的低级键鼠钩子不需要权限，用不到这个兜底
+pub fn set_wake_hotkeys(_hs: &[blankrun_core::hotkey::Hotkey]) -> std::result::Result<usize, String> { Err("unsupported".into()) }

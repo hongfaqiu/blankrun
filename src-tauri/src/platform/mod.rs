@@ -80,6 +80,31 @@ pub fn apply_blank_hotkey(spec: &str) {
     if let Ok(mut g) = HK_ERR.lock() { *g = r.err(); }
 }
 
+// ---------- 没有输入钩子时的唤醒兜底（Mac 未授权辅助功能） ----------
+static WAKE_KEYS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// 唤醒快捷键已通过系统热键注册：屏幕被误触点亮时可以放心重新息屏
+pub fn wake_keys_ok() -> bool { WAKE_KEYS.load(std::sync::atomic::Ordering::Relaxed) }
+/// 注册（wake=Some）或注销唤醒键 + 紧急键。Mac 上必须在主线程调用。
+pub fn apply_wake_keys(keys: Option<(String, String)>) {
+    use blankrun_core::hotkey::Hotkey;
+    let ok = match &keys {
+        None => { let _ = set_wake_hotkeys(&[]); false }
+        Some((wake, em)) => match Hotkey::parse(wake) {
+            Some(w) => {
+                let list: Vec<Hotkey> = std::iter::once(w).chain(Hotkey::parse(em)).collect();
+                match set_wake_hotkeys(&list) {
+                    // 第 1 个是唤醒键，必须成功
+                    Ok(n) if n >= 1 => { crate::nblog!("no input hook: wake keys registered as system hot keys ({n}); accidental touches will re-blank"); true }
+                    Ok(_) => { crate::nblog!("no input hook: could not register wake key {wake:?}"); false }
+                    Err(e) => { crate::nblog!("no input hook: wake keys unavailable: {e}"); false }
+                }
+            }
+            None => false,
+        },
+    };
+    if ok { WAKE_KEYS.store(true, std::sync::atomic::Ordering::Relaxed); } else { WAKE_KEYS.store(false, std::sync::atomic::Ordering::Relaxed); if keys.is_some() { let _ = set_wake_hotkeys(&[]); } }
+}
+
 type Sink = Box<dyn Fn(Input) + Send + Sync>;
 static SINK: OnceLock<Sink> = OnceLock::new();
 static T0: OnceLock<Instant> = OnceLock::new();
@@ -93,16 +118,16 @@ pub fn now_ms() -> u64 { T0.get_or_init(Instant::now).elapsed().as_millis() as u
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(target_os = "macos")]
-pub use macos::{set_blank_hotkey, emergency_restore, instance_lock, local_time, notch_span, prefer_tray_position, raise_overlay, reveal, system_locale, Native};
+pub use macos::{set_blank_hotkey, set_wake_hotkeys, emergency_restore, instance_lock, local_time, notch_span, prefer_tray_position, raise_overlay, reveal, system_locale, Native};
 
 #[cfg(windows)]
 mod windows;
 #[cfg(windows)]
-pub use self::windows::{set_blank_hotkey, emergency_restore, instance_lock, local_time, reveal, system_locale, taskbar_light, Native};
+pub use self::windows::{set_blank_hotkey, set_wake_hotkeys, emergency_restore, instance_lock, local_time, reveal, system_locale, taskbar_light, Native};
 
 #[cfg(not(any(target_os = "macos", windows)))]
 mod stub;
 #[cfg(not(any(target_os = "macos", windows)))]
-pub use stub::{set_blank_hotkey, emergency_restore, instance_lock, local_time, reveal, system_locale, Native};
+pub use stub::{set_blank_hotkey, set_wake_hotkeys, emergency_restore, instance_lock, local_time, reveal, system_locale, Native};
 
 pub const OS: &str = if cfg!(target_os = "macos") { "mac" } else if cfg!(windows) { "win" } else { "linux" };

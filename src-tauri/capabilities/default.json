@@ -1,5 +1,14 @@
 {
   "identifier": "default",
-  "windows": ["popover", "settings", "onboarding", "overlay-*", "remind"],
-  "permissions": ["core:default"]
+  "windows": [
+    "popover",
+    "settings",
+    "onboarding",
+    "overlay-*",
+    "remind"
+  ],
+  "permissions": [
+    "core:default",
+    "core:window:allow-set-size"
+  ]
 }

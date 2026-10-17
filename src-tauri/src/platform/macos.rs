@@ -48,6 +48,8 @@ extern "C" {
     fn InstallEventHandler(target: *mut c_void, h: HkHandler, n: u32, list: *const EventTypeSpec, user: *mut c_void, out: *mut *mut c_void) -> i32;
     fn RegisterEventHotKey(code: u32, mods: u32, id: EventHotKeyId, target: *mut c_void, opts: u32, out: *mut *mut c_void) -> i32;
     fn UnregisterEventHotKey(r: *mut c_void) -> i32;
+    fn GetEventKind(ev: *mut c_void) -> u32;
+    fn GetEventParameter(ev: *mut c_void, name: u32, ty: u32, out_ty: *mut u32, size: usize, out_size: *mut usize, data: *mut c_void) -> i32;
 }
 type HkHandler = extern "C" fn(next: *mut c_void, ev: *mut c_void, user: *mut c_void) -> i32;
 #[repr(C)]
@@ -574,7 +576,62 @@ pub fn fullscreen_video() -> bool {
 static HK_REF: AtomicUsize = AtomicUsize::new(0);
 static HK_HANDLER: AtomicBool = AtomicBool::new(false);
 
-extern "C" fn hk_handler(_next: *mut c_void, _ev: *mut c_void, _user: *mut c_void) -> i32 { super::emit_hotkey(); 0 }
+/// 唤醒 / 紧急快捷键（没有辅助功能权限、装不上 CGEventTap 时的兜底），id 2.. ：(注册句柄, 键码, 修饰键位)
+static WK: std::sync::Mutex<Vec<(usize, i64, u8)>> = std::sync::Mutex::new(Vec::new());
+
+extern "C" fn hk_handler(_next: *mut c_void, ev: *mut c_void, _user: *mut c_void) -> i32 {
+    unsafe {
+        let mut id = EventHotKeyId { sig: 0, id: 0 };
+        let st = GetEventParameter(ev, u32::from_be_bytes(*b"----"), u32::from_be_bytes(*b"hkid"), std::ptr::null_mut(),
+            std::mem::size_of::<EventHotKeyId>(), std::ptr::null_mut(), &mut id as *mut _ as *mut c_void);
+        let down = GetEventKind(ev) == 5;
+        if st != 0 || id.id <= 1 { if down { super::emit_hotkey(); } return 0; }
+        let k = WK.lock().ok().and_then(|g| g.get(id.id as usize - 2).copied());
+        if let Some((_, code, mods)) = k {
+            super::emit_input(Input::Key { key: keycode_name(code), mods, down, t_ms: super::now_ms() });
+        }
+    }
+    0
+}
+
+fn carbon_mods(m: u8) -> u32 {
+    let mut r = 0u32;
+    if m & hotkey::META != 0 { r |= 0x100; }
+    if m & hotkey::SHIFT != 0 { r |= 0x200; }
+    if m & hotkey::ALT != 0 { r |= 0x800; }
+    if m & hotkey::CTRL != 0 { r |= 0x1000; }
+    r
+}
+
+unsafe fn install_hk_handler() {
+    if !HK_HANDLER.swap(true, Relaxed) {
+        let k = u32::from_be_bytes(*b"keyb");
+        let specs = [EventTypeSpec { class: k, kind: 5 /* pressed */ }, EventTypeSpec { class: k, kind: 6 /* released */ }];
+        InstallEventHandler(GetApplicationEventTarget(), hk_handler, 2, specs.as_ptr(), std::ptr::null_mut(), std::ptr::null_mut());
+    }
+}
+
+/// 息屏期间临时注册唤醒键和紧急键（不需要任何权限），按下 / 松开会作为 Input::Key 送进唤醒策略。
+/// 空列表 = 全部注销。返回成功注册的个数。必须在主线程调用。
+pub fn set_wake_hotkeys(hs: &[hotkey::Hotkey]) -> std::result::Result<usize, String> {
+    unsafe {
+        let mut g = WK.lock().map_err(|e| e.to_string())?;
+        for (r, ..) in g.drain(..) { if r != 0 { UnregisterEventHotKey(r as *mut c_void); } }
+        if hs.is_empty() { return Ok(0); }
+        install_hk_handler();
+        let mut n = 0;
+        for (i, h) in hs.iter().enumerate() {
+            let code = (0..128).find(|c| keycode_name(*c) == h.key);
+            let mut r: *mut c_void = std::ptr::null_mut();
+            if let Some(code) = code {
+                let st = RegisterEventHotKey(code as u32, carbon_mods(h.mods), EventHotKeyId { sig: u32::from_be_bytes(*b"BlRn"), id: 2 + i as u32 }, GetApplicationEventTarget(), 0, &mut r);
+                if st == 0 { n += 1; } else { r = std::ptr::null_mut(); crate::nblog!("wake key {}: RegisterEventHotKey = {st}", h.key); }
+            }
+            g.push((r as usize, code.unwrap_or(-1), h.mods));
+        }
+        Ok(n)
+    }
+}
 
 /// 必须在主线程调用
 pub fn set_blank_hotkey(h: Option<&hotkey::Hotkey>) -> Result {
@@ -583,15 +640,8 @@ pub fn set_blank_hotkey(h: Option<&hotkey::Hotkey>) -> Result {
         if old != 0 { UnregisterEventHotKey(old as *mut c_void); }
         let Some(h) = h else { return Ok(()) };
         let code = (0..128).find(|c| keycode_name(*c) == h.key).ok_or_else(|| format!("unsupported key {}", h.key))? as u32;
-        if !HK_HANDLER.swap(true, Relaxed) {
-            let spec = EventTypeSpec { class: u32::from_be_bytes(*b"keyb"), kind: 5 /* kEventHotKeyPressed */ };
-            InstallEventHandler(GetApplicationEventTarget(), hk_handler, 1, &spec, std::ptr::null_mut(), std::ptr::null_mut());
-        }
-        let mut mods = 0u32;
-        if h.mods & hotkey::META != 0 { mods |= 0x100; }
-        if h.mods & hotkey::SHIFT != 0 { mods |= 0x200; }
-        if h.mods & hotkey::ALT != 0 { mods |= 0x800; }
-        if h.mods & hotkey::CTRL != 0 { mods |= 0x1000; }
+        install_hk_handler();
+        let mods = carbon_mods(h.mods);
         let mut r: *mut c_void = std::ptr::null_mut();
         let st = RegisterEventHotKey(code, mods, EventHotKeyId { sig: u32::from_be_bytes(*b"BlRn"), id: 1 }, GetApplicationEventTarget(), 0, &mut r);
         match st {

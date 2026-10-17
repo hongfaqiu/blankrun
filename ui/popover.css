@@ -31,3 +31,6 @@ body{background:var(--paper)}
 .head .close:hover{background:var(--hover);color:var(--ink)}
 button.plan-time{padding:0;border-radius:4px;text-align:left;cursor:pointer}
 button.plan-time:hover{background:var(--hover)}
+.guard{margin-top:12px;padding:8px 10px;border-left:2px solid var(--standby);background:var(--card);font-size:12px;line-height:1.55;color:var(--ink2)}
+.win .guard{background:var(--paper)}
+.guard .link{display:block;margin-top:4px;padding:0;color:var(--ink);text-decoration:underline;text-underline-offset:2px}

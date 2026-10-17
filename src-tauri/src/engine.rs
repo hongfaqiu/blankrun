@@ -60,6 +60,8 @@ pub struct Status {
     pub hotkey_error: Option<String>,
     /// 是否已设为开机启动（None = 不支持）
     pub login: Option<bool>,
+    /// 误触防护："ok" 有输入钩子；"keys" 没权限，但唤醒键走系统热键、误触后会重新息屏；"none" 没权限且碰一下就会唤醒
+    pub input_guard: &'static str,
 }
 
 pub struct Engine {
@@ -85,6 +87,8 @@ pub struct Engine {
     power_off_at: Option<Instant>,
     reblank_at: Option<Instant>,
     hook_ok: bool,
+    /// 本次息屏注册了兜底唤醒键（要在结束时注销）
+    wake_keys: bool,
     session: Option<Session>,
     last_hint: Option<Instant>,
     last_sched_check: Option<Instant>,
@@ -110,7 +114,7 @@ impl Engine {
             sm: StateMachine::new(cfg.wake.lock_on_wake), policy: WakePolicy::new(&cfg), plat, cfg, cfg_path,
             cfg_mtime: mtime, last_session: None, tracker: Tracker::default(), reminder: Reminder::default(), remind_open: false, gate: Gate::default(), fullscreen: (None, false),
             hotkey_dirty: true, fullscreen_logged: false, login: None, countdown: None, power_off: false,
-            overlay_on: false, power_off_at: None, reblank_at: None, hook_ok: true, session: None, last_hint: None,
+            overlay_on: false, power_off_at: None, reblank_at: None, hook_ok: true, wake_keys: false, session: None, last_hint: None,
             last_sched_check: None, last_cfg_check: None, last_status: None, kbd_available,
             displays: 1, last_mon_check: None, keep_display: false, last_asleep: None, settle_until: None,
         };
@@ -204,9 +208,18 @@ impl Engine {
                 Action::InputHookOn => {
                     let r = self.plat.input_hook(true);
                     self.hook_ok = r.is_ok();
+                    // 钩子装不上（Mac 没给辅助功能权限）：唤醒键改用系统热键注册，误触点亮后仍能重新息屏
+                    if r.is_err() && self.cfg.wake.method == WakeMethod::Hotkey {
+                        let keys = (self.cfg.wake.hotkey.clone(), self.cfg.safety.emergency_hotkey.clone());
+                        let _ = app.run_on_main_thread(move || platform::apply_wake_keys(Some(keys)));
+                        self.wake_keys = true;
+                    }
                     r
                 }
-                Action::InputHookOff => self.plat.input_hook(false),
+                Action::InputHookOff => {
+                    if std::mem::take(&mut self.wake_keys) { let _ = app.run_on_main_thread(|| platform::apply_wake_keys(None)); }
+                    self.plat.input_hook(false)
+                }
                 Action::LockScreen => self.plat.lock_screen(),
             };
             match r { Ok(()) => nblog!("{a:?} ok"), Err(e) => nblog!("{a:?} failed: {e}") }
@@ -290,7 +303,7 @@ impl Engine {
                 }
             },
             Msg::Input(_) => {}
-            Msg::OverlayInput if !self.hook_ok => self.wake(app, "overlay input (no hook)"),
+            Msg::OverlayInput if !self.hook_ok && !platform::wake_keys_ok() => self.wake(app, "overlay input (no hook)"),
             Msg::OverlayInput => {}
             Msg::Blank { delay_s } => self.arm(app, delay_s, false),
             Msg::Cancel => self.cancel(app),
@@ -347,10 +360,11 @@ impl Engine {
         let settling = self.settle_until.is_some_and(|t| now < t);
         if self.sm.state == State::ScreenOff && self.power_off && self.power_off_at.is_none() && !settling {
             let lit = asleep == Some(false);
-            if lit && !self.hook_ok {
-                // 没有输入钩子（例如 Mac 没给辅助功能权限）：无法分辨误触，屏幕亮了就算唤醒
+            if lit && !self.hook_ok && !platform::wake_keys_ok() {
+                // 没有输入钩子、唤醒键也没注册上：无法分辨误触，屏幕亮了就算唤醒（免得把人锁在外面）
                 self.wake(app, "screen lit and no input hook");
             } else if lit && self.reblank_at.is_none() && !self.policy.is_holding() {
+                if !self.hook_ok { nblog!("screen lit without the wake key (no input hook): re-blank in {}s", self.cfg.wake.reblank_after_s.max(1)); }
                 self.reblank_at = Some(now + Duration::from_secs(self.cfg.wake.reblank_after_s.max(1) as u64));
             }
             if let Some(at) = self.reblank_at {
@@ -478,6 +492,11 @@ impl Engine {
             power_off: self.power_off,
             hotkey_error: platform::hotkey_error(),
             login: self.login,
+            input_guard: match self.plat.permissions() {
+                Some((false, _)) if self.cfg.wake.method == WakeMethod::Hotkey => "keys",
+                Some((false, _)) => "none",
+                _ => "ok",
+            },
         }
     }
 }

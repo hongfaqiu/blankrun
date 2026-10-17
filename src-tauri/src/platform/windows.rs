@@ -375,3 +375,6 @@ pub fn instance_lock(_path: &std::path::Path) -> bool {
     let h = unsafe { CreateMutexW(std::ptr::null(), 0, name.as_ptr()) };
     !h.is_null() && unsafe { GetLastError() } != ERROR_ALREADY_EXISTS // 句柄故意不关
 }
+
+/// Windows 的低级键鼠钩子不需要权限，用不到这个兜底
+pub fn set_wake_hotkeys(_hs: &[blankrun_core::hotkey::Hotkey]) -> std::result::Result<usize, String> { Err("unsupported".into()) }

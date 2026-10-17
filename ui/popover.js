@@ -40,7 +40,23 @@ function renderStatus() {
   $("#planWhen").textContent = !sc.enabled ? t("p.when_off") : sc.skipped ? t("p.when_skipped") :
     sc.waiting === "postponed" ? t("p.when_postponed", { d: fmtDur(sc.postponed_min || 0) }) : sc.waiting === "fullscreen" ? t("p.when_fullscreen") : sc.in_window ? t("p.when_in") : sc.until_min != null ? t("p.when_until", { d: fmtDur(sc.until_min) }) : "";
   drawTrack($("#track"), sc.start, sc.end, s.now_min);
+  renderGuard(s);
 }
+
+// Mac 没给辅助功能权限：防误触只剩「误触后重新息屏」，要明说
+let popH = 0;
+function renderGuard(s) {
+  const g = $("#guard"), on = s.input_guard === "keys" || s.input_guard === "none";
+  g.hidden = !on;
+  if (on) $("#guardText").textContent = t(s.input_guard === "keys" ? "p.guard_keys" : "p.guard_none", { s: cfg ? cfg.wake.reblank_after_s : 3 });
+  const want = 452 + (on ? Math.ceil(g.getBoundingClientRect().height) + 12 : 0);
+  if (want !== popH && window.__TAURI__ && window.__TAURI__.window) {
+    popH = want;
+    const w = window.__TAURI__.window;
+    w.getCurrentWindow().setSize(new w.LogicalSize(320, want)).catch(() => {});
+  }
+}
+$("#guardFix").addEventListener("click", () => invoke("request_permission", { which: "accessibility" }));
 
 $("#delay").addEventListener("click", (e) => {
   const b = e.target.closest("button"); if (!b) return;
