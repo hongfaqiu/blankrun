@@ -29,6 +29,8 @@ use super::{emit_input, now_ms, Cap, Platform, Result};
 /// 255 = 未知，0 = 关，1 = 开，2 = 变暗
 static DISPLAY_STATE: AtomicU8 = AtomicU8::new(255);
 static MODS: AtomicU8 = AtomicU8::new(0);
+/// 「放行远程控制」：注入的键鼠事件不拦、不上报
+static ALLOW_INJECTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 #[derive(Default)]
 pub struct Native {
@@ -37,6 +39,8 @@ pub struct Native {
     power_notify: HPOWERNOTIFY,
     modern_standby: Option<bool>,
     awake_ok: Option<bool>,
+    /// DDC 探测结果缓存（每块屏几十到几百毫秒，探一次就记住；显示器拔插后 engine 会清掉）
+    mon_cache: std::collections::HashMap<String, super::MonHw>,
 }
 
 impl Native {
@@ -211,7 +215,7 @@ impl Platform for Native {
     }
 
     fn restore_on_startup(&mut self, saved: Option<&str>) -> Result {
-        if saved.is_some() { display_on_now(); }
+        if saved.is_some() { super::win_monitors::wake_all(); display_on_now(); }
         Ok(())
     }
 
@@ -241,6 +245,33 @@ impl Platform for Native {
         let mut st = 0;
         // BUSY = 有程序全屏（视频、浏览器全屏播放）；D3D 全屏 = 游戏 / 播放器独占全屏；演示模式
         unsafe { SHQueryUserNotificationState(&mut st) == 0 && matches!(st, QUNS_BUSY | QUNS_RUNNING_D3D_FULL_SCREEN | QUNS_PRESENTATION_MODE) }
+    }
+
+    fn configure(&mut self, cfg: &blankrun_core::Config) {
+        ALLOW_INJECTED.store(cfg.wake.allow_remote, Relaxed);
+        // 显示器可能换过（设置页会重新探测）
+        self.mon_cache.clear();
+    }
+
+    fn probe_monitor(&mut self, id: &str, _x: f64, _y: f64) -> super::MonHw {
+        if let Some(h) = self.mon_cache.get(id) { return h.clone(); }
+        let names = super::win_monitors::friendly_names();
+        let h = super::win_monitors::probe(id, &names);
+        crate::nblog!("monitor {id}: label={:?} adapter={:?} virtual={} power={:?}", h.label, h.detail, h.virtual_, h.power);
+        self.mon_cache.insert(id.to_string(), h.clone());
+        h
+    }
+
+    fn monitor_power(&mut self, id: &str, _x: f64, _y: f64, off: bool) -> Result {
+        super::win_monitors::set_ddc_power(id, if off { 4 } else { 1 })
+    }
+
+    fn monitor_lit(&mut self, id: &str, _x: f64, _y: f64) -> Option<bool> {
+        super::win_monitors::ddc_power(id).map(|v| v == 1)
+    }
+
+    fn remote_desktop(&self) -> bool {
+        unsafe { GetSystemMetrics(SM_REMOTESESSION) != 0 }
     }
 }
 
@@ -288,7 +319,7 @@ pub fn set_blank_hotkey(h: Option<&hotkey::Hotkey>) -> Result {
 }
 
 /// panic 钩子里调用：不加锁，只做无状态的恢复
-pub fn emergency_restore() { monitor_power(-1); }
+pub fn emergency_restore() { monitor_power(-1); super::win_monitors::wake_all(); }
 
 fn hook_thread(ready: std::sync::mpsc::Sender<std::result::Result<u32, String>>) {
     unsafe {
@@ -342,6 +373,10 @@ pub(crate) fn hook_reset() { for w in &SEEN_DOWN { w.store(0, Relaxed); } MODS.s
 unsafe extern "system" fn kb_proc(code: i32, wp: WPARAM, lp: LPARAM) -> LRESULT {
     if code < 0 { return CallNextHookEx(std::ptr::null_mut(), code, wp, lp); }
     let k = &*(lp as *const KBDLLHOOKSTRUCT);
+    // 远程控制软件、屏幕键盘发来的是「注入」事件：开了「放行远程控制」就原样放过去，不算误触
+    if blankrun_core::wake::route(k.flags & LLKHF_INJECTED != 0, ALLOW_INJECTED.load(Relaxed)) == blankrun_core::wake::Route::PassThrough {
+        return CallNextHookEx(std::ptr::null_mut(), code, wp, lp);
+    }
     let down = wp == WM_KEYDOWN as WPARAM || wp == WM_SYSKEYDOWN as WPARAM;
     let (w, bit) = (&SEEN_DOWN[(k.vkCode as usize >> 6) & 3], 1u64 << (k.vkCode & 63));
     if down { w.fetch_or(bit, Relaxed); }
@@ -359,6 +394,9 @@ unsafe extern "system" fn kb_proc(code: i32, wp: WPARAM, lp: LPARAM) -> LRESULT 
 unsafe extern "system" fn ms_proc(code: i32, wp: WPARAM, lp: LPARAM) -> LRESULT {
     if code < 0 { return CallNextHookEx(std::ptr::null_mut(), code, wp, lp); }
     let m = &*(lp as *const MSLLHOOKSTRUCT);
+    if blankrun_core::wake::route(m.flags & LLMHF_INJECTED != 0, ALLOW_INJECTED.load(Relaxed)) == blankrun_core::wake::Route::PassThrough {
+        return CallNextHookEx(std::ptr::null_mut(), code, wp, lp);
+    }
     // 注入的（远程控制等）也拦下；只有装钩子之前按下的鼠标键，抬起时放行
     if matches!(wp as u32, WM_LBUTTONUP | WM_RBUTTONUP | WM_MBUTTONUP | WM_XBUTTONUP) && !BTN_SEEN.swap(false, Relaxed) {
         return CallNextHookEx(std::ptr::null_mut(), code, wp, lp);

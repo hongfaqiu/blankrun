@@ -71,3 +71,8 @@ section{display:none} section.on{display:block}
 .hist .r{min-height:44px}
 .hist .c .warn{color:var(--warn,#b26a00)}
 .r .c{gap:8px}
+.r.mon .tag{font-style:normal;font-size:11px;color:var(--ink3);border:1px solid var(--line);border-radius:4px;padding:0 5px;margin-left:6px;vertical-align:1px}
+.r.mon .check.off{opacity:.35}
+.r.note{padding-top:8px;padding-bottom:10px}
+.r.note small{color:var(--ink3);font-size:12px;line-height:1.5}
+.r.note{min-height:0}

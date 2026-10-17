@@ -60,11 +60,13 @@ pub struct WakeConfig {
     pub reblank_after_s: u32,
     /// 唤醒快捷键要按住多久才算（毫秒），短按不唤醒
     pub hold_ms: u32,
+    /// 放行远程控制：息屏时远程软件、屏幕键盘发来的「注入」输入照常送达，不算误触也不唤醒；物理屏保持关闭
+    pub allow_remote: bool,
 }
 impl Default for WakeConfig {
     fn default() -> Self {
         Self { method: WakeMethod::Hotkey, hotkey: "Ctrl+Alt+W".into(), mouse_threshold_px: 150,
-               mouse_window_ms: 800, lock_on_wake: false, reblank_after_s: 3, hold_ms: 1000 }
+               mouse_window_ms: 800, lock_on_wake: false, reblank_after_s: 3, hold_ms: 1000, allow_remote: false }
     }
 }
 
@@ -169,6 +171,8 @@ mod tests {
         assert_eq!(c.general.language, "auto");
         assert_eq!(c.general.blank_now_hotkey, "Ctrl+Alt+B");
         assert!(c.general.check_updates);
+        // 旧配置没有 allow_remote：默认不放行
+        assert!(!Config::from_toml("[wake]\nmethod = \"hotkey\"\n").unwrap().wake.allow_remote);
         // 0.1.0 的配置没有 keep_awake：迁移成开
         assert!(Config::from_toml("[power]\nac_only = true\n").unwrap().power.keep_awake);
         assert!(!Config::from_toml("[power]\nkeep_awake = false\n").unwrap().power.keep_awake);

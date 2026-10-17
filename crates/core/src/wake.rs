@@ -20,6 +20,14 @@ pub enum Verdict {
     Ignored,
 }
 
+/// 息屏时一条输入怎么处理：远程软件 / 屏幕键盘「注入」的输入，在「放行远程控制」开着时直接放行，
+/// 既不吞掉，也不算误触、不参与唤醒判断。物理输入一律交给 WakePolicy。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Route { PassThrough, Policy }
+pub fn route(injected: bool, allow_remote: bool) -> Route {
+    if injected && allow_remote { Route::PassThrough } else { Route::Policy }
+}
+
 #[derive(Debug, Default)]
 pub struct WakePolicy {
     acc_px: f64,
@@ -153,5 +161,12 @@ mod tests {
         assert_eq!(WakePolicy::new(&cfg(WakeMethod::AnyKey)).feed(key("Q", 0, true, 0)), Verdict::Wake);
         assert_eq!(WakePolicy::new(&cfg(WakeMethod::Click)).feed(Input::Click), Verdict::Wake);
         assert_eq!(WakePolicy::new(&cfg(WakeMethod::Click)).feed(key("Q", 0, true, 0)), Verdict::Ignored);
+    }
+    #[test]
+    fn injected_routing() {
+        assert_eq!(route(true, true), Route::PassThrough);
+        assert_eq!(route(true, false), Route::Policy);
+        assert_eq!(route(false, true), Route::Policy);
+        assert_eq!(route(false, false), Route::Policy);
     }
 }

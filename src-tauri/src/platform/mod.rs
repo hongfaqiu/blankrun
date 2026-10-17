@@ -20,6 +20,18 @@ impl Cap {
     }
 }
 
+/// 平台探测到的一块显示器的硬件信息（engine 再配上尺寸/主屏，交给 core::monitors::plan）
+#[derive(Debug, Clone, Default)]
+pub struct MonHw {
+    pub label: Option<String>,
+    pub virtual_: bool,
+    /// "ddc" | "backlight" | None
+    pub power: Option<&'static str>,
+    /// 诊断用：显卡/驱动描述
+    #[allow(dead_code)]
+    pub detail: String,
+}
+
 pub trait Platform {
     /// 配置变化时调用（例如 Mac 的 ac_only）
     fn configure(&mut self, _cfg: &Config) {}
@@ -54,6 +66,14 @@ pub trait Platform {
     fn launch_at_login(&self) -> Option<bool> { None }
     /// 前台有程序在全屏播放视频（或演示、全屏游戏）
     fn fullscreen_video(&self) -> bool { false }
+    /// 探测一块显示器。id = tauri Monitor::name()；(x, y) = 它左上角的逻辑坐标（Mac 按坐标找 CGDisplay）
+    fn probe_monitor(&mut self, _id: &str, _x: f64, _y: f64) -> MonHw { MonHw::default() }
+    /// 单独关/开一块显示器（DDC/CI 或内建屏背光）
+    fn monitor_power(&mut self, _id: &str, _x: f64, _y: f64, _off: bool) -> Result { Err("unsupported".into()) }
+    /// 单独关掉的屏是不是又亮了（DDC 读 D6）；None = 不知道
+    fn monitor_lit(&mut self, _id: &str, _x: f64, _y: f64) -> Option<bool> { None }
+    /// 当前是远程桌面（RDP）会话：不去动显示器和输入
+    fn remote_desktop(&self) -> bool { false }
 }
 
 // ---------- 「立即息屏」全局快捷键 ----------
@@ -122,6 +142,8 @@ pub use macos::{set_blank_hotkey, set_wake_hotkeys, emergency_restore, instance_
 
 #[cfg(windows)]
 mod windows;
+#[cfg(windows)]
+mod win_monitors;
 #[cfg(windows)]
 pub use self::windows::{set_blank_hotkey, set_wake_hotkeys, emergency_restore, instance_lock, local_time, reveal, system_locale, taskbar_light, Native};
 

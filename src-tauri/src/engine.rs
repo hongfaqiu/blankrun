@@ -6,8 +6,9 @@ use std::sync::{mpsc::{Receiver, RecvTimeoutError}, Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use blankrun_core::history::History;
+use blankrun_core::monitors::{self, Method};
 use blankrun_core::{
-    config::{DisplayMethod, WakeMethod},
+    config::WakeMethod,
     schedule::{self, Edge, Gate, Reminder, Tracker, Waiting},
     state::Action,
     wake::{Input, Verdict, WakePolicy},
@@ -112,6 +113,14 @@ pub struct Engine {
     trigger: &'static str,
     pub history: History,
     last_heartbeat: Option<Instant>,
+    /// 本次息屏要盖遮罩的屏（show_overlays 的编号）
+    overlay_idx: Vec<usize>,
+    /// 本次息屏要单独断电的屏 (id, x, y)
+    mon_off_plan: Vec<(String, f64, f64)>,
+    /// 已经单独断电的屏
+    mon_off: Vec<(String, f64, f64)>,
+    last_mon_reassert: Option<Instant>,
+    rdp_logged: bool,
 }
 
 fn unix_now() -> u64 { SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0) }
@@ -130,6 +139,7 @@ impl Engine {
             last_sched_check: None, last_cfg_check: None, last_status: None, kbd_available,
             displays: 1, last_mon_check: None, keep_display: false, last_asleep: None, settle_until: None,
             trigger: "manual", history: History::default(), last_heartbeat: None,
+            overlay_idx: vec![], mon_off_plan: vec![], mon_off: vec![], last_mon_reassert: None, rdp_logged: false,
         };
         // 息屏记录；上次息屏中途崩溃/强退的那一条记为 crash
         e.history = History::from_json(&std::fs::read_to_string(e.history_path()).unwrap_or_default());
@@ -214,20 +224,23 @@ impl Engine {
                 Action::DisplayOff => {
                     if !self.overlay_on {
                         self.overlay_on = true;
-                        show_overlays(app, &self.cfg);
+                        show_overlays(app, &self.overlay_idx);
                         // 等遮罩窗口出来再断电，免得新窗口把屏幕又点亮
-                        if self.power_off { self.power_off_at = Some(Instant::now() + Duration::from_millis(600)); }
+                        if self.power_off || !self.mon_off_plan.is_empty() { self.power_off_at = Some(Instant::now() + Duration::from_millis(600)); }
                         Ok(())
                     } else if self.power_off {
                         self.settle_until = Some(Instant::now() + Duration::from_secs(3));
                         self.plat.display_off(true)
-                    } else { Ok(()) }
+                    } else { self.monitors_off(); Ok(()) }
                 }
                 Action::DisplayRestore => {
                     self.overlay_on = false;
                     self.power_off_at = None;
                     self.reblank_at = None;
                     hide_overlays(app);
+                    for (id, x, y) in std::mem::take(&mut self.mon_off) {
+                        match self.plat.monitor_power(&id, x, y, false) { Ok(()) => nblog!("monitor {id}: power on ok"), Err(e) => nblog!("monitor {id}: power on failed: {e}") }
+                    }
                     self.plat.display_off(false)
                 }
                 Action::BacklightOff if self.cfg.lights.keyboard_backlight => self.plat.keyboard_backlight(true),
@@ -255,6 +268,11 @@ impl Engine {
     }
 
     fn arm(&mut self, app: &AppHandle, delay_s: u32, trigger: &'static str) {
+        // 远程桌面（RDP）会话里不息屏：遮罩和输入拦截会落到远程用户的画面上
+        if self.plat.remote_desktop() {
+            if !self.rdp_logged { self.rdp_logged = true; nblog!("remote desktop session: not blanking ({trigger})"); }
+            return;
+        }
         match self.sm.state {
             State::Idle => self.apply(app, Event::Arm),
             State::Armed => {}
@@ -268,16 +286,18 @@ impl Engine {
     fn do_blank(&mut self, app: &AppHandle) {
         let (trigger, by_schedule) = (self.trigger, self.trigger == "schedule");
         hide_reminder(app);
+        // 每块屏怎么关：系统级断电 / 单独断电（DDC/CI、内建屏背光）/ 遮罩 / 不管（虚拟屏、没选中的）
+        let mons = self.monitor_list(app);
+        let list: Vec<_> = mons.iter().map(|(m, _, _)| m.clone()).collect();
+        let plan = monitors::plan(&self.cfg.display, &list, !self.plat.power_off_unsafe(), self.cfg.wake.allow_remote);
+        self.power_off = plan.global_off;
+        self.overlay_idx = plan.per.iter().enumerate().filter(|(_, m)| **m != Method::Skip).map(|(i, _)| i).collect();
+        self.mon_off_plan = plan.per.iter().zip(&mons).filter(|(m, _)| **m == Method::Off).map(|(_, (m, x, y))| (m.id.clone(), *x, *y)).collect();
+        for ((m, _, _), how) in mons.iter().zip(&plan.per) { nblog!("plan: {} ({}) virtual={} power={:?} -> {how:?}", m.id, m.label, m.virtual_, m.power); }
         let c = &self.cfg;
-        // 「只关所选」时只能用遮罩（系统级关屏会把所有屏一起关掉）
-        self.power_off = c.display.mode != "selected" && match c.display.method {
-            DisplayMethod::PowerOff => true,
-            DisplayMethod::Overlay => false,
-            DisplayMethod::Auto => !self.plat.power_off_unsafe(),
-        };
         self.sm.lock_on_wake = c.wake.lock_on_wake || c.wake.method == WakeMethod::Password;
         self.policy.reset();
-        nblog!("blank: power_off={} method={:?} mode={} wake={:?} lock={}", self.power_off, c.display.method, c.display.mode, c.wake.method, self.sm.lock_on_wake);
+        nblog!("blank: power_off={} per_monitor_off={} method={:?} mode={} wake={:?} lock={} remote={}", self.power_off, self.mon_off_plan.len(), c.display.method, c.display.mode, c.wake.method, self.sm.lock_on_wake, c.wake.allow_remote);
         self.apply(app, Event::Blank);
         // Modern Standby 上只用遮罩时，屏幕要保持点亮（黑遮罩），否则系统空闲关屏后会进入 S0 低功耗待机
         self.keep_display = !self.power_off && self.plat.power_off_unsafe();
@@ -289,6 +309,44 @@ impl Engine {
         self.history.begin(now, trigger);
         self.last_heartbeat = Some(Instant::now());
         self.save_history();
+    }
+
+    /// 当前所有显示器 + 平台探测结果；(x, y) 是逻辑坐标
+    pub fn monitor_list(&mut self, app: &AppHandle) -> Vec<(monitors::Monitor, f64, f64)> {
+        let primary = app.primary_monitor().ok().flatten().map(|m| *m.position());
+        app.available_monitors().unwrap_or_default().iter().enumerate().map(|(i, m)| {
+            let id = monitor_name(i, m);
+            let sc = m.scale_factor().max(0.1);
+            let (x, y) = (m.position().x as f64 / sc, m.position().y as f64 / sc);
+            let hw = self.plat.probe_monitor(&id, x, y);
+            (monitors::Monitor {
+                label: hw.label.clone().unwrap_or_else(|| id.clone()), id, width: m.size().width, height: m.size().height,
+                primary: primary == Some(*m.position()), virtual_: hw.virtual_, power: hw.power,
+            }, x, y)
+        }).collect()
+    }
+
+    /// 设置页用：每块屏和它息屏时会怎么处理
+    pub fn monitor_report(&mut self, app: &AppHandle) -> Vec<serde_json::Value> {
+        let mons = self.monitor_list(app);
+        let list: Vec<_> = mons.iter().map(|(m, _, _)| m.clone()).collect();
+        let plan = monitors::plan(&self.cfg.display, &list, !self.plat.power_off_unsafe(), self.cfg.wake.allow_remote);
+        list.iter().zip(&plan.per).map(|(m, how)| {
+            let how = match how { Method::Off => m.power.unwrap_or("overlay"), Method::Overlay if plan.global_off => "power", Method::Overlay => "overlay", Method::Skip => "skip" };
+            serde_json::json!({ "id": m.id, "label": m.label, "width": m.width, "height": m.height, "primary": m.primary, "virtual": m.virtual_, "power": m.power, "how": how })
+        }).collect()
+    }
+
+    /// 单独断电计划里的屏（重复调用安全：已关的再关一次）
+    fn monitors_off(&mut self) {
+        for (id, x, y) in self.mon_off_plan.clone() {
+            match self.plat.monitor_power(&id, x, y, true) {
+                Ok(()) => { nblog!("monitor {id}: power off ok"); if !self.mon_off.iter().any(|(i, _, _)| *i == id) { self.mon_off.push((id, x, y)); } }
+                Err(e) => nblog!("monitor {id}: power off failed: {e} (overlay stays)"),
+            }
+        }
+        // 内建屏原亮度要进崩溃恢复标记
+        if !self.mon_off.is_empty() && self.sm.state == State::ScreenOff { let _ = std::fs::write(self.marker_path(), self.plat.persist().unwrap_or_default()); }
     }
 
     fn cancel(&mut self, app: &AppHandle) {
@@ -399,7 +457,23 @@ impl Engine {
             if now >= at {
                 self.power_off_at = None;
                 self.settle_until = Some(now + Duration::from_secs(3));
-                match self.plat.display_off(true) { Ok(()) => nblog!("display power off ok"), Err(e) => nblog!("display power off failed: {e}") }
+                if self.power_off {
+                    match self.plat.display_off(true) { Ok(()) => nblog!("display power off ok"), Err(e) => nblog!("display power off failed: {e}") }
+                }
+                self.monitors_off();
+            }
+        }
+        if self.sm.state == State::ScreenOff && self.last_mon_reassert.is_none_or(|t| now - t >= Duration::from_secs(5)) {
+            self.last_mon_reassert = Some(now);
+            if self.plat.remote_desktop() { self.wake(app, "remote desktop session started"); return; }
+            // 单独断电的屏被远程会话 / 信号变化重新点亮：再关一次
+            if !self.policy.is_holding() {
+                for (id, x, y) in self.mon_off.clone() {
+                    if self.plat.monitor_lit(&id, x, y) == Some(true) {
+                        nblog!("monitor {id}: lit again, powering off");
+                        let _ = self.plat.monitor_power(&id, x, y, true);
+                    }
+                }
             }
         }
         if self.sm.state == State::ScreenOff {
@@ -588,12 +662,10 @@ fn cursor_overlay(app: &AppHandle) -> Option<String> {
     Some(format!("overlay-{i}"))
 }
 
-fn show_overlays(app: &AppHandle, cfg: &Config) {
+fn show_overlays(app: &AppHandle, only: &[usize]) {
     let Ok(monitors) = app.available_monitors() else { return };
-    let selected = cfg.display.mode == "selected";
     for (i, m) in monitors.into_iter().enumerate() {
-        let name = monitor_name(i, &m);
-        if selected && !cfg.display.targets.contains(&name) { continue; }
+        if !only.contains(&i) { continue; }
         let app2 = app.clone();
         let _ = app.run_on_main_thread(move || {
             let label = format!("overlay-{i}");

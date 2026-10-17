@@ -53,6 +53,7 @@
     <div class="group">
       <div class="r"><div class="t"><span data-i18n="b.scope"></span><small data-i18n="b.scope_note"></small></div><div class="c"><div class="seg w220" data-k="display.mode"><button data-v="all" data-i18n="b.all"></button><button data-v="selected" data-i18n="b.selected"></button></div></div></div>
       <div id="monitors"></div>
+      <div class="r note" id="ddcHint" hidden><small data-i18n="b.ddc_hint"></small></div>
       <div class="r"><div class="t"><span data-i18n="b.method"></span><small id="methodNote"></small></div><div class="c"><span class="select"><select data-k="display.method"><option value="auto" data-i18n="b.method_auto"></option><option value="power_off" data-i18n="b.method_power"></option><option value="overlay" data-i18n="b.method_overlay"></option></select></span></div></div>
     </div>
     <div class="group-label"><span data-i18n="b.lit_label"></span></div>
@@ -81,6 +82,10 @@
         <span class="small muted" data-i18n="w.in"></span>
         <span class="field" data-num="wake.mouse_window_ms" data-min="100" data-max="5000" data-stepv="100"><input type="number"><i>ms</i><span class="step"><button data-d="1">▲</button><button data-d="-1">▼</button></span></span>
         <span class="small muted" data-i18n="w.inside"></span></div></div>
+    </div>
+    <div class="group-label"><span data-i18n="w.remote_label"></span></div>
+    <div class="group">
+      <div class="r"><div class="t"><span data-i18n="w.remote"></span><small data-i18n="w.remote_note"></small></div><div class="c"><button class="toggle" role="switch" data-k="wake.allow_remote" data-i18n-aria="w.remote"></button></div></div>
     </div>
     <div class="group-label"><span data-i18n="w.after_label"></span></div>
     <div class="group">

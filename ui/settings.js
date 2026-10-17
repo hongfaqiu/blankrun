@@ -9,7 +9,7 @@ let saveTimer = null;
 function save() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(async () => {
-    try { await invoke("save_config", { cfg }); }
+    try { await invoke("save_config", { cfg }); refreshMonitors(); }
     catch (e) { toast(t("toast.save_fail", { e })); }
     saveTimer = null;
   }, 250);
@@ -151,16 +151,26 @@ function renderMonitors() {
   const mons = diag ? diag.monitors : [];
   $("#monCount").textContent = mons.length ? t("b.mon_count", { n: mons.length }) : "";
   const sel = cfg.display.mode === "selected";
-  box.replaceChildren(...mons.map((name) => {
-    const r = h("div", "r mon" + (sel ? "" : " dim"));
-    const on = !sel || cfg.display.targets.includes(name);
+  box.replaceChildren(...mons.map((m) => {
+    const r = h("div", "r mon" + (sel && !m.virtual ? "" : " dim"));
+    const on = !m.virtual && (!sel || cfg.display.targets.includes(m.id));
     const lead = h("div", "lead-ic");
-    lead.append(h("span", "check" + (on ? " on" : "")));
-    const tx = h("div", "t"); tx.append(h("span", "", name), h("small", "", t(sel ? (on ? "b.mon_on_sel" : "b.mon_off_sel") : "b.mon_all")));
+    lead.append(h("span", "check" + (on ? " on" : "") + (m.virtual ? " off" : "")));
+    const name = h("span", "", m.label);
+    if (m.primary) name.append(h("i", "tag", t("b.mon_primary")));
+    if (m.virtual) name.append(h("i", "tag", t("b.mon_virtual")));
+    const meta = [m.width && `${m.width} × ${m.height}`, t(m.virtual ? "b.how_virtual" : on ? "b.how." + m.how : "b.mon_off_sel")].filter(Boolean).join(" · ");
+    const tx = h("div", "t"); tx.append(name, h("small", "", meta));
     lead.append(tx); r.append(lead);
-    r.dataset.mon = name;
+    r.dataset.mon = m.id;
+    if (m.virtual) r.dataset.virtual = "1";
     return r;
   }));
+  // 有物理屏只能用遮罩时，提示去显示器菜单里打开 DDC/CI
+  $("#ddcHint").hidden = !mons.some((m) => !m.virtual && !m.power);
+}
+async function refreshMonitors() {
+  try { const m = await invoke("get_monitors"); if (diag) { diag.monitors = m; renderMonitors(); } } catch (e) {}
 }
 
 async function loadDiag() {
@@ -233,7 +243,7 @@ document.addEventListener("click", (e) => {
     return change("schedule.days", next);
   }
   const mon = t.closest(".r.mon");
-  if (mon && cfg.display.mode === "selected") {
+  if (mon && cfg.display.mode === "selected" && !mon.dataset.virtual) {
     const n = mon.dataset.mon, tg = cfg.display.targets;
     return change("display.targets", tg.includes(n) ? tg.filter((x) => x !== n) : [...tg, n]);
   }
@@ -276,7 +286,7 @@ $("#exportDiag").addEventListener("click", async () => {
   const text = [`BlankRun ${info.version} (${info.os}) · ui=${LANG} · system=${info.system_locale}`, `time ${new Date().toString()}`, "", "[capabilities]",
     ...diag.caps.map((c) => `- ${c.id}: ${c.key} (${c.status}) · ${c.tech}`),
     diag.perms ? `\n[permissions] accessibility=${diag.perms[0]} input_monitoring=${diag.perms[1]}` : "",
-    `\n[displays] ${diag.monitors.join(", ")}`, `\n[last session] ${JSON.stringify(diag.last_session)}`,
+    `\n[displays] ${diag.monitors.map((m) => `${m.id} "${m.label}" ${m.width}x${m.height}${m.primary ? " primary" : ""}${m.virtual ? " virtual" : ""} power=${m.power || "-"} how=${m.how}`).join("; ")}`, `\n[last session] ${JSON.stringify(diag.last_session)}`,
     "\n[config]", JSON.stringify(cfg, null, 2)].join("\n");
   try { const p = await invoke("export_diagnostics", { text }); toast(t("toast.exported", { p })); } catch (e) { toast(t("toast.export_fail", { e })); }
 });

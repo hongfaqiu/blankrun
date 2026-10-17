@@ -36,6 +36,14 @@ Features:
 
 Later versions: external monitor power via DDC/CI, RGB lighting.
 
+## Per-display power-off and remote control
+
+- **Windows**: displays that support DDC/CI (turn it on in the display's own OSD menu) are powered off one by one with VCP 0xD6 = 4 and back on with 1, so "Selected only" and remote-control mode can still cut the backlight. Displays without DDC/CI get a black overlay. Every few seconds BlankRun re-reads 0xD6 and powers a display off again if something lit it. While blanked, the black overlay stays on top too, so a failed DDC write still leaves the screen black. DDC/CI calls are slow (tens of ms each) and some displays ignore 0xD6 or lose their DisplayPort link in standby, which can make Windows rearrange windows.
+- **macOS**: the built-in display's backlight is turned to 0 through DisplayServices and restored on wake (or on the next launch after a crash). External displays get a black overlay for now.
+- **Virtual displays** from remote tools (Sunlogin/Oray IDD, Parsec, Virtual Desktop, IddCx, spacedesk, ToDesk, RustDesk …) are recognized by adapter or display name and never covered or powered off.
+- **Allow remote control** (off by default): synthesized input (Windows `LLKHF_INJECTED`/`LLMHF_INJECTED`, macOS events whose source PID ≠ 0) passes straight through and never counts as a touch or a wake. The local screens stay off, and system-wide display-off is never used in this mode, so the remote session keeps a live picture. Trade-off: keys and clicks simulated by any other app (macros, on-screen keyboards, malware) are not blocked either.
+- **Remote Desktop (RDP)**: BlankRun doesn't blank inside an RDP session, and it wakes if one starts while blanked, because overlays and input blocking would land on the remote user's screen.
+
 ## Screenshots
 
 | Settings · Wake | Screen off | First-run setup |

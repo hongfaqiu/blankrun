@@ -80,6 +80,9 @@ extern "C" {
     fn CGWindowListCopyWindowInfo(opt: u32, rel: u32) -> *const c_void;
     fn CGRectMakeWithDictionaryRepresentation(d: *const c_void, r: *mut CGRect) -> bool;
     fn CGDisplayBounds(display: u32) -> CGRect;
+    fn CGGetActiveDisplayList(max: u32, displays: *mut u32, count: *mut u32) -> i32;
+    fn CGDisplayIsBuiltin(display: u32) -> u32;
+    fn CGDisplayPixelsWide(display: u32) -> usize;
     static kCGWindowLayer: CFStringRef;
     static kCGWindowBounds: CFStringRef;
     static kCGWindowOwnerPID: CFStringRef;
@@ -165,6 +168,51 @@ fn kb_set(v: f32) -> bool {
     f(c, sel("setBrightness:forKeyboard:"), v.clamp(0.0, 1.0), id) != 0
 }
 
+// ---------- 内建屏背光（DisplayServices 私有框架，运行时探测） ----------
+type DsGet = unsafe extern "C" fn(u32, *mut f32) -> i32;
+type DsSet = unsafe extern "C" fn(u32, f32) -> i32;
+fn display_services() -> Option<(DsGet, DsSet)> {
+    static F: std::sync::OnceLock<Option<(usize, usize)>> = std::sync::OnceLock::new();
+    let (g, s) = (*F.get_or_init(|| unsafe {
+        let h = libc::dlopen(c"/System/Library/PrivateFrameworks/DisplayServices.framework/DisplayServices".as_ptr(), libc::RTLD_LAZY);
+        if h.is_null() { return None; }
+        let (g, s) = (libc::dlsym(h, c"DisplayServicesGetBrightness".as_ptr()), libc::dlsym(h, c"DisplayServicesSetBrightness".as_ptr()));
+        (!g.is_null() && !s.is_null()).then_some((g as usize, s as usize))
+    }))?;
+    Some(unsafe { (std::mem::transmute::<usize, DsGet>(g), std::mem::transmute::<usize, DsSet>(s)) })
+}
+/// 关掉前的内建屏亮度（display id, 值）；崩溃后启动时据此还原
+static BL_SAVED: std::sync::Mutex<Option<(u32, f32)>> = std::sync::Mutex::new(None);
+
+/// 左上角在 (x, y)（点）的那块屏
+fn display_at(x: f64, y: f64) -> Option<u32> {
+    let mut ids = [0u32; 16];
+    let mut n = 0u32;
+    if unsafe { CGGetActiveDisplayList(16, ids.as_mut_ptr(), &mut n) } != 0 { return None; }
+    ids[..n as usize].iter().copied().min_by(|a, b| {
+        let d = |id: u32| { let r = unsafe { CGDisplayBounds(id) }; (r.x - x).abs() + (r.y - y).abs() };
+        d(*a).partial_cmp(&d(*b)).unwrap_or(std::cmp::Ordering::Equal)
+    })
+}
+
+fn set_builtin_off(id: u32, off: bool) -> Result {
+    let (get, set) = display_services().ok_or("DisplayServices unavailable")?;
+    let mut g = BL_SAVED.lock().map_err(|e| e.to_string())?;
+    if off {
+        let mut v = 0f32;
+        if unsafe { get(id, &mut v) } != 0 { return Err("DisplayServicesGetBrightness failed".into()); }
+        if g.is_none() { *g = Some((id, v)); }
+        if unsafe { set(id, 0.0) } != 0 { return Err("DisplayServicesSetBrightness failed".into()); }
+        crate::nblog!("built-in display {id}: brightness {v} -> 0");
+    } else if let Some((sid, v)) = g.take() {
+        unsafe { set(sid, v); }
+        crate::nblog!("built-in display {sid}: brightness restored to {v}");
+    }
+    Ok(())
+}
+
+static ALLOW_INJECTED: AtomicBool = AtomicBool::new(false);
+
 // ---------- 输入钩子（CGEventTap） ----------
 static TAP: AtomicUsize = AtomicUsize::new(0);
 static TAP_STOP: AtomicBool = AtomicBool::new(false);
@@ -197,6 +245,10 @@ extern "C" fn tap_cb(_proxy: *mut c_void, ty: u32, ev: *mut c_void, _user: *mut 
         if ty == 0xFFFF_FFFE || ty == 0xFFFF_FFFF {
             let t = TAP.load(Relaxed);
             if t != 0 { CGEventTapEnable(t as *mut c_void, true); }
+            return ev;
+        }
+        // 「放行远程控制」：别的进程合成的事件（远程控制、屏幕键盘；kCGEventSourceUnixProcessID ≠ 0）原样放过
+        if ALLOW_INJECTED.load(Relaxed) && blankrun_core::wake::route(CGEventGetIntegerValueField(ev, 41) != 0, true) == blankrun_core::wake::Route::PassThrough {
             return ev;
         }
         let t = now_ms();
@@ -286,7 +338,22 @@ fn display_sleep_now() -> Result {
 }
 
 impl Platform for Native {
-    fn configure(&mut self, cfg: &Config) { self.ac_only = cfg.power.ac_only; }
+    fn configure(&mut self, cfg: &Config) { self.ac_only = cfg.power.ac_only; ALLOW_INJECTED.store(cfg.wake.allow_remote, Relaxed); }
+
+    fn probe_monitor(&mut self, id: &str, x: f64, y: f64) -> super::MonHw {
+        let did = display_at(x, y);
+        let builtin = did.is_some_and(|d| unsafe { CGDisplayIsBuiltin(d) } != 0);
+        let virtual_ = blankrun_core::monitors::looks_virtual(id);
+        let power = (builtin && display_services().is_some()).then_some("backlight");
+        super::MonHw { label: None, virtual_, power, detail: did.map_or(String::new(), |d| format!("CGDisplay {d} {}px{}", unsafe { CGDisplayPixelsWide(d) }, if builtin { " built-in" } else { "" })) }
+    }
+
+    fn monitor_power(&mut self, _id: &str, x: f64, y: f64, off: bool) -> Result {
+        if !off { return set_builtin_off(0, false); }
+        let d = display_at(x, y).ok_or("display not found")?;
+        if unsafe { CGDisplayIsBuiltin(d) } == 0 { return Err("external display: no DDC on macOS yet".into()); }
+        set_builtin_off(d, true)
+    }
 
     fn keep_awake(&mut self, on: bool) -> Result {
         if let Some(id) = self.assertion.take() { unsafe { IOPMAssertionRelease(id); } }
@@ -410,7 +477,9 @@ impl Platform for Native {
 
     fn persist(&self) -> Option<String> {
         let bits = KB_SAVED.load(Relaxed);
-        Some(if bits == u32::MAX { "kbd=".into() } else { format!("kbd={}", f32::from_bits(bits)) })
+        let mut s = if bits == u32::MAX { "kbd=".to_string() } else { format!("kbd={}", f32::from_bits(bits)) };
+        if let Some((id, v)) = BL_SAVED.lock().ok().and_then(|g| *g) { s.push_str(&format!("\nbl={id}:{v}")); }
+        Some(s)
     }
 
     fn set_launch_at_login(&mut self, on: bool) -> Result {
@@ -442,10 +511,16 @@ impl Platform for Native {
     fn restore_on_startup(&mut self, saved: Option<&str>) -> Result {
         let Some(s) = saved else { return Ok(()) };
         declare_user_activity();
-        if let Some(v) = s.strip_prefix("kbd=").and_then(|v| v.trim().parse::<f32>().ok()) {
-            if !kb_set(v) { return Err("restoring keyboard backlight failed".into()); }
+        let mut r = Ok(());
+        for line in s.lines() {
+            if let Some(v) = line.strip_prefix("kbd=").and_then(|v| v.trim().parse::<f32>().ok()) {
+                if !kb_set(v) { r = Err("restoring keyboard backlight failed".into()); }
+            }
+            if let Some((id, v)) = line.strip_prefix("bl=").and_then(|v| v.split_once(':')).and_then(|(a, b)| Some((a.parse::<u32>().ok()?, b.trim().parse::<f32>().ok()?))) {
+                if let Some((_, set)) = display_services() { unsafe { set(id, v); } crate::nblog!("built-in display {id}: brightness restored to {v} after abnormal exit"); }
+            }
         }
-        Ok(())
+        r
     }
 }
 
@@ -457,6 +532,9 @@ impl Drop for Native {
 pub fn emergency_restore() {
     let bits = KB_SAVED.swap(u32::MAX, Relaxed);
     if bits != u32::MAX { kb_set(f32::from_bits(bits)); }
+    if let (Ok(mut g), Some((_, set))) = (BL_SAVED.try_lock(), display_services()) {
+        if let Some((id, v)) = g.take() { unsafe { set(id, v); } }
+    }
     TAP_STOP.store(true, Relaxed);
     declare_user_activity();
 }

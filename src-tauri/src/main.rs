@@ -90,9 +90,8 @@ fn quit(tx: State<Tx>) { send(&tx, Msg::Quit) }
 
 #[tauri::command]
 async fn get_diagnostics(e: State<'_, Eng>, app: AppHandle) -> R<Value> {
-    let monitors: Vec<String> = app.available_monitors().unwrap_or_default().iter()
-        .enumerate().map(|(i, m)| engine::monitor_name(i, m)).collect();
     let mut g = lock(&e);
+    let monitors = g.monitor_report(&app);
     Ok(json!({
         "caps": g.plat.capabilities(),
         "perms": g.plat.permissions(),
@@ -101,6 +100,8 @@ async fn get_diagnostics(e: State<'_, Eng>, app: AppHandle) -> R<Value> {
         "modern_standby": g.plat.power_off_unsafe(),
     }))
 }
+#[tauri::command]
+async fn get_monitors(e: State<'_, Eng>, app: AppHandle) -> R<Vec<Value>> { Ok(lock(&e).monitor_report(&app)) }
 #[tauri::command]
 async fn request_permission(e: State<'_, Eng>, which: String) -> R<()> { lock(&e).plat.request_permission(&which); Ok(()) }
 #[tauri::command]
@@ -394,7 +395,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             get_info, get_config, popover_hold, get_history, clear_history, open_link, check_update, install_update, save_config, get_status, blank_now, cancel, skip_tonight, unskip, postpone, overlay_input, wake_now, quit,
-            get_diagnostics, request_permission, reveal_config, export_diagnostics, open_settings, hide_window,
+            get_diagnostics, get_monitors, request_permission, reveal_config, export_diagnostics, open_settings, hide_window,
             finish_onboarding, apply_locale
         ])
         .build(tauri::generate_context!())

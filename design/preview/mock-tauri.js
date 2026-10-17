@@ -4,12 +4,20 @@
   const os = q.get("os") || "mac", state = q.get("state") || "idle";
   const cfg = {
     general: { launch_at_login: false, language: "auto", blank_now_hotkey: "Ctrl+Alt+B", check_updates: true },
-    wake: { method: "hotkey", hotkey: "Ctrl+Alt+W", mouse_threshold_px: 150, mouse_window_ms: 800, lock_on_wake: false, reblank_after_s: 3, hold_ms: 1000 },
+    wake: { allow_remote: false, method: "hotkey", hotkey: "Ctrl+Alt+W", mouse_threshold_px: 150, mouse_window_ms: 800, lock_on_wake: false, reblank_after_s: 3, hold_ms: 1000 },
     schedule: { enabled: true, start: "23:30", end: "07:30", days: ["mon", "tue", "wed", "thu", "fri"], remind_before_min: 5, skip_when_fullscreen_video: true },
-    display: { mode: q.get("mode") || "all", targets: ["DELL U2723QE"], method: "auto" },
+    display: { mode: q.get("mode") || "all", targets: ["DISPLAY1"], method: "auto" },
     lights: { keyboard_backlight: true, openrgb: false, openrgb_host: "127.0.0.1:6742" },
     safety: { emergency_hotkey: "Ctrl+Alt+Shift+Esc" }, power: { keep_awake: q.get("awake") !== "off", ac_only: false },
   };
+  const MONS = os === "win"
+    ? [{ id: "DISPLAY2", label: "SAC DM73u pro", width: 3840, height: 2160, primary: true, virtual: false, power: "ddc" },
+       { id: "DISPLAY1", label: "HP X27q", width: 2560, height: 1440, primary: false, virtual: false, power: "ddc" },
+       { id: "DISPLAY3", label: "OrayIddDriver Device", width: 1920, height: 1080, primary: false, virtual: true, power: null },
+       { id: "DISPLAY4", label: "LG HDR 4K", width: 3840, height: 2160, primary: false, virtual: false, power: null }]
+    : [{ id: "Built-in Retina Display", label: "Built-in Retina Display", width: 3024, height: 1964, primary: true, virtual: false, power: "backlight" },
+       { id: "DISPLAY1", label: "DELL U2723QE", width: 3840, height: 2160, primary: false, virtual: false, power: null }];
+  const monReport = () => MONS.map((m) => ({ ...m, how: m.virtual ? "skip" : cfg.display.mode === "selected" && !cfg.display.targets.includes(m.id) ? "skip" : m.power || "overlay" }));
   const status = {
     state, countdown_left: 272, countdown_total: 300, now_min: 20 * 60 + 43,
     schedule: { enabled: true, start: "23:30", end: "07:30", in_window: false, until_min: 167, duration_min: 480, skipped: false, waiting: null, postponed_min: null },
@@ -51,7 +59,8 @@
         case "skip_tonight": status.schedule.skipped = true; window.__emit("nb://status", status); return null;
         case "postpone": status.schedule.waiting = "postponed"; status.schedule.postponed_min = args.min; window.__emit("nb://status", status); return null;
         case "unskip": status.schedule.skipped = false; window.__emit("nb://status", status); return null;
-        case "get_diagnostics": return { caps, perms: os === "mac" ? [true, q.get("perm") !== "no"] : null, monitors: ["Built-in Retina Display", "DELL U2723QE", "LG HDR 4K"], modern_standby: os === "win", last_session: { start_unix: 1792596600, end_unix: 1792625400, lit: 2, by_schedule: true, power_off: true } };
+        case "get_monitors": return monReport();
+        case "get_diagnostics": return { caps, perms: os === "mac" ? [true, q.get("perm") !== "no"] : null, monitors: monReport(), modern_standby: os === "win", last_session: { start_unix: 1792596600, end_unix: 1792625400, lit: 2, by_schedule: true, power_off: true } };
         default: return null;
       }
     } },

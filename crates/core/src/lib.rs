@@ -6,6 +6,7 @@ pub mod schedule;
 pub mod state;
 pub mod update;
 pub mod history;
+pub mod monitors;
 pub mod wake;
 
 pub use config::Config;

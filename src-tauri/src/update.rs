@@ -105,17 +105,32 @@ pub async fn install(app: AppHandle, busy: impl Fn() -> bool) -> Result<(), Stri
     if BUSY.swap(true, Relaxed) { return Err("busy".into()); }
     nblog!("update: downloading v{}", u.version);
     set(|s| { s.phase = "downloading"; s.progress = Some(0); s.error = None; });
-    let (mut got, mut last_pct) = (0usize, 0u8);
-    let r = u.download(
-        |n, total| {
-            got += n;
-            if let Some(t) = total.filter(|t| *t > 0) {
-                let p = ((got as u64 * 100) / t).min(100) as u8;
-                if p != last_pct { last_pct = p; set(|s| s.progress = Some(p)); }
+    // 网络抖动时自动重试 2 次（2 秒、6 秒后）；签名不对之类的错误不重试
+    let mut attempt = 0;
+    let r = loop {
+        let (mut got, mut last_pct) = (0usize, 0u8);
+        let r = u.download(
+            |n, total| {
+                got += n;
+                if let Some(t) = total.filter(|t| *t > 0) {
+                    let p = ((got as u64 * 100) / t).min(100) as u8;
+                    if p != last_pct { last_pct = p; set(|s| s.progress = Some(p)); }
+                }
+            },
+            || {},
+        ).await;
+        match r {
+            Err(e @ (tauri_plugin_updater::Error::Reqwest(_) | tauri_plugin_updater::Error::Network(_))) if attempt < 2 => {
+                let wait = [2u64, 6][attempt];
+                attempt += 1;
+                nblog!("update: download failed ({e}), retry {attempt}/2 in {wait}s");
+                set(|s| s.progress = Some(0));
+                let _ = tauri::async_runtime::spawn_blocking(move || std::thread::sleep(std::time::Duration::from_secs(wait))).await;
+                if busy() { break Ok(Vec::new()); }
             }
-        },
-        || {},
-    ).await;
+            r => break r,
+        }
+    };
     let r = r.and_then(|bytes| {
         if busy() { set(|s| { s.phase = "available"; s.progress = None; }); return Ok(false); }
         set(|s| { s.phase = "installing"; s.progress = Some(100); });
