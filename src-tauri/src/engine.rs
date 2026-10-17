@@ -122,6 +122,8 @@ pub struct Engine {
     last_mon_reassert: Option<Instant>,
     /// 本次息屏里每块屏被重新点亮的次数
     mon_relit: std::collections::HashMap<String, u32>,
+    /// 本次息屏 id → 显示名（no_ddc / prefs 按显示名记）
+    mon_labels: std::collections::HashMap<String, String>,
     rdp_logged: bool,
 }
 
@@ -141,7 +143,7 @@ impl Engine {
             last_sched_check: None, last_cfg_check: None, last_status: None, kbd_available,
             displays: 1, last_mon_check: None, keep_display: false, last_asleep: None, settle_until: None,
             trigger: "manual", history: History::default(), last_heartbeat: None,
-            overlay_idx: vec![], mon_off_plan: vec![], mon_off: vec![], last_mon_reassert: None, mon_relit: Default::default(), rdp_logged: false,
+            overlay_idx: vec![], mon_off_plan: vec![], mon_off: vec![], last_mon_reassert: None, mon_relit: Default::default(), mon_labels: Default::default(), rdp_logged: false,
         };
         // 息屏记录；上次息屏中途崩溃/强退的那一条记为 crash
         e.history = History::from_json(&std::fs::read_to_string(e.history_path()).unwrap_or_default());
@@ -210,6 +212,10 @@ impl Engine {
 
     pub fn save_config(&mut self, cfg: Config) -> Result<(), String> {
         let mut cfg = cfg;
+        // 设置页拿的是打开时的配置：别把息屏期间自动记下的「不响应断电」冲掉（除非用户把那台改成了「断电」）
+        for l in &self.cfg.display.no_ddc {
+            if !cfg.display.no_ddc.contains(l) && cfg.display.prefs.get(l).map(String::as_str) != Some("off") { cfg.display.no_ddc.push(l.clone()); }
+        }
         cfg.normalize()?;
         if let Some(dir) = self.cfg_path.parent() { std::fs::create_dir_all(dir).map_err(|e| e.to_string())?; }
         std::fs::write(&self.cfg_path, cfg.to_toml()).map_err(|e| e.to_string())?;
@@ -294,6 +300,7 @@ impl Engine {
         let plan = monitors::plan(&self.cfg.display, &list, !self.plat.power_off_unsafe(), self.cfg.wake.allow_remote);
         self.power_off = plan.global_off;
         self.mon_relit.clear();
+        self.mon_labels = mons.iter().map(|(m, _, _)| (m.id.clone(), m.label.clone())).collect();
         self.overlay_idx = plan.per.iter().enumerate().filter(|(_, m)| **m != Method::Skip).map(|(i, _)| i).collect();
         self.mon_off_plan = plan.per.iter().zip(&mons).filter(|(m, _)| **m == Method::Off).map(|(_, (m, x, y))| (m.id.clone(), *x, *y)).collect();
         for ((m, _, _), how) in mons.iter().zip(&plan.per) { nblog!("plan: {} ({}) virtual={} power={:?} -> {how:?}", m.id, m.label, m.virtual_, m.power); }
@@ -336,12 +343,25 @@ impl Engine {
         let plan = monitors::plan(&self.cfg.display, &list, !self.plat.power_off_unsafe(), self.cfg.wake.allow_remote);
         list.iter().zip(&plan.per).map(|(m, how)| {
             let how = match how { Method::Off => m.power.unwrap_or("overlay"), Method::Overlay if plan.global_off => "power", Method::Overlay => "overlay", Method::Skip => "skip" };
-            serde_json::json!({ "id": m.id, "label": m.label, "width": m.width, "height": m.height, "primary": m.primary, "virtual": m.virtual_, "power": m.power, "how": how })
+            serde_json::json!({ "id": m.id, "label": m.label, "width": m.width, "height": m.height, "primary": m.primary, "virtual": m.virtual_, "power": m.power, "how": how,
+                "pref": monitors::pref(&self.cfg.display, m), "unresponsive": monitors::unresponsive(&self.cfg.display, m) })
         }).collect()
+    }
+
+    /// 记住这台屏不响应 DDC/CI 断电，写进配置
+    fn mark_unresponsive(&mut self, id: &str) {
+        let label = self.mon_labels.get(id).cloned().unwrap_or_else(|| id.to_string());
+        nblog!("monitor {id} ({label}): reads on after power-off twice, treating as overlay-only from now on");
+        if self.cfg.display.no_ddc.contains(&label) { return; }
+        let mut c = self.cfg.clone();
+        c.display.no_ddc.push(label);
+        c.display.prefs.retain(|k, v| !(c.display.no_ddc.contains(k) && v == "off"));
+        if let Err(e) = self.save_config(c) { nblog!("saving no_ddc failed: {e}"); }
     }
 
     /// 单独断电计划里的屏（重复调用安全：已关的再关一次）
     fn monitors_off(&mut self) {
+        self.last_mon_reassert = Some(Instant::now());
         for (id, x, y) in self.mon_off_plan.clone() {
             match self.plat.monitor_power(&id, x, y, true) {
                 Ok(()) => { nblog!("monitor {id}: power off ok"); if !self.mon_off.iter().any(|(i, _, _)| *i == id) { self.mon_off.push((id, x, y)); } }
@@ -472,12 +492,15 @@ impl Engine {
             // 单独断电的屏被远程会话 / 信号变化重新点亮：再关一次
             if !self.policy.is_holding() {
                 for (id, x, y) in self.mon_off.clone() {
-                    if self.mon_relit.get(&id).copied().unwrap_or(0) >= 3 { continue; }
+                    if self.mon_relit.get(&id).copied().unwrap_or(0) >= 2 { continue; }
                     if self.plat.monitor_lit(&id, x, y) == Some(true) {
                         let n = self.mon_relit.entry(id.clone()).or_insert(0);
                         *n += 1;
-                        // 有的显示器有信号就自己醒（或 D6 读数不可靠）：反复关会每 5 秒闪一次，3 次后放弃，只留遮罩
-                        if *n >= 3 { nblog!("monitor {id}: keeps waking up, leaving it to the overlay"); continue; }
+                        if *n >= 2 {
+                            // 接受了 D6=4 却没真关（或有信号就自己醒）：记下来，以后只用遮罩，也不再发断电指令（免得闪）
+                            self.mark_unresponsive(&id);
+                            continue;
+                        }
                         nblog!("monitor {id}: lit again, powering off");
                         let _ = self.plat.monitor_power(&id, x, y, true);
                     }

@@ -159,15 +159,24 @@ function renderMonitors() {
     const name = h("span", "", m.label);
     if (m.primary) name.append(h("i", "tag", t("b.mon_primary")));
     if (m.virtual) name.append(h("i", "tag", t("b.mon_virtual")));
-    const meta = [m.width && `${m.width} × ${m.height}`, t(m.virtual ? "b.how_virtual" : on ? "b.how." + m.how : "b.mon_off_sel")].filter(Boolean).join(" · ");
-    const tx = h("div", "t"); tx.append(name, h("small", "", meta));
+    const how = m.virtual ? t("b.how_virtual") : on ? t("b.how." + m.how) + (m.unresponsive && m.how === "overlay" ? " · " + t("b.unresponsive") : "") : t("b.mon_off_sel");
+    const tx = h("div", "t"); tx.append(name, h("small", "", [m.width && `${m.width} × ${m.height}`, how].filter(Boolean).join(" · ")));
     lead.append(tx); r.append(lead);
+    if (!m.virtual) {
+      // 每台单独指定：自动 / 仅遮罩 / 断电（只有能单独断电的屏才有）
+      const ps = h("select"); ps.dataset.pref = m.label;
+      for (const v of m.power ? ["auto", "overlay", "off"] : ["auto", "overlay"]) {
+        const o = h("option", "", t("b.pref." + v)); o.value = v; o.selected = (m.pref || "auto") === v; ps.append(o);
+      }
+      const wrap = h("span", "select"); wrap.append(ps);
+      const c = h("div", "c"); c.append(wrap); r.append(c);
+    }
     r.dataset.mon = m.id;
     if (m.virtual) r.dataset.virtual = "1";
     return r;
   }));
   // 有物理屏只能用遮罩时，提示去显示器菜单里打开 DDC/CI
-  $("#ddcHint").hidden = !mons.some((m) => !m.virtual && !m.power);
+  $("#ddcHint").hidden = !mons.some((m) => !m.virtual && (!m.power || m.unresponsive));
 }
 async function refreshMonitors() {
   try { const m = await invoke("get_monitors"); if (diag) { diag.monitors = m; renderMonitors(); } } catch (e) {}
@@ -243,13 +252,20 @@ document.addEventListener("click", (e) => {
     return change("schedule.days", next);
   }
   const mon = t.closest(".r.mon");
-  if (mon && cfg.display.mode === "selected" && !mon.dataset.virtual) {
+  if (mon && cfg.display.mode === "selected" && !mon.dataset.virtual && !t.closest(".select")) {
     const n = mon.dataset.mon, tg = cfg.display.targets;
     return change("display.targets", tg.includes(n) ? tg.filter((x) => x !== n) : [...tg, n]);
   }
 });
 document.addEventListener("change", (e) => {
   const t = e.target;
+  if (t.matches("select[data-pref]")) {
+    const l = t.dataset.pref, prefs = { ...(cfg.display.prefs || {}) };
+    if (t.value === "auto") delete prefs[l]; else prefs[l] = t.value;
+    // 手动选「断电」：重新尝试，忘掉之前「不响应」的判断
+    if (t.value === "off") setK("display.no_ddc", (cfg.display.no_ddc || []).filter((x) => x !== l));
+    return change("display.prefs", prefs);
+  }
   if (t.matches("select[data-k]")) change(t.dataset.k, t.dataset.type === "num" ? +t.value : t.value);
   else if (t.matches(".field[data-num] input")) {
     const f = t.closest(".field");

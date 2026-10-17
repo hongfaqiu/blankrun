@@ -19,6 +19,9 @@ body{background:var(--paper);overflow:hidden}
 .r.pick,.r.mon{cursor:default}
 .r.col{flex-direction:column;align-items:stretch;gap:14px;padding:18px 14px 16px}
 .dim{opacity:.45}
+.r.mon.dim:not([data-virtual]){opacity:1}
+.r.mon.dim:not([data-virtual]) .lead-ic{opacity:.45}
+.r.mon .select{min-width:0}
 .soon{font-size:10.5px;color:var(--ink3);border:1px solid var(--line);border-radius:4px;padding:0 5px;margin-left:4px;white-space:nowrap;vertical-align:1px}
 .path{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .w220{width:220px}

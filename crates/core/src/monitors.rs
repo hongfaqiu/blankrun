@@ -46,20 +46,36 @@ pub fn looks_virtual(s: &str) -> bool {
         .iter().any(|k| s.contains(k))
 }
 
+/// 用户对这台屏的手动设置："auto" | "overlay" | "off"
+pub fn pref<'a>(d: &'a DisplayConfig, m: &Monitor) -> &'a str {
+    d.prefs.get(&m.label).map(String::as_str).unwrap_or("auto")
+}
+
+/// 这台屏被认定「不响应断电指令」，且用户没有强制要求断电
+pub fn unresponsive(d: &DisplayConfig, m: &Monitor) -> bool {
+    d.no_ddc.contains(&m.label) && pref(d, m) != "off"
+}
+
 /// 决定每块屏怎么关。
 /// - `global_ok`：系统级关屏可用且不会让电脑进低功耗待机（Windows Modern Standby 上为 false）
 /// - `remote`：「放行远程控制」开着：不用系统级关屏（它也会关掉远程看到的画面），物理屏逐块断电
+///
+/// 所有物理屏都要关（「全部显示器」，或「只关所选」选中了全部物理屏）、没开远程控制、也没有哪台被设成仅遮罩时，
+/// 走系统级关屏：它对不支持 DDC/CI 或不响应 D6 的显示器（比如 SAC DM73u）也能真正断电。
 pub fn plan(d: &DisplayConfig, monitors: &[Monitor], global_ok: bool, remote: bool) -> Plan {
     let selected = d.mode == "selected";
     let targeted = |m: &Monitor| !m.virtual_ && (!selected || d.targets.contains(&m.id));
-    let global_off = !selected && !remote && match d.method {
+    let physical = || monitors.iter().filter(|m| !m.virtual_);
+    let covers_all = physical().all(targeted) && physical().next().is_some();
+    let any_overlay_pref = physical().any(|m| targeted(m) && pref(d, m) == "overlay");
+    let global_off = covers_all && !remote && !any_overlay_pref && match d.method {
         DisplayMethod::PowerOff => true,
         DisplayMethod::Overlay => false,
         DisplayMethod::Auto => global_ok,
     };
     let per = monitors.iter().map(|m| {
         if !targeted(m) { Method::Skip }
-        else if global_off || d.method == DisplayMethod::Overlay || m.power.is_none() { Method::Overlay }
+        else if global_off || d.method == DisplayMethod::Overlay || m.power.is_none() || pref(d, m) == "overlay" || unresponsive(d, m) { Method::Overlay }
         else { Method::Off }
     }).collect();
     Plan { per, global_off }
@@ -73,7 +89,7 @@ mod tests {
         Monitor { id: id.into(), label: id.into(), width: 1920, height: 1080, primary: false, virtual_, power }
     }
     fn cfg(mode: &str, targets: &[&str], method: DisplayMethod) -> DisplayConfig {
-        DisplayConfig { mode: mode.into(), targets: targets.iter().map(|s| s.to_string()).collect(), method }
+        DisplayConfig { mode: mode.into(), targets: targets.iter().map(|s| s.to_string()).collect(), method, ..Default::default() }
     }
     use Method::*;
 
@@ -120,5 +136,34 @@ mod tests {
         let p = plan(&cfg("all", &[], DisplayMethod::PowerOff), &ms, true, true);
         assert!(!p.global_off);
         assert_eq!(p.per, vec![Off, Overlay, Skip]);
+    }
+
+    #[test]
+    fn selecting_every_physical_monitor_uses_global_off() {
+        let ms = [mon("A", false, Some("ddc")), mon("B", false, None), mon("V", true, None)];
+        let p = plan(&cfg("selected", &["A", "B"], DisplayMethod::Auto), &ms, true, false);
+        assert!(p.global_off);
+        assert_eq!(p.per, vec![Overlay, Overlay, Skip]);
+        // 只选一台：不能系统级关
+        assert!(!plan(&cfg("selected", &["A"], DisplayMethod::Auto), &ms, true, false).global_off);
+    }
+
+    #[test]
+    fn overlay_pref_and_unresponsive() {
+        let ms = [mon("A", false, Some("ddc")), mon("B", false, Some("ddc"))];
+        let mut d = cfg("all", &[], DisplayMethod::Auto);
+        // 远程模式：逐台断电；B 被认定不响应 → 遮罩
+        d.no_ddc = vec!["B".into()];
+        assert_eq!(plan(&d, &ms, true, true).per, vec![Off, Overlay]);
+        // 不响应的屏不影响系统级关屏（它能真正关掉）
+        assert!(plan(&d, &ms, true, false).global_off);
+        // 用户强制「断电」：重新尝试 DDC
+        d.prefs.insert("B".into(), "off".into());
+        assert_eq!(plan(&d, &ms, true, true).per, vec![Off, Off]);
+        // 有屏设成仅遮罩：系统级关屏会把它也关掉，所以不用
+        d.prefs.insert("A".into(), "overlay".into());
+        let p = plan(&d, &ms, true, false);
+        assert!(!p.global_off);
+        assert_eq!(p.per, vec![Overlay, Off]);
     }
 }

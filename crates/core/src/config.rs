@@ -97,9 +97,17 @@ pub enum DisplayMethod { Auto, PowerOff, Overlay }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
-pub struct DisplayConfig { pub mode: String, pub targets: Vec<String>, pub method: DisplayMethod }
+pub struct DisplayConfig {
+    pub mode: String,
+    pub targets: Vec<String>,
+    pub method: DisplayMethod,
+    /// 每台显示器（按显示名）手动指定："overlay" 仅遮罩 | "off" 断电；没写 = 自动
+    pub prefs: std::collections::BTreeMap<String, String>,
+    /// 自动发现「接受 DDC/CI 断电指令但其实不关」的显示器（按显示名），以后只用遮罩
+    pub no_ddc: Vec<String>,
+}
 impl Default for DisplayConfig {
-    fn default() -> Self { Self { mode: "all".into(), targets: vec![], method: DisplayMethod::Auto } }
+    fn default() -> Self { Self { mode: "all".into(), targets: vec![], method: DisplayMethod::Auto, prefs: Default::default(), no_ddc: vec![] } }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -198,6 +206,16 @@ mod tests {
         assert!(Config::from_toml("[general]\nlanguage = \"../x\"\n").is_err());
         assert!(valid_language("zh-Hant-TW") && valid_language("pt-BR") && !valid_language("") && !valid_language("e"));
         assert_eq!(Config::from_toml(&c.to_toml()).unwrap(), c);
+    }
+
+    #[test]
+    fn monitor_prefs_roundtrip() {
+        // 每台显示器的设置能写回 TOML 再读出来
+        let mut c = Config::default();
+        c.display.prefs.insert("DM73u pro".into(), "overlay".into());
+        c.display.no_ddc = vec!["DM73u pro".into()];
+        let back = Config::from_toml(&c.to_toml()).unwrap();
+        assert_eq!(back.display, c.display);
     }
 
     #[test]
