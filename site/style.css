@@ -1,4 +1,4 @@
-/* 息屏跑 BlankRun 官网。规范见 design/DESIGN-CARD.md：黑白灰为主，琥珀只表示关键状态，系统字体，无网页字体。 */
+/* 黑着跑 BlankRun 官网。规范见 design/DESIGN-CARD.md：黑白灰为主，琥珀只表示关键状态，系统字体，无网页字体。 */
 :root{
   --bg:#F5F5F4; --paper:#FFFFFF; --ink:#1C1C1E; --ink2:#6B6B70; --ink3:#9C9CA1; --line:#E5E5E7;
   --blank:#111113; --blank-edge:transparent; --amber:#E39B2D;

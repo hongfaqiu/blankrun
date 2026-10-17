@@ -1,6 +1,6 @@
 <p align="center"><img src="src-tauri/icons/128x128.png" width="72" alt="BlankRun 图标"></p>
 
-<h1 align="center">息屏跑 BlankRun</h1>
+<h1 align="center">黑着跑 BlankRun</h1>
 
 <p align="center">夜里关掉屏幕和灯，让 AI 接着跑。</p>
 
@@ -16,7 +16,7 @@
 
 睡前给 Claude Code、Codex 或本地模型布置好一晚上的任务，顺便挂着编译和下载。可屏幕亮一整夜太刺眼，让电脑睡眠任务又会断。
 
-息屏跑常驻在菜单栏（Windows 上是托盘），一键把屏幕真正关掉，同时阻止系统睡眠，让任务继续跑。息屏期间它会拦下误触，只认你设定的唤醒方式。
+黑着跑常驻在菜单栏（Windows 上是托盘），一键把屏幕真正关掉，同时阻止系统睡眠，让任务继续跑。息屏期间它会拦下误触，只认你设定的唤醒方式。
 
 功能如下：
 

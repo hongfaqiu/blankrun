@@ -29,7 +29,7 @@ fn locales() -> Vec<(&'static str, &'static str)> {
 /// 托盘菜单的初始文字（界面加载前用；之后以 ui/i18n 的词条为准）。没有的语言用英文。
 fn tray_text(lang: &str) -> [&'static str; 4] {
     match lang.split('-').next().unwrap_or("") {
-        "zh" => ["立即息屏", "设置…", "退出息屏跑", "息屏跑 BlankRun"],
+        "zh" => ["立即息屏", "设置…", "退出黑着跑", "黑着跑 BlankRun"],
         _ => ["Blank Screen Now", "Settings…", "Quit BlankRun", "BlankRun"],
     }
 }

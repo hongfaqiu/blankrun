@@ -96,4 +96,4 @@ jobs:
           [ -f "$notes" ] || notes=".github/release-notes/${TAG#v}.md"
           [ -f "$notes" ] || notes=/dev/null
           pre="--latest"; case "$TAG" in *-*) pre="--prerelease";; esac
-          gh release create "$TAG" dist/* --title "BlankRun 息屏跑 ${TAG}" --notes-file "$notes" $pre --verify-tag
+          gh release create "$TAG" dist/* --title "BlankRun 黑着跑 ${TAG}" --notes-file "$notes" $pre --verify-tag

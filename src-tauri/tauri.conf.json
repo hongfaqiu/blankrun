@@ -7,12 +7,12 @@
   "app": {
     "withGlobalTauri": true,
     "windows": [
-      { "label": "popover", "title": "息屏跑", "url": "popover.html",
+      { "label": "popover", "title": "黑着跑", "url": "popover.html",
         "width": 320, "height": 452, "resizable": false, "visible": false, "decorations": false,
         "alwaysOnTop": true, "skipTaskbar": true, "shadow": true },
-      { "label": "settings", "title": "息屏跑设置", "url": "settings.html",
+      { "label": "settings", "title": "黑着跑设置", "url": "settings.html",
         "width": 820, "height": 640, "minWidth": 720, "minHeight": 520, "visible": false, "center": true },
-      { "label": "onboarding", "title": "息屏跑", "url": "onboarding.html",
+      { "label": "onboarding", "title": "黑着跑", "url": "onboarding.html",
         "width": 600, "height": 600, "resizable": false, "visible": false, "center": true }
     ],
     "security": { "csp": "default-src 'self'; style-src 'self'; img-src 'self'; connect-src ipc: http://ipc.localhost" }
