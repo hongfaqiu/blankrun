@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>NightBlank · 息屏中</title>
+<link rel="stylesheet" href="nb.css">
+<style>
+/* 无法断电的屏幕上铺的近黑遮罩。平时纯黑；被碰到时中心出现一行提示，3 秒后淡出 */
+body{background:#000}
+.stage{position:relative;width:1280px;height:800px;background:#000;color:rgba(255,255,255,.42);overflow:hidden}
+.hint{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);text-align:center;animation:fade 3s ease-in 1 forwards}
+.line{display:flex;align-items:center;justify-content:center;gap:10px;font-size:17px;letter-spacing:.02em}
+.k{display:inline-flex;align-items:center;justify-content:center;min-width:30px;height:30px;padding:0 8px;border:1px solid rgba(255,255,255,.2);border-radius:6px;font:500 14px var(--mono);color:rgba(255,255,255,.6)}
+.mac .k{font-family:var(--ui);font-size:15px}
+.keys{display:inline-flex;gap:5px}
+.after{margin-top:18px;font-size:13px;color:rgba(255,255,255,.3)}
+.after .num{color:rgba(255,255,255,.45)}
+.bar{width:180px;height:2px;margin:22px auto 0;border-radius:1px;background:rgba(255,255,255,.1);overflow:hidden}
+.bar span{display:block;height:100%;width:62%;background:var(--standby)}
+.hold .k.on{border-color:rgba(255,255,255,.5);color:rgba(255,255,255,.85)}
+.hold .hint{animation:none}
+body:not(.hold) .st-hold,.hold .st-hint{display:none!important}
+.mac .only-win,.win .only-mac{display:none!important}
+@keyframes fade{0%,70%{opacity:1}100%{opacity:0}}
+</style></head>
+<body>
+<div class="stage">
+  <div class="hint">
+    <div class="line">按住
+      <span class="keys only-mac"><span class="k on">⌃</span><span class="k on">⌥</span><span class="k on">W</span></span>
+      <span class="keys only-win"><span class="k on">Ctrl</span><span class="k on">Alt</span><span class="k on">W</span></span>
+      1 秒唤醒</div>
+    <div class="after st-hint"><span class="num">3</span> 秒后重新息屏 · 下载和后台任务仍在运行</div>
+    <div class="st-hold"><div class="bar"><span></span></div><div class="after">继续按住</div></div>
+  </div>
+</div>
+<script>
+const q=new URLSearchParams(location.search);
+document.body.classList.add(q.get('p')||'mac'); if(q.get('state')==='hold') document.body.classList.add('hold');
+</script>
+</body></html>

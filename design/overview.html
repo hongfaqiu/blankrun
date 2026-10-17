@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>NightBlank 设计稿总览</title>
+<link rel="stylesheet" href="nb.css">
+<style>
+body{background:#F4F4F3}
+.stage{width:1800px;padding:56px 64px 64px;background:#F4F4F3}
+header{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:40px;border-bottom:1px solid var(--line);padding-bottom:20px}
+header h1{font-size:26px;margin:0;font-weight:600}
+header p{margin:6px 0 0;color:var(--ink2)}
+.legend{display:flex;gap:22px;font-size:12px;color:var(--ink2);align-items:center}
+.sw{display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:-2px;margin-right:6px;border:1px solid rgba(0,0,0,.08)}
+.row{display:flex;gap:36px;align-items:flex-start;margin-bottom:44px}
+figure{margin:0}
+figure img{display:block;border-radius:4px}
+figcaption{font-size:12px;color:var(--ink2);margin-top:10px}
+figcaption b{color:var(--ink);font-weight:600;margin-right:6px}
+h2{font-size:13px;font-weight:600;color:var(--ink3);margin:0 0 14px;letter-spacing:.04em}
+</style></head>
+<body>
+<div class="stage">
+  <header>
+    <div><h1>NightBlank 界面设计稿 <span class="num muted" style="font-weight:400;font-size:16px">v0.1</span></h1>
+      <p>黑白灰为主，只有一颗琥珀色「待机灯」表示关键状态。系统字体，数字和快捷键用等宽字体。</p></div>
+    <div class="legend">
+      <span><i class="sw" style="background:#111113"></i>熄屏黑 · 主操作</span>
+      <span><i class="sw" style="background:#E39B2D"></i>待机琥珀 · 关键状态</span>
+      <span><i class="sw" style="background:#1C1C1E"></i>墨</span>
+      <span><i class="sw" style="background:#E5E5E7"></i>线</span>
+    </div>
+  </header>
+
+  <h2>1 · 菜单栏 / 托盘面板　　4 · 首次权限引导</h2>
+  <div class="row">
+    <figure><img src="png/popover-mac.png" width="352"><figcaption><b>macOS</b>待命</figcaption></figure>
+    <figure><img src="png/popover-mac-countdown.png" width="352"><figcaption><b>macOS</b>5 分钟延迟倒计时中</figcaption></figure>
+    <figure><img src="png/popover-win.png" width="352"><figcaption><b>Windows 11</b>托盘弹出</figcaption></figure>
+    <figure><img src="png/onboarding-mac.png" width="540"><figcaption><b>macOS</b>辅助功能已开，输入监控待授权</figcaption></figure>
+  </div>
+
+  <h2>2 · 设置</h2>
+  <div class="row">
+    <figure><img src="png/settings-mac-wake.png" width="540"><figcaption><b>macOS</b>唤醒 · 防误触</figcaption></figure>
+    <figure><img src="png/settings-mac-blank.png" width="540"><figcaption><b>macOS</b>息屏 · 逐台显示器</figcaption></figure>
+    <figure><img src="png/settings-win-schedule.png" width="580"><figcaption><b>Windows 11</b>定时</figcaption></figure>
+  </div>
+
+  <h2>3 · 息屏中（遮罩被碰到时的提示，3 秒淡出）</h2>
+  <div class="row">
+    <figure><img src="png/blank-mac-hint.png" width="540"><figcaption><b>macOS</b>被碰亮：提示唤醒方式</figcaption></figure>
+    <figure><img src="png/blank-mac-holding.png" width="540"><figcaption><b>macOS</b>正在按住：进度用琥珀色</figcaption></figure>
+    <figure><img src="png/blank-win-hint.png" width="540"><figcaption><b>Windows 11</b>被碰亮</figcaption></figure>
+  </div>
+</div>
+</body></html>

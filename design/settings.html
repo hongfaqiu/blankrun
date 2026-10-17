@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>NightBlank 设置</title>
+<link rel="stylesheet" href="nb.css">
+<style>
+.stage{padding:28px;background:#E8E8E9;display:inline-block}
+.window{width:780px;min-height:600px;display:flex;background:var(--paper);border:1px solid #CFCFD2;border-radius:12px;overflow:hidden;box-shadow:0 18px 40px rgba(0,0,0,.14),0 1px 3px rgba(0,0,0,.08)}
+.side{width:196px;flex:none;background:var(--win);border-right:1px solid var(--line);padding:14px 10px}
+.lights{display:flex;gap:8px;padding:2px 6px 22px}
+.lights i{width:12px;height:12px;border-radius:50%;background:#D9D9DC;border:1px solid #C9C9CC}
+.nav a{display:block;height:30px;line-height:30px;padding:0 10px;border-radius:6px;color:var(--ink);text-decoration:none}
+.nav a.on{background:#E2E2E5;font-weight:600}
+.nav .sep{height:1px;background:var(--line);margin:10px 6px}
+.side .ver{position:absolute}
+.main{flex:1;padding:44px 32px 32px}
+.main h1{font-size:20px;font-weight:600;margin:6px 0 4px}
+.main .lead{color:var(--ink2);margin:0 0 20px}
+.group-label{font-size:12px;color:var(--ink2);margin:18px 0 6px 2px;display:flex;justify-content:space-between}
+.group{border:1px solid var(--line);border-radius:10px;background:#fff}
+.r{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:11px 14px;min-height:46px}
+.r + .r{border-top:1px solid var(--line)}
+.r .t{display:flex;flex-direction:column;gap:2px;min-width:0}
+.r .t small{font-size:11.5px;color:var(--ink3);line-height:1.4}
+.r .c{display:flex;align-items:center;gap:10px;flex:none}
+.r.sub{padding-left:42px}
+.r.indent .t{padding-left:28px}
+.r .lead-ic{display:flex;align-items:center;gap:12px}
+.dim{opacity:.45}
+.days{display:flex;gap:6px}
+.days span{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;border:1px solid var(--line);color:var(--ink2);font-size:12px}
+.days span.on{background:var(--ink);border-color:var(--ink);color:#fff}
+.time{font:500 13px var(--mono);height:26px;display:inline-flex;align-items:center;padding:0 10px;border:1px solid var(--line);border-radius:6px;background:#fff}
+.big-time{font:500 30px var(--mono);letter-spacing:-.02em}
+.big-time .tf{border-bottom:1.5px dashed #D0D0D4;padding:0 2px;cursor:text}
+.big-time .a{color:var(--ink3);font-size:20px;margin:0 8px}
+.status{display:inline-flex;align-items:center;gap:6px;font-size:12px}
+.mac .only-win,.win .only-mac{display:none!important}
+section{display:none} section.on{display:block}
+
+/* Windows 11：Mica 底 + 行卡片 + 左侧导航指示条 */
+.win .window{width:900px;min-height:640px;border-radius:8px;flex-direction:column;background:var(--win);border-color:#D6D6D8}
+.win .titlebar{height:40px;flex:none;display:flex;align-items:center;justify-content:space-between;padding-left:16px;font-size:12px}
+.win .caption{display:flex}
+.win .caption span{width:46px;height:40px;display:flex;align-items:center;justify-content:center;color:var(--ink2);font-size:13px}
+.win .body{flex:1;display:flex;min-height:0}
+.win .side{width:240px;background:transparent;border:0;padding:4px 8px}
+.win .nav a{height:36px;line-height:36px;border-radius:4px;padding-left:16px;position:relative}
+.win .nav a.on{background:#EAEAEA;font-weight:400}
+.win .nav a.on::before{content:"";position:absolute;left:0;top:10px;bottom:10px;width:3px;border-radius:2px;background:var(--ink)}
+.win .main{padding:8px 40px 28px 20px}
+.win .main h1{font-size:28px;margin:4px 0 4px}
+.win .group{border:0;background:transparent;display:flex;flex-direction:column;gap:3px}
+.win .r{background:#FBFBFB;border:1px solid #E5E5E5;border-radius:4px;min-height:62px;padding:12px 16px}
+.win .r + .r{border-top:1px solid #E5E5E5}
+.win .group-label .faint{font-weight:400}
+.win .group-label{font-weight:600;color:var(--ink);font-size:13px;margin:20px 0 8px 0}
+.win .time{height:32px;border-radius:4px}
+</style></head>
+<body>
+<div class="stage"><div class="window">
+<div class="titlebar only-win"><span>NightBlank 设置</span><span class="caption"><span>—</span><span>☐</span><span>✕</span></span></div>
+<div class="body" style="display:flex;flex:1;min-height:0">
+  <aside class="side">
+    <div class="lights only-mac"><i></i><i></i><i></i></div>
+    <nav class="nav">
+      <a href="#general">通用</a>
+      <a href="#blank">息屏</a>
+      <a href="#wake">唤醒</a>
+      <a href="#schedule">定时</a>
+      <div class="sep"></div>
+      <a href="#about">关于与诊断</a>
+    </nav>
+  </aside>
+
+  <main class="main">
+
+  <!-- 通用 -->
+  <section id="general">
+    <h1>通用</h1>
+    <p class="lead">NightBlank 常驻在<span class="only-mac">菜单栏</span><span class="only-win">任务栏通知区域</span>，息屏期间始终阻止系统睡眠。</p>
+    <div class="group">
+      <div class="r"><div class="t"><span class="only-mac">登录时启动</span><span class="only-win">开机时启动</span><small>开机后自动在后台运行，定时计划才能按时生效</small></div><div class="c"><span class="toggle on"></span></div></div>
+      <div class="r"><div class="t">语言</div><div class="c"><span class="select">跟随系统（简体中文）</span></div></div>
+      <div class="r"><div class="t">立即息屏快捷键<small>不打开面板，直接开始息屏</small></div><div class="c"><span class="recorder"><span class="keys only-mac"><span class="kbd">⌃</span><span class="kbd">⌥</span><span class="kbd">B</span></span><span class="keys only-win"><span class="kbd">Ctrl</span><span class="kbd">Alt</span><span class="kbd">B</span></span><span class="x">清除</span></span></div></div>
+    </div>
+    <div class="group-label"><span>防睡眠</span></div>
+    <div class="group">
+      <div class="r"><div class="t">息屏期间保持电脑运行<small>下载、编译、远程连接和后台任务都不会被暂停</small></div><div class="c"><span class="status muted"><span class="dot ok"></span>始终开启</span></div></div>
+      <div class="r only-mac"><div class="t">接通电源时才防睡眠<small>使用电池时照常让系统睡眠，避免一夜把电量耗光</small></div><div class="c"><span class="toggle"></span></div></div>
+      <div class="r only-win"><div class="t">这台电脑支持现代待机（S0）<small>关掉屏幕可能让系统进入低功耗状态，已自动改用黑色遮罩息屏</small></div><div class="c"><span class="btn">了解详情</span></div></div>
+    </div>
+    <div class="group-label"><span>配置文件</span></div>
+    <div class="group">
+      <div class="r"><div class="t"><span class="mono xs only-mac" style="white-space:nowrap">~/Library/Application Support/NightBlank/config.toml</span><span class="mono xs only-win" style="white-space:nowrap">%APPDATA%\NightBlank\config.toml</span><small>和这里的设置实时同步，可以直接编辑</small></div><div class="c"><span class="btn"><span class="only-mac">在访达中显示</span><span class="only-win">在资源管理器中显示</span></span></div></div>
+    </div>
+  </section>
+
+  <!-- 息屏 -->
+  <section id="blank">
+    <h1>息屏</h1>
+    <p class="lead">选择息屏时要关掉什么。唤醒后会恢复到息屏前的亮度和灯光。</p>
+    <div class="group-label"><span>关闭这些</span></div>
+    <div class="group">
+      <div class="r"><div class="t">显示器<small>见下方逐台设置</small></div><div class="c"><span class="toggle on"></span></div></div>
+      <div class="r"><div class="t"><span class="only-mac">键盘背光</span><span class="only-win">键盘背光（笔记本）</span><small class="only-mac">内置键盘 · 唤醒后恢复到 60%</small><small class="only-win">未识别到这台电脑的背光接口，厂商插件会在后续版本提供</small></div><div class="c"><span class="toggle on only-mac"></span><span class="toggle dis only-win"></span></div></div>
+      <div class="r"><div class="t">RGB 灯光（OpenRGB）<small>需要先运行 OpenRGB 并开启 SDK Server · <span class="mono">127.0.0.1:6742</span></small></div><div class="c"><span class="faint small">未连接</span><span class="toggle"></span></div></div>
+    </div>
+    <div class="group-label"><span>显示器</span><span class="faint">检测到 3 台</span></div>
+    <div class="group">
+      <div class="r"><div class="t">范围</div><div class="c"><div class="seg" style="width:220px"><span>全部显示器</span><span class="on">只关所选</span></div></div></div>
+      <div class="r"><div class="lead-ic"><span class="check on"></span><div class="t"><span class="only-mac">内建视网膜显示器</span><span class="only-win">内置显示器 · 14 英寸</span><small>亮度调到 0 并加黑色遮罩</small></div></div><div class="c"><span class="faint small">内置</span></div></div>
+      <div class="r"><div class="lead-ic"><span class="check on"></span><div class="t">DELL U2723QE<small>支持 DDC/CI，会真正断电（待机功耗约 0.3 W）</small></div></div><div class="c"><span class="faint small mono">USB-C</span></div></div>
+      <div class="r"><div class="lead-ic"><span class="check"></span><div class="t">LG HDR 4K<small class="only-mac">这个接口不支持 DDC，只能用黑色遮罩，背光仍会亮着</small><small class="only-win">DDC/CI 没有响应（可能在显示器菜单里关掉了），只能用黑色遮罩</small></div></div><div class="c"><span class="faint small mono">HDMI</span></div></div>
+      <div class="r"><div class="t">息屏方式<small>自动：能断电的断电，不能断电的用遮罩</small></div><div class="c"><span class="select">自动（推荐）</span></div></div>
+    </div>
+    <div class="group-label"><span>被意外点亮时</span></div>
+    <div class="group">
+      <div class="r"><div class="t">自动重新息屏<small>鼠标被碰到或桌子震动把屏幕点亮后，没有收到唤醒操作就重新关掉</small></div><div class="c"><span class="field"><b>3</b><i>秒后</i><span class="step"><span>▲</span><span>▼</span></span></span></div></div>
+    </div>
+  </section>
+
+  <!-- 唤醒 -->
+  <section id="wake">
+    <h1>唤醒</h1>
+    <p class="lead">只有下面这种操作会点亮屏幕，其他按键和鼠标动作在息屏期间都会被拦下。</p>
+    <div class="group">
+      <div class="r"><div class="lead-ic"><span class="radio"></span><div class="t">任意键<small>最省事，但猫踩到键盘也会醒</small></div></div></div>
+      <div class="r"><div class="lead-ic"><span class="radio on"></span><div class="t">按住指定快捷键</div></div><div class="c"><span class="recorder"><span class="keys only-mac"><span class="kbd">⌃</span><span class="kbd">⌥</span><span class="kbd">W</span></span><span class="keys only-win"><span class="kbd">Ctrl</span><span class="kbd">Alt</span><span class="kbd">W</span></span><span class="x">重新录制</span></span></div></div>
+      <div class="r"><div class="lead-ic"><span class="radio"></span><div class="t">移动鼠标<small>需要连续移动一段距离，轻微抖动不算</small></div></div></div>
+      <div class="r"><div class="lead-ic"><span class="radio"></span><div class="t">点击鼠标<small>单击任意鼠标键唤醒，移动不算</small></div></div></div>
+      <div class="r"><div class="lead-ic"><span class="radio"></span><div class="t">输入密码<small>先按任意键调出密码框，输错会立即重新息屏</small></div></div></div>
+      <div class="r"><div class="lead-ic"><span class="radio"></span><div class="t">只在定时结束时<small>息屏期间不响应任何输入，只有紧急快捷键可以恢复</small></div></div></div>
+    </div>
+    <div class="group-label"><span>防误触</span></div>
+    <div class="group">
+      <div class="r"><div class="t">快捷键需按住<small>短按不会唤醒，避免碰巧按到</small></div><div class="c"><span class="slider"><span style="width:33%"></span></span><span class="num small" style="width:44px;text-align:right">1.0 秒</span></div></div>
+      <div class="r dim"><div class="t">鼠标累计移动<small>仅在「移动鼠标」方式下生效</small></div><div class="c"><span class="field"><b>150</b><i>px</i><span class="step"><span>▲</span><span>▼</span></span></span><span class="small muted">在</span><span class="field"><b>800</b><i>ms</i><span class="step"><span>▲</span><span>▼</span></span></span><span class="small muted">内</span></div></div>
+    </div>
+    <div class="group-label"><span>唤醒之后</span></div>
+    <div class="group">
+      <div class="r"><div class="t">立即锁屏<small>需要用<span class="only-mac">登录密码或 Touch ID</span><span class="only-win"> Windows Hello 或 PIN</span> 解锁，适合放在公共场所的电脑</small></div><div class="c"><span class="toggle"></span></div></div>
+      <div class="r"><div class="t">紧急恢复快捷键<small>任何唤醒方式下都有效，出错时用它恢复亮度和灯光</small></div><div class="c"><span class="recorder"><span class="keys only-mac"><span class="kbd">⌃</span><span class="kbd">⌥</span><span class="kbd">⇧</span><span class="kbd">esc</span></span><span class="keys only-win"><span class="kbd">Ctrl</span><span class="kbd">Alt</span><span class="kbd">Shift</span><span class="kbd">Esc</span></span><span class="x">重新录制</span></span></div></div>
+    </div>
+  </section>
+
+  <!-- 定时 -->
+  <section id="schedule">
+    <h1>定时</h1>
+    <p class="lead">到点自动息屏，到点自动唤醒。期间手动唤醒后，本次计划就结束了。</p>
+    <div class="group">
+      <div class="r"><div class="t"><span style="display:flex;align-items:center;gap:7px"><span class="dot standby"></span>按计划自动息屏</span><small>下次：今晚 23:30 开始，明早 07:30 结束</small></div><div class="c"><span class="toggle on"></span></div></div>
+      <div class="r" style="flex-direction:column;align-items:stretch;gap:14px;padding:18px 14px 16px">
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <div class="big-time"><span class="tf">23:30</span><span class="a">→</span><span class="tf">07:30</span></div>
+          <span class="small muted">次日结束 · 共 8 小时</span>
+        </div>
+        <div>
+          <div class="track"><span class="band" style="left:97.9%;right:0;border-radius:0 3px 3px 0"></span><span class="band" style="left:0;width:31.25%;border-radius:3px 0 0 3px"></span><span class="now" style="left:86.3%"></span></div>
+          <div class="track-labels"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>24:00</span></div>
+        </div>
+      </div>
+      <div class="r"><div class="t">重复<small>周五晚开始的会在周六早上结束</small></div><div class="c"><div class="days"><span class="on">一</span><span class="on">二</span><span class="on">三</span><span class="on">四</span><span class="on">五</span><span>六</span><span>日</span></div></div></div>
+    </div>
+    <div class="group-label"><span>计划开始前</span></div>
+    <div class="group">
+      <div class="r"><div class="t">提前提醒<small>弹出通知，可以推迟 30 分钟或跳过今晚</small></div><div class="c"><span class="select">提前 5 分钟</span></div></div>
+      <div class="r"><div class="t">有程序在全屏播放视频时跳过<small>例如在看电影时不打断</small></div><div class="c"><span class="toggle on"></span></div></div>
+    </div>
+  </section>
+
+  <!-- 关于与诊断 -->
+  <section id="about">
+    <div style="display:flex;align-items:flex-end;justify-content:space-between;margin:6px 0 20px">
+      <div><h1 style="margin:0">NightBlank <span class="num muted" style="font-weight:400;font-size:15px">0.1.0</span></h1><div class="small muted" style="margin-top:4px">构建于 2026-10-17 · 已是最新版本 · 开源（MIT）</div></div>
+      <span class="btn">检查更新</span>
+    </div>
+    <div class="group-label only-mac"><span>权限</span></div>
+    <div class="group only-mac">
+      <div class="r"><div class="t">辅助功能<small>用来在息屏期间拦截按键和点击</small></div><div class="c"><span class="status"><span class="dot ok"></span>已授权</span></div></div>
+      <div class="r"><div class="t">输入监控<small>用来识别唤醒快捷键。未授权时只能从菜单栏手动唤醒</small></div><div class="c"><span class="status" style="color:var(--bad)"><span class="dot bad"></span>未授权</span><span class="btn primary">打开系统设置</span></div></div>
+    </div>
+    <div class="group-label"><span>这台电脑能做到什么</span></div>
+    <div class="group">
+      <div class="r"><div class="t">防止系统睡眠<small class="mono only-mac">IOPMAssertion · PreventUserIdleSystemSleep</small><small class="mono only-win">SetThreadExecutionState · ES_SYSTEM_REQUIRED</small></div><div class="c"><span class="status"><span class="dot ok"></span>正常</span></div></div>
+      <div class="r only-mac"><div class="t">键盘背光<small>CoreBrightness · 系统更新后可能失效，失效时只关屏幕</small></div><div class="c"><span class="status"><span class="dot ok"></span>可用</span></div></div>
+      <div class="r only-win"><div class="t">输入钩子<small>WH_KEYBOARD_LL / WH_MOUSE_LL · 无需管理员权限</small></div><div class="c"><span class="status"><span class="dot ok"></span>正常</span></div></div>
+      <div class="r only-win"><div class="t">现代待机（S0）<small>这台电脑关屏后可能自动进入低功耗状态，已改用遮罩息屏来规避</small></div><div class="c"><span class="status muted"><span class="dot"></span>已规避</span></div></div>
+      <div class="r"><div class="t">显示器断电（DDC/CI）<small>DELL U2723QE 支持；LG HDR 4K <span class="only-mac">接在 HDMI 上不支持</span><span class="only-win">没有响应</span>，改用遮罩</small></div><div class="c"><span class="status"><span class="dot ok"></span>1 / 2 台外接</span></div></div>
+      <div class="r"><div class="t">OpenRGB<small class="mono">127.0.0.1:6742 · 连接被拒绝</small></div><div class="c"><span class="status muted"><span class="dot"></span>未连接</span></div></div>
+    </div>
+    <div class="group-label"><span>上次息屏</span></div>
+    <div class="group">
+      <div class="r"><div class="t"><span class="num">昨天 23:30 – 今天 07:30</span><small>期间屏幕被意外点亮 2 次，都在 3 秒内重新息屏；系统没有睡眠</small></div><div class="c"><span class="btn">导出诊断信息</span></div></div>
+    </div>
+  </section>
+
+  </main>
+</div>
+</div></div>
+<script>
+const q=new URLSearchParams(location.search);
+document.body.classList.add(q.get('p')||'mac');
+function show(){const id=(location.hash||'#wake').slice(1);
+  document.querySelectorAll('section').forEach(s=>s.classList.toggle('on',s.id===id));
+  document.querySelectorAll('.nav a').forEach(a=>a.classList.toggle('on',a.getAttribute('href')==='#'+id));}
+addEventListener('hashchange',show);show();
+</script>
+</body></html>

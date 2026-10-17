@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>NightBlank · 首次设置</title>
+<link rel="stylesheet" href="nb.css">
+<style>
+.stage{padding:28px;background:#E8E8E9;display:inline-block}
+.window{width:600px;background:var(--paper);border:1px solid #CFCFD2;border-radius:12px;box-shadow:0 18px 40px rgba(0,0,0,.14),0 1px 3px rgba(0,0,0,.08);overflow:hidden}
+.lights{display:flex;gap:8px;padding:14px 16px}
+.lights i{width:12px;height:12px;border-radius:50%;background:#D9D9DC;border:1px solid #C9C9CC}
+.content{padding:16px 48px 0}
+.mark{width:44px;height:30px;border-radius:5px;background:var(--blank);position:relative;margin-bottom:22px}
+.mark::after{content:"";position:absolute;right:5px;bottom:5px;width:4px;height:4px;border-radius:50%;background:var(--standby);box-shadow:0 0 5px 1px rgba(227,155,45,.5)}
+h1{font-size:21px;font-weight:600;margin:0 0 10px;line-height:1.35}
+.lead{color:var(--ink2);margin:0 0 28px;line-height:1.65}
+.step{display:flex;gap:16px;padding:18px 0;border-top:1px solid var(--line)}
+.step:last-of-type{border-bottom:1px solid var(--line)}
+.n{font:500 12px var(--mono);color:var(--ink3);width:16px;padding-top:2px}
+.step .t{flex:1}
+.step .t b{font-weight:600;display:block;margin-bottom:3px}
+.step .t small{color:var(--ink2);font-size:12px}
+.step .c{display:flex;align-items:center}
+.done{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--ok)}
+.done svg{display:block}
+.note{font-size:12px;color:var(--ink3);margin:16px 0 0;line-height:1.6}
+.foot{display:flex;justify-content:space-between;align-items:center;padding:28px 48px 28px}
+.foot .small{color:var(--ink3)}
+.wait{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--ink2)}
+</style></head>
+<body class="mac">
+<div class="stage"><div class="window">
+  <div class="lights"><i></i><i></i><i></i></div>
+  <div class="content">
+    <div class="mark" aria-hidden="true"></div>
+    <h1>还差一步：让 NightBlank 在息屏时<br>接管键盘和鼠标</h1>
+    <p class="lead">息屏后，猫踩到键盘或桌子一震都可能把屏幕点亮。NightBlank 会拦下这些误触，只在你按住 <span class="keys"><span class="kbd">⌃</span><span class="kbd">⌥</span><span class="kbd">W</span></span> 时唤醒。按键只在本机判断，不记录、不上传。</p>
+
+    <div class="step">
+      <span class="n">1</span>
+      <div class="t"><b>辅助功能</b><small>用来在息屏期间拦截按键和点击</small></div>
+      <div class="c"><span class="done"><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 6.2 4.8 9 10 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>已开启</span></div>
+    </div>
+    <div class="step">
+      <span class="n">2</span>
+      <div class="t"><b>输入监控</b><small>用来识别唤醒快捷键。打开后系统可能要求重启 NightBlank</small></div>
+      <div class="c"><span class="btn primary">打开系统设置</span></div>
+    </div>
+    <p class="note">在「隐私与安全性 › 输入监控」里打开 NightBlank，回到这里状态会自动刷新。<br>暂时跳过也能用，但只能从菜单栏手动唤醒。</p>
+  </div>
+  <div class="foot">
+    <span class="btn ghost" style="padding-left:0">暂时跳过</span>
+    <span style="display:flex;gap:14px;align-items:center"><span class="wait"><span class="dot"></span>已完成 1 / 2</span><span class="btn dis">完成</span></span>
+  </div>
+</div></div>
+</body></html>

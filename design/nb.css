@@ -1,0 +1,91 @@
+/* NightBlank 设计稿共享样式（无框架、无网页字体；后续可直接迁入 ui/） */
+:root{
+  --paper:#fff; --win:#F5F5F4; --ink:#1C1C1E; --ink2:#6B6B70; --ink3:#9C9CA1;
+  --line:#E5E5E7; --blank:#111113; --standby:#E39B2D; --ok:#2F8F4E; --bad:#C4442F;
+  --ui:-apple-system,"PingFang SC","Noto Sans CJK SC",sans-serif;
+  --mono:"SF Mono","Cascadia Mono","IBM Plex Mono",ui-monospace,monospace;
+  --r:8px;
+}
+.win{--win:#F3F3F3; --ui:"Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI","Noto Sans CJK SC",sans-serif; --r:4px}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{font:13px/1.45 var(--ui);color:var(--ink);background:#E8E8E9;-webkit-font-smoothing:antialiased}
+.mono,.num{font-family:var(--mono);font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.muted{color:var(--ink2)} .faint{color:var(--ink3)}
+.small{font-size:12px} .xs{font-size:11px}
+hr{border:0;border-top:1px solid var(--line);margin:0}
+button{font:inherit;color:inherit}
+
+/* ---------- 桌面上下文 ---------- */
+.menubar{height:28px;background:rgba(246,246,246,.96);border-bottom:1px solid #D9D9DB;display:flex;align-items:center;justify-content:flex-end;gap:18px;padding:0 14px;font-size:13px}
+.menubar .tray{display:flex;align-items:center;justify-content:center;width:30px;height:22px;border-radius:5px;background:rgba(0,0,0,.1)}
+.taskbar{position:absolute;left:0;right:0;bottom:0;height:48px;background:#EEEEF0;border-top:1px solid #DADADC;display:flex;align-items:center;justify-content:flex-end;gap:14px;padding:0 14px;font-size:12px}
+.taskbar .tray{display:flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:4px;background:rgba(0,0,0,.07)}
+.taskbar .clock{text-align:right;line-height:1.3}
+
+/* ---------- 控件 ---------- */
+.toggle{position:relative;display:inline-block;width:36px;height:20px;border-radius:10px;background:#D6D6D9;flex:none}
+.toggle::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.25)}
+.toggle.on{background:var(--ink)} .toggle.on::after{left:18px}
+.win .toggle{width:40px;height:20px;background:transparent;border:1px solid #8A8A8E}
+.win .toggle::after{top:3px;left:4px;width:12px;height:12px;background:#5C5C60;box-shadow:none}
+.win .toggle.on{background:var(--ink);border-color:var(--ink)} .win .toggle.on::after{left:23px;background:#fff}
+.toggle.dis{opacity:.4}
+
+.select{display:inline-flex;align-items:center;gap:8px;height:24px;padding:0 8px 0 10px;border:1px solid var(--line);border-radius:6px;background:#fff;box-shadow:0 1px 0 rgba(0,0,0,.03);white-space:nowrap}
+.select::after{content:"";width:6px;height:6px;border-right:1.5px solid var(--ink2);border-bottom:1.5px solid var(--ink2);transform:rotate(45deg) translate(-2px,-1px);margin-left:2px}
+.win .select{height:32px;border-radius:4px;padding:0 10px 0 11px;min-width:140px;justify-content:space-between;border-bottom-color:#C9C9CC}
+
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:26px;padding:0 12px;border:1px solid var(--line);border-radius:6px;background:#fff;white-space:nowrap;box-shadow:0 1px 0 rgba(0,0,0,.03)}
+.win .btn{height:32px;border-radius:4px;padding:0 14px}
+.btn.primary{background:var(--blank);border-color:var(--blank);color:#fff}
+.btn.ghost{border-color:transparent;background:transparent;box-shadow:none;color:var(--ink2)}
+.btn.dis{color:var(--ink3);background:#F4F4F5;box-shadow:none}
+
+.keys{display:inline-flex;gap:3px;align-items:center}
+.kbd{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 5px;border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;background:#fff;font:500 11px var(--mono);color:var(--ink)}
+.mac .kbd{font-family:var(--ui);font-size:12px}
+.recorder{display:inline-flex;align-items:center;gap:8px;height:26px;padding:0 4px 0 6px;border:1px solid var(--line);border-radius:6px;background:#fff}
+.recorder .x{color:var(--ink3);font-size:11px;padding:0 4px}
+.win .recorder{height:32px;border-radius:4px}
+
+.field{display:inline-flex;align-items:center;height:24px;border:1px solid var(--line);border-radius:6px;background:#fff;overflow:hidden}
+.field b{font:500 12px var(--mono);padding:0 8px;min-width:46px;text-align:right}
+.field i{font-style:normal;font-size:11px;color:var(--ink3);padding-right:8px}
+.field .step{display:flex;flex-direction:column;border-left:1px solid var(--line);height:100%;width:16px;justify-content:center;align-items:center;font-size:7px;color:var(--ink2);line-height:9px}
+.win .field{height:32px;border-radius:4px;border-bottom-color:#C9C9CC}
+
+.slider{position:relative;width:150px;height:4px;border-radius:2px;background:var(--line)}
+.slider span{position:absolute;left:0;top:0;bottom:0;border-radius:2px;background:var(--ink)}
+.slider span::after{content:"";position:absolute;right:-8px;top:-6px;width:16px;height:16px;border-radius:50%;background:#fff;border:1px solid #CFCFD3;box-shadow:0 1px 2px rgba(0,0,0,.15)}
+.win .slider span::after{border:5px solid #fff;background:var(--ink);box-shadow:0 0 0 1px #D0D0D3}
+
+.seg{display:flex;padding:2px;border-radius:7px;background:#EDEDEF}
+.seg span{flex:1;text-align:center;height:24px;line-height:24px;border-radius:5px;color:var(--ink2);font-size:12px}
+.seg span.on{background:#fff;color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.12);font-weight:500}
+.win .seg{border-radius:4px} .win .seg span{border-radius:3px}
+
+.radio{width:16px;height:16px;border-radius:50%;border:1px solid #C3C3C7;background:#fff;flex:none;position:relative}
+.radio.on{border:5px solid var(--ink)}
+.check{width:16px;height:16px;border-radius:4px;border:1px solid #C3C3C7;background:#fff;flex:none;position:relative}
+.check.on{background:var(--ink);border-color:var(--ink)}
+.check.on::after{content:"";position:absolute;left:5px;top:2px;width:4px;height:8px;border:solid #fff;border-width:0 1.5px 1.5px 0;transform:rotate(45deg)}
+
+.dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--ink3);flex:none}
+.dot.standby{background:var(--standby);box-shadow:0 0 0 3px rgba(227,155,45,.18)}
+.dot.ok{background:var(--ok)} .dot.bad{background:var(--bad)}
+
+/* 24 小时轨道：夜间段 + 当前时刻 */
+.track{position:relative;height:6px;border-radius:3px;background:#EDEDEF}
+.track .band{position:absolute;top:0;bottom:0;background:#3A3A3C}
+.track .now{position:absolute;top:-4px;width:2px;height:14px;border-radius:1px;background:var(--ink)}
+.track-labels{display:flex;justify-content:space-between;margin-top:5px;font:10px var(--mono);color:var(--ink3)}
+
+/* ---------- 主按钮：一块熄掉的屏幕 + 待机灯 ---------- */
+.blank-btn{position:relative;display:flex;align-items:center;justify-content:space-between;height:64px;padding:0 18px;border-radius:10px;background:var(--blank);color:#fff;box-shadow:inset 0 0 0 1px rgba(255,255,255,.06)}
+.win .blank-btn{border-radius:6px}
+.blank-btn .label{font-size:16px;font-weight:600;letter-spacing:.02em}
+.blank-btn .sub{font-size:11px;color:rgba(255,255,255,.5);margin-top:1px}
+.blank-btn .led{position:absolute;right:12px;bottom:10px;width:5px;height:5px;border-radius:50%;background:#3A3A3C}
+.blank-btn .led.on{background:var(--standby);box-shadow:0 0 6px 1px rgba(227,155,45,.55)}
+.blank-btn .k{font:500 11px var(--mono);color:rgba(255,255,255,.45)}
