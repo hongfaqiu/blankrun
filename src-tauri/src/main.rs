@@ -7,7 +7,7 @@ mod platform;
 use std::sync::{mpsc, Arc, Mutex};
 
 use engine::{Engine, Msg};
-use nightblank_core::Config;
+use blankrun_core::Config;
 use platform::{Native, Platform};
 use serde_json::{json, Value};
 use tauri::{
@@ -126,7 +126,7 @@ fn toggle_popover(app: &AppHandle, anchor: tauri::Rect) {
 fn main() {
     std::panic::set_hook(Box::new(|info| {
         platform::emergency_restore();
-        eprintln!("[nightblank] panic: {info}");
+        eprintln!("[blankrun] panic: {info}");
     }));
 
     let (tx, rx) = mpsc::channel::<Msg>();
@@ -145,7 +145,7 @@ fn main() {
             // 上次异常退出（崩溃、强退、断电）留下的标记：还原背光、点亮屏幕
             let marker = cfg_path.with_file_name("blanking.state");
             if let Ok(saved) = std::fs::read_to_string(&marker) {
-                if let Err(e) = plat.restore_on_startup(Some(&saved)) { eprintln!("[nightblank] restore: {e}"); }
+                if let Err(e) = plat.restore_on_startup(Some(&saved)) { eprintln!("[blankrun] restore: {e}"); }
                 let _ = std::fs::remove_file(&marker);
             }
             let first_run = !cfg_path.with_file_name("onboarded").exists();
@@ -162,13 +162,13 @@ fn main() {
 
             let blank = MenuItem::with_id(app, "blank", "立即息屏", true, None::<&str>)?;
             let settings = MenuItem::with_id(app, "settings", "设置…", true, None::<&str>)?;
-            let quit = MenuItem::with_id(app, "quit", "退出 NightBlank", true, None::<&str>)?;
+            let quit = MenuItem::with_id(app, "quit", "退出息屏跑", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&blank, &settings, &quit])?;
             let menu_tx = tx.clone();
 
             TrayIconBuilder::with_id("main")
                 .icon(app.default_window_icon().cloned().expect("icon"))
-                .tooltip("NightBlank")
+                .tooltip("息屏跑 BlankRun")
                 .menu(&menu)
                 .show_menu_on_left_click(false)
                 .on_tray_icon_event(|tray, e| {
@@ -198,7 +198,7 @@ fn main() {
             finish_onboarding
         ])
         .build(tauri::generate_context!())
-        .expect("error while building NightBlank");
+        .expect("error while building BlankRun");
 
     app.run(|app, ev| match ev {
         // 没有可见窗口时不要退出（托盘常驻）

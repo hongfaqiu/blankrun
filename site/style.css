@@ -1,0 +1,95 @@
+/* 息屏跑 BlankRun 官网。规范见 design/DESIGN-CARD.md：黑白灰为主，琥珀只表示关键状态，系统字体，无网页字体。 */
+:root{
+  --bg:#F5F5F4; --paper:#FFFFFF; --ink:#1C1C1E; --ink2:#6B6B70; --ink3:#9C9CA1; --line:#E5E5E7;
+  --blank:#111113; --blank-edge:transparent; --amber:#E39B2D;
+  --sans:-apple-system,BlinkMacSystemFont,"PingFang SC","Segoe UI Variable","Segoe UI","Microsoft YaHei UI","Microsoft YaHei","Noto Sans CJK SC",sans-serif;
+  --mono:"SF Mono",ui-monospace,"Cascadia Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root{ --bg:#0C0C0D; --paper:#1E1E20; --ink:#ECECEE; --ink2:#A1A1A6; --ink3:#6E6E73; --line:#323235;
+    --blank:#050506; --blank-edge:rgba(255,255,255,.09); --amber:#E8A33B; }
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.65 var(--sans);-webkit-font-smoothing:antialiased}
+a{color:inherit;text-decoration-color:var(--ink3);text-underline-offset:3px}
+a:hover{text-decoration-color:var(--ink)}
+:focus-visible{outline:2px solid var(--ink);outline-offset:3px;border-radius:4px}
+img{max-width:100%;height:auto;display:block}
+.muted{color:var(--ink3)}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+
+/* 双语：默认中文；无 JS 时也只显示中文 */
+[lang="en"]:not(html){display:none}
+html[data-lang="en"] [lang="en"]{display:revert}
+html[data-lang="en"] [lang="zh"]:not(html){display:none}
+
+.top,main,footer{max-width:1080px;margin:0 auto;padding:0 28px}
+.top{display:flex;align-items:center;justify-content:space-between;height:68px}
+.brand{display:flex;align-items:center;gap:8px;text-decoration:none;font-weight:600}
+.brand .muted{font-weight:400}
+nav{display:flex;align-items:center;gap:22px;font-size:14px;color:var(--ink2)}
+nav a{text-decoration:none}
+nav a:hover{color:var(--ink)}
+.lang{font:13px var(--mono);color:var(--ink2);background:none;border:1px solid var(--line);border-radius:6px;padding:3px 9px;cursor:pointer}
+.lang:hover{color:var(--ink);border-color:var(--ink3)}
+
+.hero{display:grid;grid-template-columns:1.1fr .9fr;gap:56px;align-items:center;padding:72px 0 96px}
+.status{display:inline-flex;align-items:center;gap:8px;margin:0 0 22px;font-size:13px;color:var(--ink2)}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--ink3)}
+h1{font-size:clamp(40px,6vw,64px);line-height:1.12;letter-spacing:-.02em;font-weight:650;margin:0 0 22px}
+.lead{font-size:17px;color:var(--ink2);max-width:34em;margin:0 0 36px}
+.cta{display:flex;align-items:center;gap:26px;flex-wrap:wrap}
+/* 记忆点：主按钮是一块熄掉的屏，右下角一颗琥珀待机灯 */
+.panel{position:relative;display:block;min-width:300px;padding:18px 54px 18px 22px;background:var(--blank);color:#F2F2F3;border-radius:10px;box-shadow:inset 0 0 0 1px var(--blank-edge);text-decoration:none}
+.panel b{display:block;font-size:17px;font-weight:600}
+.panel small{display:block;font-size:12.5px;color:#8E8E93;margin-top:2px}
+.led{position:absolute;right:16px;bottom:14px;width:7px;height:7px;border-radius:50%;background:var(--amber);box-shadow:0 0 8px var(--amber)}
+.panel:hover .led{animation:breathe 2.4s ease-in-out infinite}
+@keyframes breathe{50%{opacity:.35;box-shadow:none}}
+@media (prefers-reduced-motion:reduce){.panel:hover .led{animation:none}}
+.ghost{font-size:15px;color:var(--ink2);text-decoration:none}
+.ghost:hover{color:var(--ink)}
+.hero-shot{margin:0;justify-self:end;max-width:400px}
+.hero-shot img{border-radius:12px}
+
+section{padding:72px 0;border-top:1px solid var(--line)}
+h2{font-size:22px;font-weight:600;margin:0 0 8px;letter-spacing:-.01em}
+.sub,.note,.later{color:var(--ink2);font-size:14px;margin:0 0 28px}
+.note{color:var(--ink3);margin:16px 0 0}
+.later{margin:28px 0 0;color:var(--ink3)}
+
+.timeline{list-style:none;margin:32px 0 0;padding:0}
+.timeline li{display:grid;grid-template-columns:200px 1fr;gap:24px;padding:20px 0;border-bottom:1px solid var(--line);position:relative}
+.timeline li:last-child{border-bottom:0}
+.timeline .t{font-size:20px;color:var(--ink)}
+.timeline li.on .t{color:var(--amber)}
+.timeline b{display:block;font-weight:600}
+.timeline small{display:block;color:var(--ink2);font-size:14.5px;margin-top:2px}
+
+.features dl{margin:0;display:grid;grid-template-columns:1fr 1fr;column-gap:56px}
+.features dl>div{padding:18px 0;border-bottom:1px solid var(--line)}
+.features dt{font-weight:600;margin-bottom:4px}
+.features dd{margin:0;color:var(--ink2);font-size:14.5px}
+
+.screens figure{margin:0}
+.screens .wide img{border-radius:10px}
+.screens figcaption{font-size:13px;color:var(--ink3);margin-top:10px}
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:32px;margin-top:40px;align-items:start}
+.pair img{border-radius:10px}
+.screens .wide{margin-top:28px}
+
+.download p{max-width:40em;color:var(--ink2);margin:12px 0 0}
+footer{display:flex;justify-content:space-between;gap:16px;padding-top:28px;padding-bottom:40px;border-top:1px solid var(--line);font-size:13px;color:var(--ink3)}
+footer a{text-decoration:none}
+footer a:hover{color:var(--ink)}
+
+@media (max-width:820px){
+  .hero{grid-template-columns:1fr;gap:40px;padding:40px 0 64px}
+  .hero-shot{justify-self:start;max-width:340px}
+  .features dl,.pair{grid-template-columns:1fr}
+  .timeline li{grid-template-columns:1fr;gap:4px}
+  nav{gap:14px}
+  nav a[href^="#"]{display:none}
+  .panel{min-width:0;width:100%}
+}

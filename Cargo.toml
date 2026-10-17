@@ -6,6 +6,8 @@ members = ["crates/core", "src-tauri"]
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
+repository = "https://github.com/hongfaqiu/blankrun"
+homepage = "https://blankrun.cosfoc.com"
 
 # 体积优先：发布构建尽量小
 [profile.release]

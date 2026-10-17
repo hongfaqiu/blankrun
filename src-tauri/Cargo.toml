@@ -1,18 +1,18 @@
 [package]
-name = "nightblank"
+name = "blankrun"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [[bin]]
-name = "nightblank"
+name = "blankrun"
 path = "src/main.rs"
 
 [build-dependencies]
 tauri-build = { version = "2", default-features = false, features = [] }
 
 [dependencies]
-nightblank-core = { path = "../crates/core" }
+blankrun-core = { path = "../crates/core" }
 # 只开必要特性：wry(WebView) + 托盘 + 资源压缩。不开 devtools/updater/plugin 等。
 tauri = { version = "2", default-features = false, features = ["wry", "tray-icon", "compression", "common-controls-v6"] }
 # 以下都已经是 tauri 的传递依赖，不增加体积

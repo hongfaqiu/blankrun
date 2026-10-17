@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="zh-CN" data-lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>息屏跑 BlankRun · 夜里息屏，AI 接着跑</title>
+<meta name="description" content="息屏跑（BlankRun）：一键关掉屏幕和键盘背光，电脑不睡眠，让 AI agent、编译和下载在夜里继续跑。macOS + Windows，开源免费，早期开发中。">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#F5F5F4" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0C0C0D" media="(prefers-color-scheme: dark)">
+<meta property="og:title" content="息屏跑 BlankRun">
+<meta property="og:description" content="夜里息屏，AI 接着跑。Turn the screens off at night. Keep your AI agents running.">
+<meta property="og:image" content="https://blankrun.cosfoc.com/img/popover-mac.webp">
+<meta property="og:url" content="https://blankrun.cosfoc.com/">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon.png" type="image/png" sizes="32x32">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="/"><img src="/img/icon.png" width="22" height="22" alt=""><span>息屏跑</span><span class="muted">BlankRun</span></a>
+  <nav>
+    <a href="#features"><span lang="zh">功能</span><span lang="en">Features</span></a>
+    <a href="#screens"><span lang="zh">截图</span><span lang="en">Screens</span></a>
+    <a href="https://github.com/hongfaqiu/blankrun">GitHub</a>
+    <button class="lang" id="langBtn" type="button" aria-label="Switch language"><span lang="zh">EN</span><span lang="en">中文</span></button>
+  </nav>
+</header>
+
+<main>
+<section class="hero">
+  <div class="hero-text">
+    <p class="status"><span class="dot"></span><span lang="zh">早期开发中 · 还没在真机上测试</span><span lang="en">Early development · not yet tested on hardware</span></p>
+    <h1><span lang="zh">夜里息屏，<br>AI 接着跑。</span><span lang="en">Screens off.<br>Agents on.</span></h1>
+    <p class="lead">
+      <span lang="zh">睡前给 Claude Code、Codex 或本地模型排好一晚上的任务。息屏跑把屏幕和键盘背光真正关掉，同时不让电脑睡眠；猫踩到键盘也不会亮，只按你定的方式醒来。</span>
+      <span lang="en">Queue a night of work for Claude Code, Codex or a local model. BlankRun really turns the displays and keyboard backlight off while keeping the computer awake. A cat on the keyboard won't light it up. It wakes only the way you choose.</span>
+    </p>
+    <div class="cta">
+      <a class="panel" href="https://github.com/hongfaqiu/blankrun/releases">
+        <b><span lang="zh">下载 · 即将推出</span><span lang="en">Download · coming soon</span></b>
+        <small><span lang="zh">macOS 11+ 与 Windows 10/11 · 关注 GitHub Releases</span><span lang="en">macOS 11+ and Windows 10/11 · watch GitHub Releases</span></small>
+        <i class="led" aria-hidden="true"></i>
+      </a>
+      <a class="ghost" href="https://github.com/hongfaqiu/blankrun"><span lang="zh">查看源码</span><span lang="en">View source</span> →</a>
+    </div>
+  </div>
+  <figure class="hero-shot">
+    <picture>
+      <source srcset="/img/popover-mac-dark.webp" media="(prefers-color-scheme: dark)">
+      <img src="/img/popover-mac.webp" width="440" height="560" alt="息屏跑菜单栏面板：立即息屏、今晚 23:30 → 07:30 的计划、唤醒方式">
+    </picture>
+  </figure>
+</section>
+
+<section class="night" aria-label="一晚上">
+  <h2><span lang="zh">一晚上是这样的</span><span lang="en">A night with BlankRun</span></h2>
+  <ol class="timeline">
+    <li><span class="t num">23:30</span><div><b><span lang="zh">屏幕和背光熄灭</span><span lang="en">Displays and backlight go dark</span></b><small><span lang="zh">按「立即息屏」，或者交给定时计划。也可以延迟 1、5、15 分钟。</span><span lang="en">Click “Blank now” or let the schedule do it. Delay by 1, 5 or 15 minutes if you like.</span></small></div></li>
+    <li class="on"><span class="t num">00:00 – 07:00</span><div><b><span lang="zh">电脑醒着，任务照跑</span><span lang="en">The computer stays awake, jobs keep running</span></b><small><span lang="zh">防睡眠一直生效。屏幕被碰亮了，几秒内会自动再关。</span><span lang="en">Sleep stays blocked the whole time. If something lights the screen, it goes dark again within seconds.</span></small></div></li>
+    <li><span class="t num">07:30</span><div><b><span lang="zh">按你定的方式醒来</span><span lang="en">Wakes the way you chose</span></b><small><span lang="zh">按住 ⌃⌥W 一秒、任意键、移动鼠标，或者等计划结束。醒来后可以锁屏。</span><span lang="en">Hold ⌃⌥W for a second, press any key, move the mouse, or wait for the schedule to end. Optionally lock on wake.</span></small></div></li>
+  </ol>
+</section>
+
+<section id="features" class="features">
+  <h2><span lang="zh">功能</span><span lang="en">Features</span></h2>
+  <p class="sub"><span lang="zh">下面的功能代码都写好了，还在等真机验证。</span><span lang="en">All of this is written and waiting for real-hardware testing.</span></p>
+  <dl>
+    <div><dt><span lang="zh">真关屏，不睡眠</span><span lang="en">Real display off, no sleep</span></dt><dd><span lang="zh">macOS 用 IOPMAssertion 阻止睡眠，Windows 用 SetThreadExecutionState；关的是显示器电源，不是盖一层黑图。</span><span lang="en">IOPMAssertion on macOS and SetThreadExecutionState on Windows block sleep. The display is actually powered down, not covered with a black image.</span></dd></div>
+    <div><dt><span lang="zh">防误触唤醒</span><span lang="en">No accidental wake</span></dt><dd><span lang="zh">息屏期间拦截键鼠输入。唤醒方式可选：任意键、按住快捷键、移动鼠标、点击、输入密码、只在定时结束时。另有一个随时可用的紧急恢复键。</span><span lang="en">Input is swallowed while blank. Wake by any key, holding a hotkey, mouse move, click, password, or only when the schedule ends. An emergency restore hotkey always works.</span></dd></div>
+    <div><dt><span lang="zh">定时计划</span><span lang="en">Schedule</span></dt><dd><span lang="zh">比如每天 23:30 → 07:30，支持跨午夜，可以只跳过今晚。</span><span lang="en">For example 23:30 → 07:30 daily. Works across midnight, and you can skip just tonight.</span></dd></div>
+    <div><dt><span lang="zh">键盘背光</span><span lang="en">Keyboard backlight</span></dt><dd><span lang="zh">macOS 上和屏幕一起关掉。用的是系统私有接口，启动时先探测，不可用就跳过，不影响其他功能。</span><span lang="en">Turned off together with the screen on macOS. It uses a private API that is probed at runtime and skipped when unavailable.</span></dd></div>
+    <div><dt><span lang="zh">Windows 待机兜底</span><span lang="en">Modern Standby fallback</span></dt><dd><span lang="zh">有些新款 Windows 笔记本一关屏就进低功耗待机，后台任务会被挂起。检测到这类机器时，改用全黑遮罩。</span><span lang="en">Some Windows laptops drop into Modern Standby when the display turns off, which suspends background jobs. BlankRun detects this and uses a black overlay instead.</span></dd></div>
+    <div><dt><span lang="zh">小，而且只在本地</span><span lang="en">Small and local</span></dt><dd><span lang="zh">基于 Tauri 2，用系统自带 WebView，前端零依赖。目标是安装包 3–4 MB。不联网、不上传，开源（MIT）。</span><span lang="en">Built on Tauri 2 with the system WebView and a zero-dependency UI. The target installer size is 3–4 MB. No network, no telemetry, MIT licensed.</span></dd></div>
+  </dl>
+  <p class="later"><span lang="zh">之后的版本：外接显示器断电（DDC/CI）、RGB 灯、开机启动、全局快捷键、开始前提醒、全屏视频时跳过。</span><span lang="en">Later: external monitor power via DDC/CI, RGB lighting, launch at login, global hotkey, pre-start reminder, skip during fullscreen video.</span></p>
+</section>
+
+<section id="screens" class="screens">
+  <h2><span lang="zh">界面</span><span lang="en">Screens</span></h2>
+  <figure class="wide">
+    <img src="/img/blank-mac-hint.webp" width="1600" height="1000" loading="lazy" alt="息屏中被碰到时，屏幕中央只出现一行唤醒提示">
+    <figcaption><span lang="zh">息屏中被碰到，只亮一行提示，3 秒后再黑。</span><span lang="en">Touched while blank: one quiet hint, dark again after 3 seconds.</span></figcaption>
+  </figure>
+  <div class="pair">
+    <figure>
+      <picture><source srcset="/img/settings-mac-wake-dark.webp" media="(prefers-color-scheme: dark)"><img src="/img/settings-mac-wake.webp" width="1600" height="1697" loading="lazy" alt="设置 · 唤醒方式"></picture>
+      <figcaption><span lang="zh">设置 · 唤醒</span><span lang="en">Settings · Wake</span></figcaption>
+    </figure>
+    <figure>
+      <img src="/img/settings-win-schedule.webp" width="1600" height="1164" loading="lazy" alt="Windows 设置 · 定时">
+      <figcaption><span lang="zh">Windows · 定时</span><span lang="en">Windows · Schedule</span></figcaption>
+    </figure>
+  </div>
+  <p class="note"><span lang="zh">截图是设计稿渲染出来的，正式版以实际界面为准。</span><span lang="en">Screens are rendered from design mockups; the shipped app may differ.</span></p>
+</section>
+
+<section class="download" id="download">
+  <h2><span lang="zh">下载</span><span lang="en">Download</span></h2>
+  <p><span lang="zh">还没有可以下载的安装包。macOS 版要先完成 Developer ID 签名和公证，Windows 版要先在真机上测完关屏和防睡眠。第一个版本会发布在 <a href="https://github.com/hongfaqiu/blankrun/releases">GitHub Releases</a>，点 Watch → Custom → Releases 就能收到通知。</span><span lang="en">There is no installer yet. The macOS build needs Developer ID signing and notarization first, and the Windows build needs real-hardware testing of display-off and sleep blocking. The first release will appear on <a href="https://github.com/hongfaqiu/blankrun/releases">GitHub Releases</a>. Use Watch → Custom → Releases to get notified.</span></p>
+</section>
+</main>
+
+<footer>
+  <span>© 2026 COSFOC</span>
+  <span><a href="https://github.com/hongfaqiu/blankrun">GitHub</a> · <a href="https://github.com/hongfaqiu/blankrun/blob/main/LICENSE">MIT</a> · <a href="https://github.com/hongfaqiu/blankrun/issues"><span lang="zh">反馈</span><span lang="en">Feedback</span></a></span>
+</footer>
+<script src="/lang.js"></script>
+</body>
+</html>

@@ -1,4 +1,4 @@
-/* NightBlank 共享样式：从 design/nb.css 迁来。无框架、无网页字体；颜色全部走变量，深色跟随系统。 */
+/* BlankRun 共享样式：从 design/nb.css 迁来。无框架、无网页字体；颜色全部走变量，深色跟随系统。 */
 :root{
   color-scheme:light dark;
   --paper:#fff; --win:#F5F5F4; --ink:#1C1C1E; --ink2:#6B6B70; --ink3:#9C9CA1;

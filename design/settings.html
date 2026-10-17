@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><title>NightBlank 设置</title>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>息屏跑 设置</title>
 <link rel="stylesheet" href="nb.css">
 <style>
 .stage{padding:28px;background:var(--desk);display:inline-block}
@@ -57,7 +57,7 @@ section{display:none} section.on{display:block}
 </style></head>
 <body>
 <div class="stage"><div class="window">
-<div class="titlebar only-win"><span>NightBlank 设置</span><span class="caption"><span>—</span><span>☐</span><span>✕</span></span></div>
+<div class="titlebar only-win"><span>息屏跑 设置</span><span class="caption"><span>—</span><span>☐</span><span>✕</span></span></div>
 <div class="body" style="display:flex;flex:1;min-height:0">
   <aside class="side">
     <div class="lights only-mac"><i></i><i></i><i></i></div>
@@ -76,7 +76,7 @@ section{display:none} section.on{display:block}
   <!-- 通用 -->
   <section id="general">
     <h1>通用</h1>
-    <p class="lead">NightBlank 常驻在<span class="only-mac">菜单栏</span><span class="only-win">任务栏通知区域</span>，息屏期间始终阻止系统睡眠。</p>
+    <p class="lead">息屏跑常驻在<span class="only-mac">菜单栏</span><span class="only-win">任务栏通知区域</span>，息屏期间始终阻止系统睡眠。</p>
     <div class="group">
       <div class="r"><div class="t"><span class="only-mac">登录时启动</span><span class="only-win">开机时启动</span><small>开机后自动在后台运行，定时计划才能按时生效</small></div><div class="c"><span class="toggle on"></span></div></div>
       <div class="r"><div class="t">语言</div><div class="c"><span class="select">跟随系统（简体中文）</span></div></div>
@@ -90,7 +90,7 @@ section{display:none} section.on{display:block}
     </div>
     <div class="group-label"><span>配置文件</span></div>
     <div class="group">
-      <div class="r"><div class="t"><span class="mono xs only-mac" style="white-space:nowrap">~/Library/Application Support/NightBlank/config.toml</span><span class="mono xs only-win" style="white-space:nowrap">%APPDATA%\NightBlank\config.toml</span><small>和这里的设置实时同步，可以直接编辑</small></div><div class="c"><span class="btn"><span class="only-mac">在访达中显示</span><span class="only-win">在资源管理器中显示</span></span></div></div>
+      <div class="r"><div class="t"><span class="mono xs only-mac" style="white-space:nowrap">~/Library/Application Support/com.cosfoc.blankrun/config.toml</span><span class="mono xs only-win" style="white-space:nowrap">%APPDATA%\com.cosfoc.blankrun\config.toml</span><small>和这里的设置实时同步，可以直接编辑</small></div><div class="c"><span class="btn"><span class="only-mac">在访达中显示</span><span class="only-win">在资源管理器中显示</span></span></div></div>
     </div>
   </section>
 
@@ -170,7 +170,7 @@ section{display:none} section.on{display:block}
   <!-- 关于与诊断 -->
   <section id="about">
     <div style="display:flex;align-items:flex-end;justify-content:space-between;margin:6px 0 20px">
-      <div><h1 style="margin:0">NightBlank <span class="num muted" style="font-weight:400;font-size:15px">0.1.0</span></h1><div class="small muted" style="margin-top:4px">构建于 2026-10-17 · 已是最新版本 · 开源（MIT）</div></div>
+      <div><h1 style="margin:0">息屏跑 BlankRun <span class="num muted" style="font-weight:400;font-size:15px">0.1.0</span></h1><div class="small muted" style="margin-top:4px">构建于 2026-10-17 · 已是最新版本 · 开源（MIT）</div></div>
       <span class="btn">检查更新</span>
     </div>
     <div class="group-label only-mac"><span>权限</span></div>

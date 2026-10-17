@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::sync::{mpsc::{Receiver, RecvTimeoutError}, Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use nightblank_core::{
+use blankrun_core::{
     config::{DisplayMethod, WakeMethod},
     schedule::{self, Edge, Tracker},
     state::Action,
@@ -139,7 +139,7 @@ impl Engine {
                 Action::InputHookOff => self.plat.input_hook(false),
                 Action::LockScreen => self.plat.lock_screen(),
             };
-            if let Err(e) = r { eprintln!("[nightblank] {a:?} failed: {e}"); }
+            if let Err(e) = r { eprintln!("[blankrun] {a:?} failed: {e}"); }
         }
     }
 
@@ -360,7 +360,7 @@ fn show_overlays(app: &AppHandle, cfg: &Config) {
             let label = format!("overlay-{i}");
             if app2.get_webview_window(&label).is_some() { return; }
             let Ok(w) = WebviewWindowBuilder::new(&app2, &label, WebviewUrl::App("overlay.html".into()))
-                .title("NightBlank")
+                .title("BlankRun")
                 .decorations(false)
                 .resizable(false)
                 .always_on_top(true)

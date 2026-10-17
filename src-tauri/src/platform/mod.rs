@@ -3,7 +3,7 @@
 use std::sync::OnceLock;
 use std::time::Instant;
 
-use nightblank_core::{wake::Input, Config};
+use blankrun_core::{wake::Input, Config};
 use serde::Serialize;
 
 pub type Result<T = ()> = std::result::Result<T, String>;

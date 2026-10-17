@@ -1,4 +1,4 @@
-/* NightBlank 设计稿共享样式（无框架、无网页字体；后续可直接迁入 ui/） */
+/* BlankRun 设计稿共享样式（无框架、无网页字体；后续可直接迁入 ui/） */
 :root{
   color-scheme:light dark;
   --paper:#fff; --win:#F5F5F4; --ink:#1C1C1E; --ink2:#6B6B70; --ink3:#9C9CA1;

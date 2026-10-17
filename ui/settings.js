@@ -198,7 +198,7 @@ $("#skipBtn").addEventListener("click", async () => { await invoke("skip_tonight
 $("#exportDiag").addEventListener("click", async () => {
   await loadDiag();
   const info = await invoke("get_info");
-  const text = [`NightBlank ${info.version} (${info.os})`, `时间 ${new Date().toString()}`, "", "[能力]",
+  const text = [`BlankRun ${info.version} (${info.os})`, `时间 ${new Date().toString()}`, "", "[能力]",
     ...diag.caps.map((c) => `- ${c.label}: ${c.text} · ${c.detail}`),
     diag.perms ? `\n[权限] 辅助功能=${diag.perms[0]} 输入监控=${diag.perms[1]}` : "",
     `\n[显示器] ${diag.monitors.join(", ")}`, `\n[上次息屏] ${JSON.stringify(diag.last_session)}`,

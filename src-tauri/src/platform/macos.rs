@@ -11,7 +11,7 @@ use std::ffi::{c_char, c_void, CString};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering::Relaxed};
 use std::thread::JoinHandle;
 
-use nightblank_core::{hotkey, wake::Input, Config};
+use blankrun_core::{hotkey, wake::Input, Config};
 
 use super::{emit_input, now_ms, Cap, Platform, Result};
 
@@ -192,7 +192,7 @@ fn tap_thread(ready: std::sync::mpsc::Sender<std::result::Result<(), String>>) {
     let mask: u64 = [1u32, 2, 3, 4, 5, 6, 7, 10, 11, 12, 14, 22, 25, 26, 27].iter().fold(0, |m, t| m | (1u64 << t));
     unsafe {
         let tap = CGEventTapCreate(1 /* session */, 0 /* head */, 0 /* default=可吞 */, mask, tap_cb, std::ptr::null_mut());
-        if tap.is_null() { let _ = ready.send(Err("CGEventTapCreate 失败：需要在「隐私与安全性 › 辅助功能」里允许 NightBlank".into())); return; }
+        if tap.is_null() { let _ = ready.send(Err("CGEventTapCreate 失败：需要在「隐私与安全性 › 辅助功能」里允许 BlankRun（息屏跑）".into())); return; }
         TAP.store(tap as usize, Relaxed);
         let src = CFMachPortCreateRunLoopSource(std::ptr::null(), tap, 0);
         CFRunLoopAddSource(CFRunLoopGetCurrent(), src, kCFRunLoopDefaultMode);
@@ -219,7 +219,7 @@ pub struct Native {
 
 fn declare_user_activity() {
     unsafe {
-        let name = cfstr("NightBlank wake");
+        let name = cfstr("BlankRun wake");
         let mut id = 0u32;
         if IOPMAssertionDeclareUserActivity(name, 0 /* kIOPMUserActiveLocal */, &mut id) == 0 { IOPMAssertionRelease(id); }
         CFRelease(name);
@@ -250,7 +250,7 @@ impl Platform for Native {
         if !on { return Ok(()); }
         // 不用 PreventUserIdleDisplaySleep（-d），否则屏幕会被保持常亮
         let ty = cfstr(if self.ac_only { "PreventSystemSleep" } else { "PreventUserIdleSystemSleep" });
-        let name = cfstr("NightBlank: screen off, keep running");
+        let name = cfstr("BlankRun: screen off, keep running");
         let mut id = 0u32;
         let r = unsafe { IOPMAssertionCreateWithName(ty, LEVEL_ON, name, &mut id) };
         unsafe { CFRelease(ty); CFRelease(name); }

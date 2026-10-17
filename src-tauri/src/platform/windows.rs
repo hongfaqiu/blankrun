@@ -7,7 +7,7 @@
 use std::sync::atomic::{AtomicU8, Ordering::Relaxed};
 use std::thread::JoinHandle;
 
-use nightblank_core::{hotkey, wake::Input};
+use blankrun_core::{hotkey, wake::Input};
 use windows_sys::Win32::{
     Foundation::{LPARAM, LRESULT, POINT, WPARAM},
     System::{
