@@ -8,7 +8,7 @@
 
 <p align="center"><a href="https://blankrun.cosfoc.com">Website</a> · <a href="https://github.com/hongfaqiu/blankrun/releases">Download</a> · macOS + Windows · MIT</p>
 
-> **Status: v0.1.0-alpha, an early preview. Not yet tested on real hardware. The installers are unsigned.** [Download v0.1.0-alpha](https://github.com/hongfaqiu/blankrun/releases/tag/v0.1.0-alpha)
+> **Status: v0.1.0-alpha, an early preview. Blanking, keep-awake and restore have been checked on a MacBook Air M4 (macOS 26.5) and a Windows 11 desktop; wake behaviour still needs more hands-on testing. The installers are unsigned.** [Download v0.1.0-alpha](https://github.com/hongfaqiu/blankrun/releases/tag/v0.1.0-alpha)
 
 <p align="center"><img src="docs/screenshots/popover-mac-en.png" width="380" alt="Menu bar panel"> <img src="docs/screenshots/popover-mac-en-dark.png" width="380" alt="Menu bar panel (dark)"></p>
 
@@ -18,7 +18,7 @@ You queue up a night of work for Claude Code, Codex or a local model, plus a bui
 
 BlankRun lives in the menu bar (the notification area on Windows). One click really turns the displays off and blocks system sleep, so your jobs keep running. While the screen is off, it ignores accidental input and only wakes the way you chose.
 
-These are the planned features. The code is written but **not yet verified on real hardware**:
+Features (items not listed under Status above are written but **not yet verified on real hardware**):
 
 - **Blank now or after a delay**: right away, or after 1, 5 or 15 minutes.
 - **No sleep while blank**: IOPMAssertion on macOS, SetThreadExecutionState on Windows.
@@ -101,6 +101,8 @@ rustup target add aarch64-apple-darwin
 CC_aarch64_apple_darwin=$PWD/tools/fake-cc.sh AR_aarch64_apple_darwin=ar cargo check -p blankrun --target aarch64-apple-darwin
 ```
 UI preview: `NODE_PATH=<node_modules with playwright-core> node design/preview/render.mjs` renders both languages to `design/preview/out/`.
+
+Logs: `blankrun.log` next to `config.toml`. For scripted tests: `blankrun --blank-now[=delay_s] --wake-after=s --quit-after=s` (on macOS: `open -n -a BlankRun --args …`).
 
 Releases: pushing a `v*` tag runs `.github/workflows/release.yml`, which builds a universal macOS DMG and a Windows NSIS installer and publishes a GitHub Release (tags with `-` become pre-releases). Running the workflow manually builds without publishing.
 

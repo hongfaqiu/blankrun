@@ -314,8 +314,10 @@ impl Platform for Native {
             } else {
                 Cap::new("kbd", "kbd_mac_off", "off", "CoreBrightness")
             },
+            // 还没装过钩子时按权限判断，免得没授权也显示「正常」
             match &self.tap_err {
                 Some(e) => Cap::new("hook", "hook_bad", "bad", format!("CGEventTap · {e}")),
+                None if !unsafe { AXIsProcessTrusted() } => Cap::new("hook", "hook_bad", "bad", "CGEventTap · Accessibility not granted"),
                 None => Cap::new("hook", "hook_mac_ok", "ok", "CGEventTap"),
             },
             Cap::new("ddc", "ddc_todo", "off", "DDC/CI"),

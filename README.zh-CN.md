@@ -8,7 +8,7 @@
 
 <p align="center"><a href="https://blankrun.cosfoc.com">官网</a> · <a href="https://github.com/hongfaqiu/blankrun/releases">下载</a> · macOS + Windows · MIT</p>
 
-> **状态：v0.1.0-alpha 早期预览版，还没有在真机上测试过，安装包未签名。** [下载 v0.1.0-alpha](https://github.com/hongfaqiu/blankrun/releases/tag/v0.1.0-alpha)
+> **状态：v0.1.0-alpha 早期预览版。息屏、防睡眠和恢复已在 MacBook Air M4（macOS 26.5）和一台 Windows 11 台式机上验证过，唤醒方式还需要更多实际测试。安装包未签名。** [下载 v0.1.0-alpha](https://github.com/hongfaqiu/blankrun/releases/tag/v0.1.0-alpha)
 
 <p align="center"><img src="design/png/popover-mac.png" width="380" alt="菜单栏面板"> <img src="design/png/popover-mac-dark.png" width="380" alt="菜单栏面板（深色）"></p>
 
@@ -18,7 +18,7 @@
 
 息屏跑常驻在菜单栏（Windows 上是托盘），一键把屏幕真正关掉，同时阻止系统睡眠，让任务继续跑。息屏期间它会拦下误触，只认你设定的唤醒方式。
 
-计划中的功能如下，代码已写，**尚未在真机上验证**：
+功能如下（上面「状态」里没提到的部分代码已写，**尚未在真机上验证**）：
 
 - **立即息屏 / 倒计时息屏**：可以立即息屏，也可以延迟 1、5、15 分钟。
 - **息屏时防睡眠**：macOS 用 IOPMAssertion，Windows 用 SetThreadExecutionState。
@@ -100,6 +100,8 @@ rustup target add aarch64-apple-darwin
 CC_aarch64_apple_darwin=$PWD/tools/fake-cc.sh AR_aarch64_apple_darwin=ar cargo check -p blankrun --target aarch64-apple-darwin
 ```
 界面预览：`NODE_PATH=<含 playwright-core 的 node_modules> node design/preview/render.mjs`，中英文都会渲染，输出到 `design/preview/out/`。
+
+日志：`config.toml` 旁边的 `blankrun.log`。脚本测试可以用 `blankrun --blank-now[=延迟秒] --wake-after=秒 --quit-after=秒`（macOS 上用 `open -n -a BlankRun --args …`）。
 
 发布：推送 `v*` 标签会运行 `.github/workflows/release.yml`，打出 macOS 通用版 DMG 和 Windows NSIS 安装包并发布到 GitHub Release（带 `-` 的标签发成预发布）。手动运行这个工作流只构建、不发布。
 
