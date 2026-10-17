@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>NightBlank · 首次设置</title>
+<link rel="stylesheet" href="nb.css"><link rel="stylesheet" href="onboarding.css">
+</head>
+<body>
+<div class="window">
+  <div class="content">
+    <div class="mark" aria-hidden="true"></div>
+    <h1>还差一步：让 NightBlank 在息屏时<br>接管键盘和鼠标</h1>
+    <p class="lead">息屏后，猫踩到键盘或桌子一震都可能把屏幕点亮。NightBlank 会拦下这些误触，只在你按住 <span class="keys" id="wakeKeys"></span> 时唤醒。按键只在本机判断，不记录、不上传。</p>
+
+    <div class="step">
+      <span class="n">1</span>
+      <div class="t"><b>辅助功能</b><small>用来在息屏期间拦截按键和点击</small></div>
+      <div class="c" id="s1"></div>
+    </div>
+    <div class="step">
+      <span class="n">2</span>
+      <div class="t"><b>输入监控</b><small>用来识别唤醒快捷键。打开后系统可能要求重启 NightBlank</small></div>
+      <div class="c" id="s2"></div>
+    </div>
+    <p class="note">在「系统设置 › 隐私与安全性」里打开 NightBlank，回到这里状态会自动刷新。<br>暂时跳过也能用，但只能从菜单栏手动唤醒。</p>
+  </div>
+  <div class="foot">
+    <button class="btn ghost skip" id="skip">暂时跳过</button>
+    <span class="foot-r"><span class="wait"><span class="dot" id="doneDot"></span><span id="doneText">已完成 0 / 2</span></span><button class="btn" id="done" disabled>完成</button></span>
+  </div>
+</div>
+<script src="common.js"></script>
+<script src="onboarding.js"></script>
+</body></html>

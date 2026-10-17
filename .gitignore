@@ -4,3 +4,4 @@ dist/
 .DS_Store
 /target/
 src-tauri/gen/
+design/preview/out/

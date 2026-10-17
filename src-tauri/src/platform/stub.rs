@@ -1,5 +1,5 @@
-//! Linux 等非目标平台：仅用于在 CI/开发机上编译检查，全部 no-op。
-use super::{Platform, Result};
+//! Linux 等非目标平台：仅用于在开发机上编译检查，全部 no-op。
+use super::{Cap, Platform, Result};
 
 #[derive(Default)]
 pub struct Native;
@@ -10,4 +10,21 @@ impl Platform for Native {
     fn keyboard_backlight(&mut self, _off: bool) -> Result { Ok(()) }
     fn input_hook(&mut self, _on: bool) -> Result { Ok(()) }
     fn lock_screen(&mut self) -> Result { Ok(()) }
+    fn capabilities(&mut self) -> Vec<Cap> { vec![Cap::new("stub", "当前平台", "仅供开发编译，没有实际功能", "off", "不支持")] }
+}
+
+pub fn emergency_restore() {}
+
+pub fn local_time() -> (u8, u16) {
+    let mut t = std::mem::MaybeUninit::<libc::tm>::zeroed();
+    unsafe {
+        let now = libc::time(std::ptr::null_mut());
+        libc::localtime_r(&now, t.as_mut_ptr());
+        let t = t.assume_init();
+        (((t.tm_wday + 6) % 7) as u8, (t.tm_hour * 60 + t.tm_min) as u16)
+    }
+}
+
+pub fn reveal(path: &std::path::Path) {
+    let _ = std::process::Command::new("xdg-open").arg(path.parent().unwrap_or(path)).spawn();
 }

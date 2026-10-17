@@ -1,0 +1,65 @@
+html,body{height:100%}
+body{background:var(--paper);overflow:hidden}
+.window{height:100%;display:flex;background:var(--paper)}
+.side{width:196px;flex:none;background:var(--win);border-right:1px solid var(--line);padding:14px 10px}
+.nav a{display:block;height:30px;line-height:30px;padding:0 10px;border-radius:6px;color:var(--ink);text-decoration:none;cursor:default}
+.nav a.on{background:var(--nav-on);font-weight:600}
+.nav .sep{height:1px;background:var(--line);margin:10px 6px}
+.main{flex:1;padding:28px 32px 32px;overflow-y:auto}
+.main h1{font-size:20px;font-weight:600;margin:6px 0 4px}
+.main .lead{color:var(--ink2);margin:0 0 20px}
+.group-label{font-size:12px;color:var(--ink2);margin:18px 0 6px 2px;display:flex;justify-content:space-between}
+.group{border:1px solid var(--line);border-radius:10px;background:var(--group)}
+.r{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:11px 14px;min-height:46px}
+.r + .r,#monitors > .r,#monitors + .r{border-top:1px solid var(--line)}
+.r .t{display:flex;flex-direction:column;gap:2px;min-width:0}
+.r .t small{font-size:11.5px;color:var(--ink3);line-height:1.4}
+.r .c{display:flex;align-items:center;gap:10px;flex:none}
+.r .lead-ic{display:flex;align-items:center;gap:12px}
+.r.pick,.r.mon{cursor:default}
+.r.col{flex-direction:column;align-items:stretch;gap:14px;padding:18px 14px 16px}
+.dim{opacity:.45}
+.soon{font-size:10.5px;color:var(--ink3);border:1px solid var(--line);border-radius:4px;padding:0 5px;margin-left:4px;white-space:nowrap;vertical-align:1px}
+.path{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.w220{width:220px}
+.holdv{width:44px;text-align:right}
+.with-dot{display:flex;align-items:center;gap:7px}
+.days{display:flex;gap:6px}
+.days button{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;border:1px solid var(--line);color:var(--ink2);font-size:12px}
+.days button.on{background:var(--ink);border-color:var(--ink);color:var(--on-ink)}
+.time-row{display:flex;align-items:center;justify-content:space-between}
+.big-time{display:flex;align-items:center;font:500 30px var(--mono);letter-spacing:-.02em}
+.big-time .tf{font:inherit;letter-spacing:inherit;color:var(--ink);background:transparent;border:0;border-bottom:1.5px dashed var(--ctl-edge);padding:0 2px;width:5.2ch;outline:0;cursor:text;-webkit-user-select:text;user-select:text}
+.big-time .tf:focus{border-bottom-style:solid;border-bottom-color:var(--ink2)}
+.big-time .tf.bad{border-bottom-color:var(--bad)}
+.big-time .a{color:var(--ink3);font-size:20px;margin:0 8px}
+.status{display:inline-flex;align-items:center;gap:6px;font-size:12px}
+.status.bad{color:var(--bad)}
+.status.off{color:var(--ink2)}
+section{display:none} section.on{display:block}
+.about-head{display:flex;align-items:flex-end;justify-content:space-between;margin:6px 0 20px}
+.about-head h1{margin:0}
+.about-head .ver{font-weight:400;font-size:15px}
+.about-head .sub{margin-top:4px}
+.toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:var(--ink);color:var(--on-ink);padding:6px 12px;border-radius:6px;font-size:12px}
+.only-linux{display:none}
+.linux .only-linux{display:inline}
+.linux .only-win{display:none!important}
+.recorder .keys:empty::before{content:"未设置";color:var(--ink3);font-size:12px;padding:0 4px}
+.recorder.rec .keys::before{content:"按下新的组合键…";color:var(--ink2);font-size:12px;padding:0 4px}
+.recorder.rec .keys > *{display:none}
+
+/* Windows 11：Mica 底 + 行卡片 + 左侧导航指示条 */
+.win .window{background:var(--win)}
+.win body,.win{background:var(--win)}
+.win .side{width:240px;background:transparent;border:0;padding:8px}
+.win .nav a{height:36px;line-height:36px;border-radius:4px;padding-left:16px;position:relative}
+.win .nav a.on{background:var(--nav-on);font-weight:400}
+.win .nav a.on::before{content:"";position:absolute;left:0;top:10px;bottom:10px;width:3px;border-radius:2px;background:var(--ink)}
+.win .main{padding:12px 40px 28px 20px}
+.win .main h1{font-size:28px;margin:4px 0 4px}
+.win .group{border:0;background:transparent;display:flex;flex-direction:column;gap:3px}
+.win #monitors{display:flex;flex-direction:column;gap:3px}
+.win .r{background:var(--card);border:1px solid var(--card-edge);border-radius:4px;min-height:62px;padding:12px 16px}
+.win .r + .r,.win #monitors > .r,.win #monitors + .r{border-top:1px solid var(--card-edge)}
+.win .group-label{font-weight:600;color:var(--ink);font-size:13px;margin:20px 0 8px 0}

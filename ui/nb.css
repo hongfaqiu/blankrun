@@ -1,0 +1,153 @@
+/* NightBlank 共享样式：从 design/nb.css 迁来。无框架、无网页字体；颜色全部走变量，深色跟随系统。 */
+:root{
+  color-scheme:light dark;
+  --paper:#fff; --win:#F5F5F4; --ink:#1C1C1E; --ink2:#6B6B70; --ink3:#9C9CA1;
+  --line:#E5E5E7; --blank:#111113; --standby:#E39B2D; --ok:#2F8F4E; --bad:#C4442F;
+  /* 由 6 个命名色派生的表面/控件色，只为深色模式能整体切换 */
+  --desk:#E8E8E9; --frame:#CFCFD2; --ctl:#fff; --ctl-edge:#C9C9CC; --on-ink:#fff;
+  --hover:#F0F0F1; --nav-on:#E2E2E5; --seg-bg:#EDEDEF; --seg-on:#fff;
+  --tog-off:#D6D6D9; --knob:#fff; --knob-on:#fff; --win-tog-edge:#8A8A8E; --win-knob:#5C5C60;
+  --band:#3A3A3C; --sheet:#F4F4F3; --group:#fff; --dis-bg:#F4F4F5; --card:#FBFBFB; --card-edge:#E5E5E5;
+  --bar-bg:rgba(246,246,246,.96); --bar-edge:#D9D9DB; --task-bg:#EEEEF0; --task-edge:#DADADC;
+  --shadow:0 18px 40px rgba(0,0,0,.14),0 1px 3px rgba(0,0,0,.08);
+  --blank-edge:rgba(255,255,255,.06);
+  --ui:-apple-system,"PingFang SC","Noto Sans CJK SC",sans-serif;
+  --mono:"SF Mono","Cascadia Mono","IBM Plex Mono",ui-monospace,monospace;
+  --r:8px;
+}
+.win{--win:#F3F3F3; --nav-on:#EAEAEA; --ui:"Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI","Noto Sans CJK SC",sans-serif; --r:4px}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{font:13px/1.45 var(--ui);color:var(--ink);background:var(--desk);-webkit-font-smoothing:antialiased}
+.mono,.num{font-family:var(--mono);font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.muted{color:var(--ink2)} .faint{color:var(--ink3)}
+.small{font-size:12px} .xs{font-size:11px}
+hr{border:0;border-top:1px solid var(--line);margin:0}
+button{font:inherit;color:inherit}
+
+/* ---------- 控件 ---------- */
+.toggle{position:relative;display:inline-block;width:36px;height:20px;border-radius:10px;background:var(--tog-off);flex:none}
+.toggle::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:var(--knob);box-shadow:0 1px 2px rgba(0,0,0,.25)}
+.toggle.on{background:var(--ink)} .toggle.on::after{left:18px;background:var(--knob-on)}
+.win .toggle{width:40px;height:20px;background:transparent;border:1px solid var(--win-tog-edge)}
+.win .toggle::after{top:3px;left:4px;width:12px;height:12px;background:var(--win-knob);box-shadow:none}
+.win .toggle.on{background:var(--ink);border-color:var(--ink)} .win .toggle.on::after{left:23px;background:var(--knob-on)}
+.toggle.dis{opacity:.4}
+
+.select{display:inline-flex;align-items:center;gap:8px;height:24px;padding:0 8px 0 10px;border:1px solid var(--line);border-radius:6px;background:var(--ctl);box-shadow:0 1px 0 rgba(0,0,0,.03);white-space:nowrap}
+.select::after{content:"";width:6px;height:6px;border-right:1.5px solid var(--ink2);border-bottom:1.5px solid var(--ink2);transform:rotate(45deg) translate(-2px,-1px);margin-left:2px}
+.win .select{height:32px;border-radius:4px;padding:0 10px 0 11px;min-width:140px;justify-content:space-between;border-bottom-color:var(--ctl-edge)}
+
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:26px;padding:0 12px;border:1px solid var(--line);border-radius:6px;background:var(--ctl);white-space:nowrap;box-shadow:0 1px 0 rgba(0,0,0,.03)}
+.win .btn{height:32px;border-radius:4px;padding:0 14px}
+.btn.primary{background:var(--blank);border-color:var(--blank);color:#fff}
+.btn.ghost{border-color:transparent;background:transparent;box-shadow:none;color:var(--ink2)}
+.btn.dis{color:var(--ink3);background:var(--dis-bg);box-shadow:none}
+
+.keys{display:inline-flex;gap:3px;align-items:center}
+.kbd{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 5px;border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;background:var(--ctl);font:500 11px var(--mono);color:var(--ink)}
+.mac .kbd{font-family:var(--ui);font-size:12px}
+.recorder{display:inline-flex;align-items:center;gap:8px;height:26px;padding:0 4px 0 6px;border:1px solid var(--line);border-radius:6px;background:var(--ctl)}
+.recorder .x{color:var(--ink3);font-size:11px;padding:0 4px}
+.win .recorder{height:32px;border-radius:4px}
+
+.field{display:inline-flex;align-items:center;height:24px;border:1px solid var(--line);border-radius:6px;background:var(--ctl);overflow:hidden}
+.field b{font:500 12px var(--mono);padding:0 8px;min-width:46px;text-align:right}
+.field i{font-style:normal;font-size:11px;color:var(--ink3);padding-right:8px}
+.field .step{display:flex;flex-direction:column;border-left:1px solid var(--line);height:100%;width:16px;justify-content:center;align-items:center;font-size:7px;color:var(--ink2);line-height:9px}
+.win .field{height:32px;border-radius:4px;border-bottom-color:var(--ctl-edge)}
+
+.slider{position:relative;width:150px;height:4px;border-radius:2px;background:var(--line)}
+.slider span{position:absolute;left:0;top:0;bottom:0;border-radius:2px;background:var(--ink)}
+.slider span::after{content:"";position:absolute;right:-8px;top:-6px;width:16px;height:16px;border-radius:50%;background:var(--knob);border:1px solid var(--frame);box-shadow:0 1px 2px rgba(0,0,0,.15)}
+.win .slider span::after{border:5px solid var(--knob);background:var(--ink);box-shadow:0 0 0 1px var(--frame)}
+
+.seg{display:flex;padding:2px;border-radius:7px;background:var(--seg-bg)}
+.seg span{flex:1;text-align:center;height:24px;line-height:24px;border-radius:5px;color:var(--ink2);font-size:12px}
+.seg span.on{background:var(--seg-on);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.12);font-weight:500}
+.win .seg{border-radius:4px} .win .seg span{border-radius:3px}
+
+.radio{width:16px;height:16px;border-radius:50%;border:1px solid var(--ctl-edge);background:var(--ctl);flex:none;position:relative}
+.radio.on{border:5px solid var(--ink)}
+.check{width:16px;height:16px;border-radius:4px;border:1px solid var(--ctl-edge);background:var(--ctl);flex:none;position:relative}
+.check.on{background:var(--ink);border-color:var(--ink)}
+.check.on::after{content:"";position:absolute;left:5px;top:2px;width:4px;height:8px;border:solid var(--on-ink);border-width:0 1.5px 1.5px 0;transform:rotate(45deg)}
+
+.dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--ink3);flex:none}
+.dot.standby{background:var(--standby);box-shadow:0 0 0 3px rgba(227,155,45,.18)}
+.dot.ok{background:var(--ok)} .dot.bad{background:var(--bad)}
+
+/* 24 小时轨道：夜间段 + 当前时刻 */
+.track{position:relative;height:6px;border-radius:3px;background:var(--seg-bg)}
+.track .band{position:absolute;top:0;bottom:0;background:var(--band)}
+.track .now{position:absolute;top:-4px;width:2px;height:14px;border-radius:1px;background:var(--ink)}
+.track-labels{display:flex;justify-content:space-between;margin-top:5px;font:10px var(--mono);color:var(--ink3)}
+
+/* ---------- 主按钮：一块熄掉的屏幕 + 待机灯 ---------- */
+.blank-btn{position:relative;display:flex;align-items:center;justify-content:space-between;height:64px;padding:0 18px;border-radius:10px;background:var(--blank);color:#fff;box-shadow:inset 0 0 0 1px var(--blank-edge)}
+.win .blank-btn{border-radius:6px}
+.blank-btn .label{font-size:16px;font-weight:600;letter-spacing:.02em}
+.blank-btn .sub{font-size:11px;color:rgba(255,255,255,.5);margin-top:1px}
+.blank-btn .led{position:absolute;right:12px;bottom:10px;width:5px;height:5px;border-radius:50%;background:#3A3A3C}
+.blank-btn .led.on{background:var(--standby);box-shadow:0 0 6px 1px rgba(227,155,45,.55)}
+.blank-btn .k{font:500 11px var(--mono);color:rgba(255,255,255,.45)}
+
+
+/* ---------- 真实控件（设计稿里是 span，这里换成可交互元素） ---------- */
+button{background:none;border:0;padding:0;margin:0;cursor:default;-webkit-user-select:none;user-select:none}
+button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--ink3);outline-offset:2px}
+body{-webkit-user-select:none;user-select:none;cursor:default}
+.mac{--ui:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",sans-serif}
+button.toggle{border-radius:10px}
+button.toggle:disabled{opacity:.4}
+.btn:active:not(:disabled){filter:brightness(.96)}
+.btn:disabled{color:var(--ink3);background:var(--dis-bg);box-shadow:none}
+.select{position:relative;padding:0}
+.select select{appearance:none;-webkit-appearance:none;border:0;background:transparent;font:inherit;color:inherit;height:100%;padding:0 26px 0 10px;outline-offset:0}
+.select::after{position:absolute;right:10px;top:50%;margin:-5px 0 0;pointer-events:none}
+.win .select{padding:0}
+.win .select select{width:100%;padding:0 30px 0 11px}
+.field input{appearance:textfield;-moz-appearance:textfield;border:0;background:transparent;font:500 12px var(--mono);color:var(--ink);width:52px;text-align:right;padding:0 8px;height:100%}
+.field input::-webkit-inner-spin-button,.field input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+.field .step button{display:block;height:50%;width:100%;font-size:7px;line-height:1;color:var(--ink2)}
+.range{-webkit-appearance:none;appearance:none;width:150px;height:4px;border-radius:2px;background:var(--line);margin:0}
+.range::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:var(--knob);border:1px solid var(--frame);box-shadow:0 1px 2px rgba(0,0,0,.15)}
+.win .range::-webkit-slider-thumb{border:5px solid var(--knob);background:var(--ink);box-shadow:0 0 0 1px var(--frame)}
+.seg button{flex:1;text-align:center;height:24px;line-height:24px;border-radius:5px;color:var(--ink2);font-size:12px}
+.seg button.on{background:var(--seg-on);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.12);font-weight:500}
+.win .seg button{border-radius:3px}
+.recorder.rec{border-color:var(--ink2)}
+.recorder button.x{color:var(--ink3);font-size:11px;padding:0 4px}
+[hidden]{display:none!important}
+.mac .only-win,.win .only-mac,.linux .only-mac{display:none!important}
+.blank-btn{width:100%;text-align:left}
+.blank-btn:active{filter:brightness(1.25)}
+
+/* ---------- 深色模式：跟随系统 prefers-color-scheme ----------
+   思路：界面降到近黑的中性灰阶，控件比窗口亮一级；「立即息屏」仍是一块比周围更黑的屏幕（加一圈细亮边才看得出边界）；
+   开关/勾选的「开」状态反转为浅墨色填充 + 深色滑块，依旧不用系统蓝；琥珀色只留给待机灯这类关键状态。 */
+@media (prefers-color-scheme: dark){
+  :root{
+    --paper:#1E1E20; --win:#18181A; --ink:#ECECEE; --ink2:#A1A1A6; --ink3:#6E6E73;
+    --line:#323235; --blank:#050506; --standby:#E8A33B; --ok:#4FAE6E; --bad:#E2654F;
+    --desk:#0C0C0D; --frame:#38383B; --ctl:#29292C; --ctl-edge:#47474B; --on-ink:#18181A;
+    --hover:#2A2A2D; --nav-on:#2B2B2E; --seg-bg:#141416; --seg-on:#36363A;
+    --tog-off:#3C3C40; --knob:#D4D4D7; --knob-on:#18181A; --win-tog-edge:#9A9A9F; --win-knob:#CFCFD3;
+    --band:#6E6E73; --sheet:#141416; --group:#242426; --dis-bg:#242427; --card:#242426; --card-edge:#2E2E31;
+    --bar-bg:rgba(30,30,32,.96); --bar-edge:#2A2A2D; --task-bg:#1A1A1C; --task-edge:#2A2A2D;
+    --shadow:0 18px 40px rgba(0,0,0,.55),0 0 0 1px rgba(0,0,0,.4);
+    --blank-edge:rgba(255,255,255,.09);
+  }
+  .win{--win:#1C1C1C; --nav-on:#2D2D2D}
+  .btn.primary{background:var(--ink);border-color:var(--ink);color:var(--on-ink)}
+  .btn,.select,.kbd,.field,.recorder{box-shadow:none}
+  .toggle::after{box-shadow:none}
+  .seg span.on{box-shadow:none}
+  .dot.standby{box-shadow:0 0 0 3px rgba(232,163,59,.16)}
+  .blank-btn .led{background:#2A2A2D}
+  .seg button.on{box-shadow:none}
+  .range::-webkit-slider-thumb{box-shadow:none}
+}
+.track .band.solo{border-radius:3px}
+.track .band.tail{border-radius:0 3px 3px 0}
+.track .band.head{border-radius:3px 0 0 3px}

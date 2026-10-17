@@ -1,0 +1,15 @@
+/* 息屏遮罩：平时纯黑；被碰到时中心出现一行提示，3 秒后淡出 */
+html,body{height:100%;margin:0;background:#000;overflow:hidden;cursor:none}
+body{color:rgba(255,255,255,.42)}
+.hint{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);text-align:center}
+.hint.fade{animation:fade 3s ease-in 1 forwards}
+.line{display:flex;align-items:center;justify-content:center;gap:10px;font-size:17px;letter-spacing:.02em}
+.k{display:inline-flex;align-items:center;justify-content:center;min-width:30px;height:30px;padding:0 8px;border:1px solid rgba(255,255,255,.2);border-radius:6px;font:500 14px var(--mono);color:rgba(255,255,255,.6)}
+.mac .k{font-family:var(--ui);font-size:15px}
+.keys{display:inline-flex;gap:5px}
+.after{margin-top:18px;font-size:13px;color:rgba(255,255,255,.3)}
+.after .num{color:rgba(255,255,255,.45)}
+.bar{width:180px;height:2px;margin:22px auto 0;border-radius:1px;background:rgba(255,255,255,.1);overflow:hidden}
+.bar span{display:block;height:100%;width:0;background:var(--standby)}
+.holding .k{border-color:rgba(255,255,255,.5);color:rgba(255,255,255,.85)}
+@keyframes fade{0%,70%{opacity:1}100%{opacity:0}}

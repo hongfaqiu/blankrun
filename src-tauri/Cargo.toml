@@ -15,9 +15,19 @@ tauri-build = { version = "2", default-features = false, features = [] }
 nightblank-core = { path = "../crates/core" }
 # 只开必要特性：wry(WebView) + 托盘 + 资源压缩。不开 devtools/updater/plugin 等。
 tauri = { version = "2", default-features = false, features = ["wry", "tray-icon", "compression", "common-controls-v6"] }
+# 以下都已经是 tauri 的传递依赖，不增加体积
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 [target.'cfg(windows)'.dependencies]
 # windows-sys 比 windows crate 轻（仅 FFI 声明），按需开 feature
-windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_Power", "Win32_UI_WindowsAndMessaging"] }
+windows-sys = { version = "0.59", features = [
+  "Win32_Foundation", "Win32_System_Power", "Win32_UI_WindowsAndMessaging", "Win32_UI_Input_KeyboardAndMouse",
+  "Win32_System_LibraryLoader", "Win32_System_Threading", "Win32_System_SystemServices",
+  "Win32_System_SystemInformation", "Win32_System_Shutdown",
+] }
 
-# macOS：M0 原型阶段再按需加 objc2 / core-graphics；先不引入，保持依赖最小
+# macOS：不引入 objc2 / core-graphics，platform/macos.rs 手写少量 FFI，保持依赖最小

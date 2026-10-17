@@ -1,0 +1,28 @@
+html,body{height:100%;overflow:hidden}
+body{background:var(--paper)}
+.pop{background:var(--paper);height:100%}
+.win .pop{background:var(--card)}
+.sec{padding:14px 16px}
+.head{display:flex;align-items:center;justify-content:space-between;padding:12px 16px 0}
+.head .name{font-weight:600;font-size:13px}
+.state{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink2)}
+.dot.ink{background:var(--ink)}
+.delay{display:flex;align-items:center;gap:10px;margin-top:10px}
+.delay .seg{flex:1}
+.row{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.row.baseline{align-items:baseline}
+.plan-label{display:flex;align-items:center;gap:6px}
+.plan-time{font:500 20px var(--mono);letter-spacing:-.02em;margin-top:6px}
+.plan-time .arrow{color:var(--ink3);font-size:15px;margin:0 4px}
+.plan-off .plan-time,.plan-off .track,.plan-off .track-labels{opacity:.45}
+#track{margin-top:10px}
+.kv{display:grid;grid-template-columns:56px 1fr;row-gap:8px;font-size:12px;align-items:center;margin:0}
+.kv dt{color:var(--ink3)} .kv dd{margin:0;display:flex;align-items:center;gap:6px;justify-content:space-between}
+.kv .keys{vertical-align:middle}
+.link:hover{color:var(--ink2)}
+.menu{padding:5px}
+.menu button{display:flex;width:100%;justify-content:space-between;align-items:center;height:28px;padding:0 11px;border-radius:6px;text-align:left}
+.menu button:hover{background:var(--hover)}
+.menu .mono{color:var(--ink3);font-size:11px}
+.count{font:500 26px var(--mono);letter-spacing:-.02em}
+.btn.cancel{height:28px;background:transparent;border-color:rgba(255,255,255,.22);color:#fff;box-shadow:none}
