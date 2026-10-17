@@ -8,7 +8,7 @@
 
 <p align="center"><a href="https://blankrun.cosfoc.com">官网</a> · <a href="https://github.com/hongfaqiu/blankrun/releases">下载</a> · macOS + Windows · MIT</p>
 
-> **状态：v0.1.0-alpha 早期预览版。息屏、防睡眠和恢复已在 MacBook Air M4（macOS 26.5）和一台 Windows 11 台式机上验证过，唤醒方式还需要更多实际测试。安装包未签名。** [下载 v0.1.0-alpha](https://github.com/hongfaqiu/blankrun/releases/tag/v0.1.0-alpha)
+> **状态：v0.1.0 正式版。息屏、防睡眠、唤醒和恢复已在 MacBook Air M4（macOS 26.5）和一台双屏 Windows 11 台式机上验证过。安装包未签名。** [下载 v0.1.0](https://github.com/hongfaqiu/blankrun/releases/tag/v0.1.0)
 
 <p align="center"><img src="design/png/popover-mac.png" width="380" alt="菜单栏面板"> <img src="design/png/popover-mac-dark.png" width="380" alt="菜单栏面板（深色）"></p>
 
@@ -18,20 +18,21 @@
 
 息屏跑常驻在菜单栏（Windows 上是托盘），一键把屏幕真正关掉，同时阻止系统睡眠，让任务继续跑。息屏期间它会拦下误触，只认你设定的唤醒方式。
 
-功能如下（上面「状态」里没提到的部分代码已写，**尚未在真机上验证**）：
+功能如下：
 
 - **立即息屏 / 倒计时息屏**：可以立即息屏，也可以延迟 1、5、15 分钟。
 - **息屏时防睡眠**：macOS 用 IOPMAssertion，Windows 用 SetThreadExecutionState。
 - **定时计划**：例如每天 23:30 到 07:30，支持跨午夜，也可以跳过今晚。
 - **可配置唤醒**：任意键、按住快捷键（默认 ⌃⌥W 按住 1 秒）、移动鼠标、点击、唤醒后锁屏输密码，或者只在定时结束时唤醒；另有一个紧急恢复快捷键。
-- **防误触**：息屏期间拦截键鼠输入；屏幕被意外点亮时，几秒内自动再关。
+- **防误触**：息屏期间拦截键鼠输入；屏幕被意外点亮时，几秒内自动再关。macOS 没给辅助功能权限时，唤醒快捷键照样能用，误触点亮后也会自动再熄灭。
+- **开机启动、立即息屏快捷键**（默认 ⌃⌥B）、**定时开始前提醒**（可跳过今晚或推迟 30 分钟）、**全屏看视频时先等着**。
 - **键盘背光**：macOS 上一起关掉。用的是私有接口，运行时先探测，不可用时自动跳过。
 - **Windows Modern Standby**：检测到关屏会让机器进入低功耗待机的机型时，改用全黑遮罩，避免任务被挂起。
 - **中英双语界面**：默认跟随系统语言，也可以在「设置 › 通用 › 语言」里切换，托盘菜单、息屏提示和首次引导都会立即换过来，不用重启。
-- **体积小**：基于 Tauri 2，前端零依赖。v0.1.0-alpha 实测：Windows 安装包 1.2 MB，macOS 通用版 DMG 2.9 MB。
+- **体积小**：基于 Tauri 2，前端零依赖。v0.1.0 实测：Windows 安装包 1.2 MB，macOS 通用版 DMG 3.2 MB。
 - **本地运行**：不联网，不上传。
 
-后续版本：外接显示器断电（DDC/CI）、RGB 灯控制、开机启动、全局快捷键、开始前提醒、全屏视频时跳过定时。
+后续版本：外接显示器断电（DDC/CI）、RGB 灯控制。
 
 ## 截图
 

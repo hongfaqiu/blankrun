@@ -8,7 +8,7 @@
 
 <p align="center"><a href="https://blankrun.cosfoc.com">Website</a> · <a href="https://github.com/hongfaqiu/blankrun/releases">Download</a> · macOS + Windows · MIT</p>
 
-> **Status: v0.1.0-alpha, an early preview. Blanking, keep-awake and restore have been checked on a MacBook Air M4 (macOS 26.5) and a Windows 11 desktop; wake behaviour still needs more hands-on testing. The installers are unsigned.** [Download v0.1.0-alpha](https://github.com/hongfaqiu/blankrun/releases/tag/v0.1.0-alpha)
+> **Status: v0.1.0, the first stable release. Blanking, keep-awake, wake and restore have been checked on a MacBook Air M4 (macOS 26.5) and a dual-monitor Windows 11 desktop. The installers are unsigned.** [Download v0.1.0](https://github.com/hongfaqiu/blankrun/releases/tag/v0.1.0)
 
 <p align="center"><img src="docs/screenshots/popover-mac-en.png" width="380" alt="Menu bar panel"> <img src="docs/screenshots/popover-mac-en-dark.png" width="380" alt="Menu bar panel (dark)"></p>
 
@@ -18,20 +18,21 @@ You queue up a night of work for Claude Code, Codex or a local model, plus a bui
 
 BlankRun lives in the menu bar (the notification area on Windows). One click really turns the displays off and blocks system sleep, so your jobs keep running. While the screen is off, it ignores accidental input and only wakes the way you chose.
 
-Features (items not listed under Status above are written but **not yet verified on real hardware**):
+Features:
 
 - **Blank now or after a delay**: right away, or after 1, 5 or 15 minutes.
 - **No sleep while blank**: IOPMAssertion on macOS, SetThreadExecutionState on Windows.
 - **Schedule**: for example 23:30 to 07:30 every day. Works across midnight, and you can skip just tonight.
 - **Configurable wake**: any key, holding a shortcut (⌃⌥W for 1 second by default), moving the mouse, clicking, locking on wake so you enter your password, or only when the schedule ends. A separate emergency shortcut always restores everything.
-- **No accidental wake**: keyboard and mouse input is blocked while blank. If the screen lights up anyway, it goes dark again within seconds.
+- **No accidental wake**: keyboard and mouse input is blocked while blank. If the screen lights up anyway, it goes dark again within seconds. On macOS without Accessibility permission, the wake shortcut still works and stray touches are re-blanked.
+- **Launch at login, blank-now shortcut** (⌃⌥B by default), **a reminder before the schedule starts** (skip tonight or postpone 30 min), and **waiting while a video plays full screen**.
 - **Keyboard backlight**: turned off together with the screen on macOS. It uses a private API that is probed at runtime and skipped when unavailable.
 - **Windows Modern Standby**: on PCs that drop into low-power standby when the display turns off, BlankRun uses a black overlay instead so jobs aren't suspended.
 - **English and Chinese UI**: follows the system language by default. Switch in Settings › General › Language and the tray menu, wake hints and onboarding update immediately, with no restart.
-- **Small**: built on Tauri 2 with a zero-dependency UI. Measured for v0.1.0-alpha: 1.2 MB Windows installer, 2.9 MB universal macOS DMG.
+- **Small**: built on Tauri 2 with a zero-dependency UI. Measured for v0.1.0: 1.2 MB Windows installer, 3.2 MB universal macOS DMG.
 - **Local only**: no network, no uploads.
 
-Later versions: external monitor power via DDC/CI, RGB lighting, launch at login, a global shortcut, a reminder before the schedule starts, skipping during fullscreen video.
+Later versions: external monitor power via DDC/CI, RGB lighting.
 
 ## Screenshots
 
