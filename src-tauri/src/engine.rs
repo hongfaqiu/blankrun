@@ -70,6 +70,9 @@ pub struct Engine {
     displays: usize,
     last_mon_check: Option<Instant>,
     keep_display: bool,
+    last_asleep: Option<bool>,
+    /// 刚发出关屏命令后的几秒里屏幕还没真正睡下，这段时间不算「被点亮」
+    settle_until: Option<Instant>,
 }
 
 fn unix_now() -> u64 { SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0) }
@@ -84,7 +87,7 @@ impl Engine {
             cfg_mtime: mtime, last_session: None, tracker: Tracker::default(), countdown: None, power_off: false,
             overlay_on: false, power_off_at: None, reblank_at: None, hook_ok: true, session: None, last_hint: None,
             last_sched_check: None, last_cfg_check: None, last_status: None, kbd_available,
-            displays: 1, last_mon_check: None, keep_display: false,
+            displays: 1, last_mon_check: None, keep_display: false, last_asleep: None, settle_until: None,
         }
     }
 
@@ -120,6 +123,7 @@ impl Engine {
                         if self.power_off { self.power_off_at = Some(Instant::now() + Duration::from_millis(600)); }
                         Ok(())
                     } else if self.power_off {
+                        self.settle_until = Some(Instant::now() + Duration::from_secs(3));
                         self.plat.display_off(true)
                     } else { Ok(()) }
                 }
@@ -141,7 +145,7 @@ impl Engine {
                 Action::InputHookOff => self.plat.input_hook(false),
                 Action::LockScreen => self.plat.lock_screen(),
             };
-            if let Err(e) = r { eprintln!("[blankrun] {a:?} failed: {e}"); }
+            match r { Ok(()) => nblog!("{a:?} ok"), Err(e) => nblog!("{a:?} failed: {e}") }
         }
     }
 
@@ -165,6 +169,7 @@ impl Engine {
         };
         self.sm.lock_on_wake = c.wake.lock_on_wake || c.wake.method == WakeMethod::Password;
         self.policy.reset();
+        nblog!("blank: power_off={} method={:?} mode={} wake={:?} lock={}", self.power_off, c.display.method, c.display.mode, c.wake.method, self.sm.lock_on_wake);
         self.apply(app, Event::Blank);
         // Modern Standby 上只用遮罩时，屏幕要保持点亮（黑遮罩），否则系统空闲关屏后会进入 S0 低功耗待机
         self.keep_display = !self.power_off && self.plat.power_off_unsafe();
@@ -178,9 +183,10 @@ impl Engine {
         if self.sm.state == State::Armed { self.countdown = None; self.apply(app, Event::Cancel); }
     }
 
-    fn wake(&mut self, app: &AppHandle) {
+    fn wake(&mut self, app: &AppHandle, why: &str) {
         if self.sm.state == State::Armed { return self.cancel(app); }
         if self.sm.state != State::ScreenOff { return; }
+        nblog!("wake: {why}");
         self.apply(app, Event::WakeRequested);
         if self.keep_display { self.keep_display = false; let _ = self.plat.keep_display_on(false); }
         self.apply(app, Event::RestoreDone);
@@ -204,7 +210,7 @@ impl Engine {
     pub fn handle(&mut self, app: &AppHandle, m: Msg) {
         match m {
             Msg::Input(i) if self.sm.state == State::ScreenOff => match self.policy.feed(i) {
-                Verdict::Wake => self.wake(app),
+                Verdict::Wake => self.wake(app, "input matched wake policy"),
                 Verdict::Holding(p) => {
                     // 正在按住唤醒键：别在这时把屏幕又关掉
                     self.reblank_at = None;
@@ -219,13 +225,14 @@ impl Engine {
                 }
             },
             Msg::Input(_) => {}
-            Msg::OverlayInput if !self.hook_ok => self.wake(app),
+            Msg::OverlayInput if !self.hook_ok => self.wake(app, "overlay input (no hook)"),
             Msg::OverlayInput => {}
             Msg::Blank { delay_s } => self.arm(app, delay_s, false),
             Msg::Cancel => self.cancel(app),
-            Msg::Wake => self.wake(app),
+            Msg::Wake => self.wake(app, "requested"),
             Msg::SkipTonight => self.tracker.suppress(),
             Msg::Quit => {
+                nblog!("quit");
                 self.shutdown(app);
                 app.exit(0);
             }
@@ -234,7 +241,7 @@ impl Engine {
 
     /// 退出前恢复一切
     pub fn shutdown(&mut self, app: &AppHandle) {
-        self.wake(app);
+        self.wake(app, "quit");
         self.cancel(app);
         let _ = self.plat.keep_awake(false);
         let _ = std::fs::remove_file(self.marker_path());
@@ -246,11 +253,15 @@ impl Engine {
             if now >= at { self.countdown = None; self.do_blank(app, false); }
         }
         if let Some(at) = self.power_off_at {
-            if now >= at { self.power_off_at = None; let _ = self.plat.display_off(true); }
+            if now >= at {
+                self.power_off_at = None;
+                self.settle_until = Some(now + Duration::from_secs(3));
+                match self.plat.display_off(true) { Ok(()) => nblog!("display power off ok"), Err(e) => nblog!("display power off failed: {e}") }
+            }
         }
         if self.sm.state == State::ScreenOff {
             match self.policy.tick(platform::now_ms()) {
-                Some(Verdict::Wake) => self.wake(app),
+                Some(Verdict::Wake) => self.wake(app, "wake policy timer"),
                 Some(Verdict::Holding(p)) => {
                     self.reblank_at = None;
                     self.hint(app, serde_json::json!({ "kind": "hold", "progress": p }), false)
@@ -258,11 +269,14 @@ impl Engine {
                 _ => {}
             }
         }
-        if self.sm.state == State::ScreenOff && self.power_off && self.power_off_at.is_none() {
-            let lit = self.plat.display_asleep() == Some(false);
+        let asleep = self.plat.display_asleep();
+        if asleep != self.last_asleep { nblog!("display asleep: {:?} -> {asleep:?}", self.last_asleep); self.last_asleep = asleep; }
+        let settling = self.settle_until.is_some_and(|t| now < t);
+        if self.sm.state == State::ScreenOff && self.power_off && self.power_off_at.is_none() && !settling {
+            let lit = asleep == Some(false);
             if lit && !self.hook_ok {
                 // 没有输入钩子（例如 Mac 没给辅助功能权限）：无法分辨误触，屏幕亮了就算唤醒
-                self.wake(app);
+                self.wake(app, "screen lit and no input hook");
             } else if lit && self.reblank_at.is_none() && !self.policy.is_holding() {
                 self.reblank_at = Some(now + Duration::from_secs(self.cfg.wake.reblank_after_s.max(1) as u64));
             }
@@ -271,6 +285,7 @@ impl Engine {
                     self.reblank_at = None;
                     if self.plat.display_asleep() != Some(true) {
                         if let Some(s) = self.session.as_mut() { s.lit += 1; }
+                        nblog!("screen lit unexpectedly: blanking again");
                         self.apply(app, Event::ScreenLitUnexpectedly);
                     }
                 }
@@ -282,7 +297,7 @@ impl Engine {
             match self.tracker.update(&self.cfg.schedule, wd, min) {
                 // TODO: skip_when_fullscreen_video 需要平台检测全屏视频；remind_before_min 需要系统通知
                 Some(Edge::Start) if self.sm.state == State::Idle => self.arm(app, 0, true),
-                Some(Edge::End) if self.session.as_ref().is_some_and(|s| s.by_schedule) => self.wake(app),
+                Some(Edge::End) if self.session.as_ref().is_some_and(|s| s.by_schedule) => self.wake(app, "schedule ended"),
                 _ => {}
             }
         }

@@ -1,6 +1,8 @@
 // Windows 发布版不弹控制台
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+#[macro_use]
+mod log;
 mod engine;
 mod platform;
 
@@ -151,10 +153,27 @@ fn toggle_popover(app: &AppHandle, anchor: tauri::Rect) {
     let _ = w.emit("nb://shown", ());
 }
 
+/// 命令行（测试和脚本用）：
+/// `--blank-now[=秒]` 启动后立即（或延迟）息屏；`--wake-after=秒` 息屏后自动恢复；`--quit-after=秒` 到时退出。
+fn cli(tx: mpsc::Sender<Msg>) {
+    let num = |name: &str| std::env::args().find_map(|a| {
+        let v = a.strip_prefix(name)?;
+        if v.is_empty() { Some(0) } else { v.strip_prefix('=')?.parse::<u64>().ok() }
+    });
+    let after = |secs: u64, m: Msg| {
+        let tx = tx.clone();
+        std::thread::spawn(move || { std::thread::sleep(std::time::Duration::from_secs(secs)); let _ = tx.send(m); });
+    };
+    let delay = num("--blank-now");
+    if let Some(d) = delay { after(1, Msg::Blank { delay_s: d as u32 }); }
+    if let Some(w) = num("--wake-after") { after(1 + delay.unwrap_or(0) + w, Msg::Wake); }
+    if let Some(q) = num("--quit-after") { after(q, Msg::Quit); }
+}
+
 fn main() {
     std::panic::set_hook(Box::new(|info| {
         platform::emergency_restore();
-        eprintln!("[blankrun] panic: {info}");
+        nblog!("panic: {info}");
     }));
 
     let (tx, rx) = mpsc::channel::<Msg>();
@@ -171,21 +190,32 @@ fn main() {
             let cfg = std::fs::read_to_string(&cfg_path).ok().and_then(|s| Config::from_toml(&s).ok()).unwrap_or_default();
             let codes: Vec<&str> = locales().iter().map(|(c, _)| *c).collect();
             let tt = tray_text(&blankrun_core::locale::resolve(&cfg.general.language, &platform::system_locale(), &codes));
+            log::init(cfg_path.with_file_name("blankrun.log"));
+            let lang = blankrun_core::locale::resolve(&cfg.general.language, &platform::system_locale(), &codes);
+            nblog!("start v{} os={} system_locale={:?} lang={lang} args={:?}", env!("CARGO_PKG_VERSION"), platform::OS,
+                platform::system_locale(), std::env::args().skip(1).collect::<Vec<_>>());
             let mut plat = Native::default();
             // 上次异常退出（崩溃、强退、断电）留下的标记：还原背光、点亮屏幕
             let marker = cfg_path.with_file_name("blanking.state");
             if let Ok(saved) = std::fs::read_to_string(&marker) {
-                if let Err(e) = plat.restore_on_startup(Some(&saved)) { eprintln!("[blankrun] restore: {e}"); }
+                nblog!("found {marker:?} from an abnormal exit: restoring ({saved:?})");
+                if let Err(e) = plat.restore_on_startup(Some(&saved)) { nblog!("restore after abnormal exit failed: {e}"); }
                 let _ = std::fs::remove_file(&marker);
             }
             let first_run = !cfg_path.with_file_name("onboarded").exists();
             let needs_perm = plat.permissions().is_some_and(|(a, b)| !(a && b));
+            for c in plat.capabilities() { nblog!("cap {} {} {}", c.id, c.status, c.tech); }
+            nblog!("permissions (accessibility, input monitoring) = {:?}; modern_standby = {}", plat.permissions(), plat.power_off_unsafe());
+            for (i, m) in app.available_monitors().unwrap_or_default().iter().enumerate() {
+                nblog!("monitor {} {:?} at {:?}", engine::monitor_name(i, m), m.size(), m.position());
+            }
             let eng: Eng = Arc::new(Mutex::new(Engine::new(cfg, cfg_path, plat)));
             app.manage(eng.clone());
             app.manage(Tx(Mutex::new(tx.clone())));
             let handle = app.handle().clone();
             std::thread::Builder::new().name("nb-engine".into()).spawn(move || engine::run(handle, eng, rx))?;
 
+            cli(tx.clone());
             if first_run && needs_perm {
                 if let Some(w) = app.get_webview_window("onboarding") { let _ = w.show(); let _ = w.set_focus(); }
             }
