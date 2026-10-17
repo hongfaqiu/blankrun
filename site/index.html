@@ -25,7 +25,7 @@
 <meta name="twitter:title" content="黑着跑 BlankRun">
 <meta name="twitter:description" content="Turn the screens off at night. Keep your AI agents running. 夜里息屏，AI 接着跑。">
 <meta name="twitter:image" content="https://blankrun.cosfoc.com/og.png">
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareApplication","name":"BlankRun","alternateName":"黑着跑","operatingSystem":"macOS 11+, Windows 10+","applicationCategory":"UtilitiesApplication","softwareVersion":"0.1.2","license":"https://opensource.org/licenses/MIT","url":"https://blankrun.cosfoc.com/","downloadUrl":"https://github.com/hongfaqiu/blankrun/releases/latest","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"description":"Turn the screens and keyboard backlight off while the computer keeps running. 一键息屏，电脑不睡眠。"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareApplication","name":"BlankRun","alternateName":"黑着跑","operatingSystem":"macOS 11+, Windows 10+","applicationCategory":"UtilitiesApplication","softwareVersion":"0.1.5","license":"https://opensource.org/licenses/MIT","url":"https://blankrun.cosfoc.com/","downloadUrl":"https://github.com/hongfaqiu/blankrun/releases/latest","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"description":"Turn the screens and keyboard backlight off while the computer keeps running. 一键息屏，电脑不睡眠。"}</script>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="icon" href="/favicon.png" type="image/png" sizes="32x32">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
@@ -53,7 +53,7 @@
     <div class="cta">
       <a class="panel" id="dlMain" href="#download">
         <b><span class="os-mac"><span lang="zh">下载 Mac 版</span><span lang="en">Download for Mac</span></span><span class="os-win"><span lang="zh">下载 Windows 版</span><span lang="en">Download for Windows</span></span><span class="os-any"><span lang="zh">免费下载</span><span lang="en">Download free</span></span></b>
-        <small><span class="os-mac"><span lang="zh">macOS 11+ · Apple 芯片与 Intel · 3.2 MB</span><span lang="en">macOS 11+ · Apple silicon and Intel · 3.2 MB</span></span><span class="os-win"><span lang="zh">Windows 10/11 · 1.2 MB</span><span lang="en">Windows 10/11 · 1.2 MB</span></span><span class="os-any"><span lang="zh">macOS 与 Windows</span><span lang="en">macOS and Windows</span></span></small>
+        <small><span class="os-mac"><span lang="zh">macOS 11+ · Apple 芯片与 Intel · 3.8 MB</span><span lang="en">macOS 11+ · Apple silicon and Intel · 3.8 MB</span></span><span class="os-win"><span lang="zh">Windows 10/11 · 1.4 MB</span><span lang="en">Windows 10/11 · 1.4 MB</span></span><span class="os-any"><span lang="zh">macOS 与 Windows</span><span lang="en">macOS and Windows</span></span></small>
         <i class="led" aria-hidden="true"></i>
       </a>
       <div class="alt">
@@ -68,7 +68,7 @@
   <figure class="hero-shot">
     <picture>
       <source srcset="/img/popover-mac-dark.webp" media="(prefers-color-scheme: dark)">
-      <img src="/img/popover-mac.webp" width="640" height="904" alt="黑着跑菜单栏面板：立即息屏、今晚 23:30 → 07:30 的计划、唤醒方式">
+      <img src="/img/popover-mac.webp" width="640" height="856" alt="黑着跑菜单栏面板：立即息屏、今晚 23:30 → 07:30 的计划、唤醒方式">
     </picture>
   </figure>
 </section>
@@ -78,19 +78,21 @@
   <ol class="timeline">
     <li><span class="t num">23:30</span><div><b><span lang="zh">屏幕和背光熄灭</span><span lang="en">Displays and backlight go dark</span></b><small><span lang="zh">按「立即息屏」，或者交给定时计划。也可以延迟 1、5、15 分钟。</span><span lang="en">Click “Blank now” or let the schedule do it. Delay by 1, 5 or 15 minutes if you like.</span></small></div></li>
     <li class="on"><span class="t num">00:00 – 07:00</span><div><b><span lang="zh">电脑醒着，任务照跑</span><span lang="en">The computer stays awake, jobs keep running</span></b><small><span lang="zh">防睡眠一直生效。屏幕被碰亮了，几秒内会自动再关。</span><span lang="en">Sleep stays blocked the whole time. If something lights the screen, it goes dark again within seconds.</span></small></div></li>
-    <li><span class="t num">07:30</span><div><b><span lang="zh">按你定的方式醒来</span><span lang="en">Wakes the way you chose</span></b><small><span lang="zh">按住 ⌃⌥W 一秒、任意键、移动鼠标，或者等计划结束。醒来后可以锁屏。</span><span lang="en">Hold ⌃⌥W for a second, press any key, move the mouse, or wait for the schedule to end. Optionally lock on wake.</span></small></div></li>
+    <li><span class="t num">07:30</span><div><b><span lang="zh">按你定的方式醒来</span><span lang="en">Wakes the way you chose</span></b><small><span lang="zh">按住 ⌃⌥W 一秒、任意键、移动鼠标，或者等计划结束。醒来后可以锁屏；按住的快捷键不会漏进前台程序。</span><span lang="en">Hold ⌃⌥W for a second, press any key, move the mouse, or wait for the schedule to end. Optionally lock on wake. The held shortcut never leaks into the app in front.</span></small></div></li>
   </ol>
 </section>
 
 <section id="features" class="features">
   <h2><span lang="zh">功能</span><span lang="en">Features</span></h2>
   <dl>
-    <div><dt><span lang="zh">真关屏，不睡眠</span><span lang="en">Real display off, no sleep</span></dt><dd><span lang="zh">macOS 用 IOPMAssertion 阻止睡眠，Windows 用 SetThreadExecutionState；关的是显示器电源，不是盖一层黑图。</span><span lang="en">IOPMAssertion on macOS and SetThreadExecutionState on Windows block sleep. The display is actually powered down, not covered with a black image.</span></dd></div>
+    <div><dt><span lang="zh">真关屏，不睡眠</span><span lang="en">Real display off, no sleep</span></dt><dd><span lang="zh">macOS 用 IOPMAssertion 阻止睡眠，Windows 用 SetThreadExecutionState；关的是显示器电源，不是盖一层黑图。Mac 内建屏的背光会调到 0，唤醒后恢复。</span><span lang="en">IOPMAssertion on macOS and SetThreadExecutionState on Windows block sleep. The display is actually powered down, not covered with a black image. On a Mac, the built-in display's backlight goes to 0 and comes back on wake.</span></dd></div>
+    <div><dt><span lang="zh">逐台断电</span><span lang="en">Per-display power-off</span></dt><dd><span lang="zh">Windows 上支持 DDC/CI 的显示器可以单独断电，其余盖黑色遮罩；每台可选「自动 / 仅遮罩 / 断电」。不响应断电指令的显示器会被自动识别，改用遮罩。远程软件的虚拟显示器不遮、不断电。</span><span lang="en">On Windows, displays with DDC/CI can be powered off one by one; the rest get a black overlay. Each display can be set to Automatic, Overlay only or Power off. Displays that ignore power-off commands are detected and switched to the overlay. Virtual displays from remote tools are left alone.</span></dd></div>
+    <div><dt><span lang="zh">放行远程控制</span><span lang="en">Allow remote control</span></dt><dd><span lang="zh">开启后，向日葵、ToDesk、Parsec 等远程软件的键鼠操作直接放行，不会唤醒本机屏幕；已断电的显示器撤下遮罩，远程画面照常可见。远程桌面（RDP）会话中不息屏。</span><span lang="en">When on, input from Sunlogin, ToDesk, Parsec and similar tools passes through without waking the local screens. Displays that are powered off drop their overlay so the remote view still shows the desktop. BlankRun doesn't blank inside a Remote Desktop (RDP) session.</span></dd></div>
     <div><dt><span lang="zh">防误触唤醒</span><span lang="en">No accidental wake</span></dt><dd><span lang="zh">息屏期间拦截键鼠输入。唤醒方式可选：任意键、按住快捷键、移动鼠标、点击、输入密码、只在定时结束时。另有一个随时可用的紧急恢复键。</span><span lang="en">Input is swallowed while blank. Wake by any key, holding a hotkey, mouse move, click, password, or only when the schedule ends. An emergency restore hotkey always works.</span></dd></div>
     <div><dt><span lang="zh">定时计划</span><span lang="en">Schedule</span></dt><dd><span lang="zh">比如每天 23:30 → 07:30，支持跨午夜，可以只跳过今晚。</span><span lang="en">For example 23:30 → 07:30 daily. Works across midnight, and you can skip just tonight.</span></dd></div>
     <div><dt><span lang="zh">键盘背光</span><span lang="en">Keyboard backlight</span></dt><dd><span lang="zh">macOS 上和屏幕一起关掉。用的是系统私有接口，启动时先探测，不可用就跳过，不影响其他功能。</span><span lang="en">Turned off together with the screen on macOS. It uses a private API that is probed at runtime and skipped when unavailable.</span></dd></div>
     <div><dt><span lang="zh">Windows 待机兜底</span><span lang="en">Modern Standby fallback</span></dt><dd><span lang="zh">有些新款 Windows 笔记本一关屏就进低功耗待机，后台任务会被挂起。检测到这类机器时，改用全黑遮罩。</span><span lang="en">Some Windows laptops drop into Modern Standby when the display turns off, which suspends background jobs. BlankRun detects this and uses a black overlay instead.</span></dd></div>
-    <div><dt><span lang="zh">小，而且只在本地</span><span lang="en">Small and local</span></dt><dd><span lang="zh">基于 Tauri 2，用系统自带 WebView，前端零依赖。安装包只有几 MB。除了每天一次检查更新（可关），不联网、不上传，开源（MIT）。</span><span lang="en">Built on Tauri 2 with the system WebView and a zero-dependency UI. Installers are a few MB. No telemetry; the only network use is a daily update check you can turn off. MIT licensed.</span></dd></div>
+    <div><dt><span lang="zh">小，而且只在本地</span><span lang="en">Small and local</span></dt><dd><span lang="zh">基于 Tauri 2，用系统自带 WebView，前端零依赖。安装包只有几 MB。除了每天一次检查更新（可关），不联网、不上传；更新包有签名校验，下载失败会自动重试。开源（MIT）。</span><span lang="en">Built on Tauri 2 with the system WebView and a zero-dependency UI. Installers are a few MB. No telemetry; the only network use is a daily update check you can turn off. Updates are signed and downloads retry on failure. MIT licensed.</span></dd></div>
   </dl>
 </section>
 
@@ -106,18 +108,18 @@
       <figcaption><span lang="zh">设置 · 唤醒</span><span lang="en">Settings · Wake</span></figcaption>
     </figure>
     <figure>
-      <img src="/img/settings-win-schedule.webp" width="1600" height="1483" loading="lazy" alt="Windows 设置 · 定时">
-      <figcaption><span lang="zh">Windows · 定时</span><span lang="en">Windows · Schedule</span></figcaption>
+      <picture><source srcset="/img/settings-win-displays-dark.webp" media="(prefers-color-scheme: dark)"><img src="/img/settings-win-displays.webp" width="1120" height="1050" loading="lazy" alt="Windows 设置 · 显示器：逐台选择自动、仅遮罩或断电"></picture>
+      <figcaption><span lang="zh">Windows · 逐台显示器</span><span lang="en">Windows · Per-display settings</span></figcaption>
     </figure>
   </div>
 </section>
 
 <section class="download" id="download">
   <h2><span lang="zh">下载</span><span lang="en">Download</span></h2>
-  <p class="sub"><span lang="zh">v0.1.2 · 免费开源（MIT）· <a href="https://github.com/hongfaqiu/blankrun/releases/latest">更新说明</a></span><span lang="en">v0.1.2 · Free and open source (MIT) · <a href="https://github.com/hongfaqiu/blankrun/releases/latest">Release notes</a></span></p>
+  <p class="sub"><span lang="zh">v0.1.5 · 免费开源（MIT）· <a href="https://github.com/hongfaqiu/blankrun/releases/latest">更新说明</a></span><span lang="en">v0.1.5 · Free and open source (MIT) · <a href="https://github.com/hongfaqiu/blankrun/releases/latest">Release notes</a></span></p>
   <ul class="files">
-    <li><a href="https://github.com/hongfaqiu/blankrun/releases/latest/download/BlankRun_universal.dmg"><span lang="zh">macOS 版</span><span lang="en">macOS</span></a><span class="num muted">3.2 MB</span><span class="muted"><span lang="zh">macOS 11+ · Apple 芯片与 Intel</span><span lang="en">macOS 11+ · Apple silicon and Intel</span></span></li>
-    <li><a href="https://github.com/hongfaqiu/blankrun/releases/latest/download/BlankRun_x64-setup.exe"><span lang="zh">Windows 版</span><span lang="en">Windows</span></a><span class="num muted">1.2 MB</span><span class="muted">Windows 10/11 x64</span></li>
+    <li><a href="https://github.com/hongfaqiu/blankrun/releases/latest/download/BlankRun_universal.dmg"><span lang="zh">macOS 版</span><span lang="en">macOS</span></a><span class="num muted">3.8 MB</span><span class="muted"><span lang="zh">macOS 11+ · Apple 芯片与 Intel</span><span lang="en">macOS 11+ · Apple silicon and Intel</span></span></li>
+    <li><a href="https://github.com/hongfaqiu/blankrun/releases/latest/download/BlankRun_x64-setup.exe"><span lang="zh">Windows 版</span><span lang="en">Windows</span></a><span class="num muted">1.4 MB</span><span class="muted">Windows 10/11 x64</span></li>
   </ul>
   <h3><span lang="zh">首次打开</span><span lang="en">First launch</span></h3>
   <dl class="steps">

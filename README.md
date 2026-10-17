@@ -1,6 +1,6 @@
 <p align="center"><img src="src-tauri/icons/128x128.png" width="72" alt="BlankRun icon"></p>
 
-<h1 align="center">BlankRun</h1>
+<h1 align="center">BlankRun · 黑着跑</h1>
 
 <p align="center">Turn the screens off at night. Keep your AI agents running.</p>
 
@@ -8,7 +8,7 @@
 
 <p align="center"><a href="https://blankrun.cosfoc.com">Website</a> · <a href="https://github.com/hongfaqiu/blankrun/releases">Download</a> · macOS + Windows · MIT</p>
 
-> **Status: v0.1.2. Blanking, keep-awake, wake and restore have been checked on a MacBook Air M4 (macOS 26.5) and a dual-monitor Windows 11 desktop. The installers are unsigned.** [Download the latest version](https://github.com/hongfaqiu/blankrun/releases/latest)
+> **Latest version: v0.1.5** · macOS 11+ (Apple silicon and Intel) · Windows 10/11 x64 · [Download](https://github.com/hongfaqiu/blankrun/releases/latest). The installers are not code-signed; see the [website](https://blankrun.cosfoc.com/#download) for first-launch steps.
 
 <p align="center"><img src="docs/screenshots/popover-mac-en.png" width="380" alt="Menu bar panel"> <img src="docs/screenshots/popover-mac-en-dark.png" width="380" alt="Menu bar panel (dark)"></p>
 
@@ -23,18 +23,20 @@ Features:
 - **Blank now or after a delay**: right away, or after 1, 5 or 15 minutes.
 - **No sleep while blank** (on by default, can be turned off): IOPMAssertion on macOS, SetThreadExecutionState on Windows.
 - **Schedule**: for example 23:30 to 07:30 every day. Works across midnight, and you can skip just tonight.
-- **Configurable wake**: any key, holding a shortcut (⌃⌥W for 1 second by default), moving the mouse, clicking, locking on wake so you enter your password, or only when the schedule ends. A separate emergency shortcut always restores everything.
+- **Configurable wake**: any key, holding a shortcut (⌃⌥W for 1 second by default), moving the mouse, clicking, locking on wake so you enter your password, or only when the schedule ends. A separate emergency shortcut always restores everything. After a shortcut wake, the keyboard stays blocked until the keys are released (at most 2 seconds), so key repeats never reach the app in front; the mouse works right away.
 - **No accidental wake**: keyboard and mouse input is blocked while blank. If the screen lights up anyway, it goes dark again within seconds. On macOS without Accessibility permission, the wake shortcut still works and stray touches are re-blanked.
 - **Launch at login, blank-now shortcut** (⌃⌥B by default), **a reminder before the schedule starts** (skip tonight or postpone 30 min), and **waiting while a video plays full screen**.
+- **Per-display power-off**: on Windows, displays with DDC/CI are powered off one by one and the rest get a black overlay. Each display can be set to Automatic, Overlay only or Power off, and displays that ignore power-off commands are detected automatically. On a Mac, the built-in display's backlight goes to 0. Virtual displays from remote tools are left alone. See below.
+- **Allow remote control**: input from remote tools passes through without waking the local screens, and the remote view keeps a live picture. BlankRun doesn't blank inside a Remote Desktop (RDP) session.
 - **Keyboard backlight**: turned off together with the screen on macOS. It uses a private API that is probed at runtime and skipped when unavailable.
 - **Windows Modern Standby**: on PCs that drop into low-power standby when the display turns off, BlankRun uses a black overlay instead so jobs aren't suspended.
 - **English and Chinese UI**: follows the system language by default. Switch in Settings › General › Language and the tray menu, wake hints and onboarding update immediately, with no restart.
-- **Small**: built on Tauri 2 with a zero-dependency UI. Measured for v0.1.0: 1.2 MB Windows installer, 3.2 MB universal macOS DMG.
-- **Auto-update**: checks once a day (can be turned off). Updates are signed and install only when you click "Update and restart", never while the screen is blank. From v0.1.1 on; v0.1.0 needs one manual install.
+- **Small**: built on Tauri 2 with a zero-dependency UI. v0.1.5: 1.4 MB Windows installer, 3.8 MB universal macOS DMG.
+- **Auto-update**: checks once a day (can be turned off). Updates are signed, downloads retry on network errors, and an update installs only when you click "Update and restart", never while the screen is blank. From v0.1.1 on; v0.1.0 needs one manual install.
 - **Blank history**: the last 30 sessions with time, trigger, how they ended and how many accidental touches were blocked. Stored locally and can be cleared.
 - **Local only**: apart from the daily update check, nothing goes over the network and nothing is uploaded.
 
-Later versions: external monitor power via DDC/CI, RGB lighting.
+Later versions: RGB lighting, external display power-off on macOS.
 
 ## Per-display power-off and remote control
 
@@ -51,11 +53,11 @@ Later versions: external monitor power via DDC/CI, RGB lighting.
 |---|---|---|
 | <img src="docs/screenshots/settings-mac-wake-en.png" width="300"> | <img src="docs/screenshots/overlay-mac-hint-en.png" width="300"> | <img src="docs/screenshots/onboarding-mac-en.png" width="300"> |
 
-| Windows tray panel | Settings · Schedule (Windows) |
-|---|---|
-| <img src="docs/screenshots/popover-win-en.png" width="260"> | <img src="docs/screenshots/settings-win-schedule-en.png" width="360"> |
+| Windows tray panel | Settings · Displays (Windows) | Settings · Schedule (Windows) |
+|---|---|---|
+| <img src="docs/screenshots/popover-win-en.png" width="260"> | <img src="docs/screenshots/settings-win-displays-en.png" width="320"> | <img src="docs/screenshots/settings-win-schedule-en.png" width="320"> |
 
-Screenshots show the v0.1.0 interface. On your machine, fonts follow the system.
+Screenshots are rendered from the app's UI. On your machine, fonts follow the system.
 
 ## Docs
 
@@ -74,19 +76,22 @@ crates/core/            platform-independent core (cargo test on any host)
   src/wake.rs           wake policy and accidental-wake guard (hold shortcut, mouse distance, emergency key)
   src/hotkey.rs         "Ctrl+Alt+W" parsing and matching
   src/locale.rs         UI language choice (match system or explicit; same rules as ui/common.js)
+  src/monitors.rs       per-display plan: power off, overlay or skip (virtual displays, overrides, remote mode)
+  src/drain.rs          keyboard drain after a shortcut wake (held keys, 300 ms grace, 2 s cap)
 src-tauri/              Tauri 2 tray / menu bar app
   src/main.rs           tray and panel, windows, Tauri commands (config, blank, diagnostics, permissions, locale)
   src/engine.rs         engine thread: state machine, countdown, schedule, wake policy, overlays, re-blank
   src/platform/mod.rs   Platform trait, input event channel
-  src/platform/macos.rs   IOPMAssertion, IORequestIdle/pmset, CoreBrightness backlight (probed), CGEventTap (untested on hardware)
+  src/platform/macos.rs   IOPMAssertion, IORequestIdle/pmset, CoreBrightness keyboard backlight (probed), DisplayServices brightness, CGEventTap
   src/platform/windows.rs SetThreadExecutionState, SC_MONITORPOWER, Modern Standby detection, display-state callback, LL hooks
+  src/platform/win_monitors.rs display enumeration, DDC/CI (VCP 0xD6) power
   src/platform/stub.rs  no-op for other platforms, compile checks only
 ui/                     the real UI: plain HTML/JS/CSS, no framework, no bundler, no inline styles (CSP)
   popover / settings / overlay / onboarding .html + their .js/.css, shared nb.css and common.js
   i18n/<code>.js        UI strings (en, zh-CN), one file per language
 site/                   website (static HTML/CSS); pushes to main auto-deploy via Cloudflare Pages (project blankrun-site) to blankrun.cosfoc.com
 design/                 mockups; design/preview/ renders ui/ in Chrome with a fake __TAURI__ to check layouts
-docs/screenshots/       English screenshots used in this README
+docs/screenshots/       screenshots used in the READMEs
 ```
 Config file: `com.cosfoc.blankrun/config.toml` in the system app-config directory.
 

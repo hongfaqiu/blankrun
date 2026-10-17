@@ -1,6 +1,6 @@
 <p align="center"><img src="src-tauri/icons/128x128.png" width="72" alt="BlankRun 图标"></p>
 
-<h1 align="center">黑着跑 BlankRun</h1>
+<h1 align="center">BlankRun · 黑着跑</h1>
 
 <p align="center">夜里关掉屏幕和灯，让 AI 接着跑。</p>
 
@@ -8,9 +8,9 @@
 
 <p align="center"><a href="https://blankrun.cosfoc.com">官网</a> · <a href="https://github.com/hongfaqiu/blankrun/releases">下载</a> · macOS + Windows · MIT</p>
 
-> **状态：v0.1.2。息屏、防睡眠、唤醒和恢复已在 MacBook Air M4（macOS 26.5）和一台双屏 Windows 11 台式机上验证过。安装包未签名。** [下载最新版](https://github.com/hongfaqiu/blankrun/releases/latest)
+> **最新版本：v0.1.5** · macOS 11+（Apple 芯片与 Intel）· Windows 10/11 x64 · [下载](https://github.com/hongfaqiu/blankrun/releases/latest)。安装包未做代码签名，首次打开的步骤见[官网](https://blankrun.cosfoc.com/#download)。
 
-<p align="center"><img src="design/png/popover-mac.png" width="380" alt="菜单栏面板"> <img src="design/png/popover-mac-dark.png" width="380" alt="菜单栏面板（深色）"></p>
+<p align="center"><img src="docs/screenshots/popover-mac.png" width="380" alt="菜单栏面板"> <img src="docs/screenshots/popover-mac-dark.png" width="380" alt="菜单栏面板（深色）"></p>
 
 ## 这是什么
 
@@ -23,18 +23,20 @@
 - **立即息屏 / 倒计时息屏**：可以立即息屏，也可以延迟 1、5、15 分钟。
 - **息屏时防睡眠**（默认开，可关）：macOS 用 IOPMAssertion，Windows 用 SetThreadExecutionState。
 - **定时计划**：例如每天 23:30 到 07:30，支持跨午夜，也可以跳过今晚。
-- **可配置唤醒**：任意键、按住快捷键（默认 ⌃⌥W 按住 1 秒）、移动鼠标、点击、唤醒后锁屏输密码，或者只在定时结束时唤醒；另有一个紧急恢复快捷键。
+- **可配置唤醒**：任意键、按住快捷键（默认 ⌃⌥W 按住 1 秒）、移动鼠标、点击、唤醒后锁屏输密码，或者只在定时结束时唤醒；另有一个紧急恢复快捷键。按住快捷键唤醒后，键盘会继续拦截到按键全部松开（最多 2 秒），自动重复不会漏进前台程序；鼠标立即可用。
 - **防误触**：息屏期间拦截键鼠输入；屏幕被意外点亮时，几秒内自动再关。macOS 没给辅助功能权限时，唤醒快捷键照样能用，误触点亮后也会自动再熄灭。
 - **开机启动、立即息屏快捷键**（默认 ⌃⌥B）、**定时开始前提醒**（可跳过今晚或推迟 30 分钟）、**全屏看视频时先等着**。
+- **逐台断电**：Windows 上支持 DDC/CI 的显示器单独断电，其余盖黑色遮罩；每台可选「自动 / 仅遮罩 / 断电」，不响应断电指令的显示器会被自动识别。Mac 内建屏背光调到 0。远程软件的虚拟显示器不遮、不断电。详见下文。
+- **放行远程控制**：远程软件的键鼠操作直接放行，不会唤醒本机屏幕，远程画面照常可见。远程桌面（RDP）会话中不息屏。
 - **键盘背光**：macOS 上一起关掉。用的是私有接口，运行时先探测，不可用时自动跳过。
 - **Windows Modern Standby**：检测到关屏会让机器进入低功耗待机的机型时，改用全黑遮罩，避免任务被挂起。
 - **中英双语界面**：默认跟随系统语言，也可以在「设置 › 通用 › 语言」里切换，托盘菜单、息屏提示和首次引导都会立即换过来，不用重启。
-- **体积小**：基于 Tauri 2，前端零依赖。v0.1.0 实测：Windows 安装包 1.2 MB，macOS 通用版 DMG 3.2 MB。
-- **自动更新**：每天检查一次（可关）。更新包有签名校验，只在你点「更新并重启」时安装，息屏中不会更新。从 v0.1.1 开始支持，v0.1.0 需要手动装一次。
+- **体积小**：基于 Tauri 2，前端零依赖。v0.1.5：Windows 安装包 1.4 MB，macOS 通用版 DMG 3.8 MB。
+- **自动更新**：每天检查一次（可关）。更新包有签名校验，下载失败会自动重试，只在你点「更新并重启」时安装，息屏中不会更新。从 v0.1.1 开始支持，v0.1.0 需要手动装一次。
 - **息屏记录**：保留最近 30 次的时间、触发方式、结束方式和拦下的误触次数，只存在本机，可一键清空。
 - **本地运行**：除了每天一次检查更新，不联网，不上传任何数据。
 
-后续版本：外接显示器断电（DDC/CI）、RGB 灯控制。
+后续版本：RGB 灯控制、macOS 外接显示器断电。
 
 ## 逐台断电与远程控制
 
@@ -49,13 +51,13 @@
 
 | 设置 · 唤醒 | 息屏中 | 首次引导 |
 |---|---|---|
-| <img src="design/png/settings-mac-wake.png" width="300"> | <img src="design/png/blank-mac-hint.png" width="300"> | <img src="design/png/onboarding-mac.png" width="300"> |
+| <img src="docs/screenshots/settings-mac-wake.png" width="300"> | <img src="docs/screenshots/overlay-mac-hint.png" width="300"> | <img src="docs/screenshots/onboarding-mac.png" width="300"> |
 
-| Windows 托盘面板 | 设置 · 定时（Windows） |
+| Windows 托盘面板 | 设置 · 显示器（Windows） |
 |---|---|
-| <img src="design/png/popover-win.png" width="260"> | <img src="design/png/settings-win-schedule.png" width="360"> |
+| <img src="docs/screenshots/popover-win.png" width="260"> | <img src="docs/screenshots/settings-win-displays.png" width="340"> |
 
-截图来自 v0.1.0 的实际界面；在真机上，字体会跟随系统。
+截图由应用界面渲染；在你的电脑上，字体会跟随系统。
 
 ## 文档
 
@@ -74,18 +76,22 @@ crates/core/            平台无关核心（可在任何主机 cargo test）
   src/wake.rs           唤醒策略 / 防误触（按住快捷键、鼠标累计位移、紧急键）
   src/hotkey.rs         "Ctrl+Alt+W" 解析与匹配
   src/locale.rs         界面语言选择（跟随系统 / 手动指定，与 ui/common.js 规则一致）
+  src/monitors.rs       逐台显示器方案：断电、遮罩或跳过（虚拟显示器、逐台指定、远程模式）
+  src/drain.rs          快捷键唤醒后的键盘排空（按住的键、300 ms 余量、最长 2 秒）
 src-tauri/              Tauri 2 托盘/菜单栏应用
   src/main.rs           托盘与弹出面板、窗口、Tauri 命令（配置、息屏、诊断、权限）
   src/engine.rs         引擎线程：状态机 + 倒计时 + 定时 + 唤醒策略 + 遮罩窗口 + 意外点亮后重新息屏
   src/platform/mod.rs   Platform trait、输入事件通道
-  src/platform/macos.rs   IOPMAssertion、IORequestIdle/pmset、CoreBrightness 背光（运行时探测）、CGEventTap（未在真机测试）
+  src/platform/macos.rs   IOPMAssertion、IORequestIdle/pmset、CoreBrightness 键盘背光（运行时探测）、DisplayServices 亮度、CGEventTap
   src/platform/windows.rs SetThreadExecutionState、SC_MONITORPOWER、Modern Standby 检测、显示器状态回调、LL 键鼠钩子
+  src/platform/win_monitors.rs 显示器枚举、DDC/CI（VCP 0xD6）电源
   src/platform/stub.rs  其他平台 no-op，仅供编译检查
 ui/                     正式界面：原生 HTML/JS/CSS，无框架、无打包器、无内联样式（CSP）
   popover / settings / overlay / onboarding .html + 各自的 .js/.css，共享 nb.css、common.js
   i18n/<语言代码>.js      界面文案（en、zh-CN），一个语言一个文件
 site/                   官网（静态 HTML/CSS）；push 到 main 后由 Cloudflare Pages（项目 blankrun-site）自动部署到 blankrun.cosfoc.com
 design/                 设计稿；design/preview/ 用假的 __TAURI__ 在 Chrome 里渲染 ui/ 检查布局
+docs/screenshots/       README 用的截图
 ```
 配置文件位置：系统应用配置目录下的 `com.cosfoc.blankrun/config.toml`。
 
