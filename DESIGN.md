@@ -27,28 +27,39 @@
 7. 崩溃或异常退出时自动恢复：亮度、gamma、背光都还原
 
 ## 3. 配置项（config.toml）
+与 `crates/core/src/config.rs` 保持一致；以下都是默认值，文件里没写的字段取默认。
 ```toml
+[general]
+launch_at_login = false    # 登录 / 开机时启动，默认关，由用户自己打开
+language = "auto"          # auto | zh | en（auto = 跟随系统）
+blank_now_hotkey = "Ctrl+Alt+B"   # 立即息屏；Mac 上显示为 ⌃⌥B
 [wake]
 method = "hotkey"          # any_key | hotkey | mouse_move | click | password | schedule_only
 hotkey = "Ctrl+Alt+W"
+hold_ms = 1000             # 唤醒快捷键要按住 1.0 秒，短按不唤醒
 mouse_threshold_px = 150   # 累计移动超过这个距离才算唤醒
 mouse_window_ms = 800      # 并且要在这个时间窗口内完成，用来过滤抖动
-lock_on_wake = true        # 唤醒后锁屏，用系统密码解锁
+lock_on_wake = false       # 唤醒后锁屏（用系统密码解锁）；公开版做成设置项，默认关
+reblank_after_s = 3        # 屏幕被意外点亮后几秒内自动再关
 [schedule]
-enabled = true
+enabled = false
 start = "23:30"
 end = "07:30"
-days = ["mon","tue","wed","thu","fri","sat","sun"]
+days = ["mon","tue","wed","thu","fri","sat","sun"]   # 默认每天
+remind_before_min = 5      # 开始前几分钟弹通知（可推迟 30 分钟 / 跳过今晚），0 = 不提醒
+skip_when_fullscreen_video = true   # 有程序在全屏播放视频时跳过本次
 [display]
 mode = "all"               # all | list
 targets = []               # 显示器 ID / 名称
 method = "auto"            # auto | power_off | overlay
 [lights]
 keyboard_backlight = true
-openrgb = true
+openrgb = false
 openrgb_host = "127.0.0.1:6742"
 [safety]
 emergency_hotkey = "Ctrl+Alt+Shift+Esc"   # 任何唤醒方式下都有效
+[power]
+ac_only = false            # 仅 macOS：只在接通电源时防睡眠，用电池时照常睡眠
 ```
 
 ## 4. 技术栈

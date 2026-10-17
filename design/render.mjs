@@ -16,13 +16,24 @@ const jobs = [
   ['overlay.html?p=win&state=hint', 'blank-win-hint.png', 1280],
   ['onboarding.html?p=mac', 'onboarding-mac.png', 700],
 ];
+// 深色版（prefers-color-scheme: dark），输出 *-dark.png
+const darkJobs = [
+  ['popover.html?p=mac', 'popover-mac-dark.png', 440],
+  ['popover.html?p=win', 'popover-win-dark.png', 440],
+  ['settings.html?p=mac#wake', 'settings-mac-wake-dark.png', 900],
+  ['settings.html?p=mac#blank', 'settings-mac-blank-dark.png', 900],
+  ['onboarding.html?p=mac', 'onboarding-mac-dark.png', 700],
+];
 const only = process.argv[2];
 const browser = await chromium.launch({ executablePath: '/usr/bin/google-chrome', args: ['--no-sandbox'] });
 const page = await browser.newPage({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 2 });
-for (const [url, out, w] of [...jobs, ['overview.html', 'overview.png', 1800]]) {
+const all = [...jobs.map(j => [...j, 'light']), ['overview.html', 'overview.png', 1800, 'light'],
+             ...darkJobs.map(j => [...j, 'dark']), ['overview.html', 'overview-dark.png', 1800, 'dark']];
+for (const [url, out, w, scheme] of all) {
   if (only && !out.includes(only)) continue;
+  await page.emulateMedia({ colorScheme: scheme });
   await page.setViewportSize({ width: w, height: 1000 });
-  await page.goto('file://' + path.join(dir, url)); await page.waitForTimeout(150);
+  await page.goto('file://' + path.join(dir, url)); await page.waitForLoadState('load'); await page.waitForTimeout(250);
   await page.locator('.stage').first().screenshot({ path: path.join(dir, 'png', out) });
   console.log('png/' + out);
 }

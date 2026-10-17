@@ -16,13 +16,17 @@ npm i --prefix /tmp/pw playwright-core   # 只装一次；用系统里的 /usr/b
 NODE_PATH=/tmp/pw/node_modules node design/render.mjs [文件名过滤]
 ```
 
-## 和 config.rs 的对应
-已有字段：`wake.method`（任意键 / 快捷键 / 鼠标移动 / 点击 / 密码 / 只在定时结束时）、`wake.hotkey`、`mouse_threshold_px=150`、`mouse_window_ms=800`、`lock_on_wake=false`、`reblank_after_s=3`、`schedule.*`、`display.mode/targets/method`、`lights.*`、`safety.emergency_hotkey`。
+## 深色模式
+`nb.css` 用 `@media (prefers-color-scheme: dark)` 整体换一套中性灰阶变量，页面里不再写死颜色，跟随系统自动切换。`render.mjs` 会额外用深色输出 `popover-mac/win`、`settings-mac-wake/blank`、`onboarding-mac` 的 `*-dark.png`，以及 `overview-dark.png`。息屏遮罩本身就是纯黑，不分深浅。
 
-设计稿里出现了几个**新字段**，目前 config.rs 里还没有，需要再定：
-- `wake.hold_ms`：快捷键要按住多久才算（默认 1000）
-- `general.autostart`、`general.language`、`general.blank_hotkey`：立即息屏的快捷键，稿里写的是 ⌃⌥B / Ctrl+Alt+B
-- `schedule.remind_before_min`、`schedule.skip_when_fullscreen_video`
-- `power.ac_only`（Mac）：只在接通电源时才防睡眠
+## 和 config.rs 的对应
+稿里的设置项都已经进了 `crates/core/src/config.rs`（与 DESIGN.md 第 3 节一致）：
+- `general.launch_at_login=false`、`general.language=auto|zh|en`、`general.blank_now_hotkey="Ctrl+Alt+B"`（⌃⌥B）
+- `wake.*`：`method`、`hotkey`、`hold_ms=1000`（按住 1.0 秒）、`mouse_threshold_px=150`、`mouse_window_ms=800`、`lock_on_wake=false`、`reblank_after_s=3`
+- `schedule.*`：`days` 默认每天、`remind_before_min=5`、`skip_when_fullscreen_video=true`
+- `power.ac_only=false`（仅 Mac：只在接通电源时防睡眠）
+- `display.*`、`lights.*`、`safety.emergency_hotkey`
+
+设计稿里「登录时启动」画的是打开后的样子，实际默认关闭。
 
 注意：Tauri 的 CSP 是 `style-src 'self'`，迁到正式 UI 时要把稿里少量的内联 `style=""` 挪进 CSS。
