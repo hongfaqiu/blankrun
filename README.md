@@ -44,7 +44,7 @@ Later versions: external monitor power via DDC/CI, RGB lighting.
 |---|---|
 | <img src="docs/screenshots/popover-win-en.png" width="260"> | <img src="docs/screenshots/settings-win-schedule-en.png" width="360"> |
 
-Screenshots are rendered from the real UI in a browser preview. On a real machine, fonts look closer to the native system UI.
+Screenshots show the v0.1.0 interface. On your machine, fonts follow the system.
 
 ## Docs
 

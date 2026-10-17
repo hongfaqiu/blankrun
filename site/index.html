@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="zh-CN" data-lang="zh">
+<html lang="zh-CN" data-lang="zh" data-os="any">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>息屏跑 BlankRun · 夜里息屏，AI 接着跑</title>
-<meta name="description" content="息屏跑（BlankRun）：一键关掉屏幕和键盘背光，电脑不睡眠，让 AI agent、编译和下载在夜里继续跑。macOS + Windows，开源免费，早期开发中。">
+<meta name="description" content="息屏跑（BlankRun）：一键关掉屏幕和键盘背光，电脑不睡眠，让 AI agent、编译和下载在夜里继续跑。macOS + Windows，开源免费。">
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#F5F5F4" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0C0C0D" media="(prefers-color-scheme: dark)">
@@ -31,25 +31,30 @@
 <main>
 <section class="hero">
   <div class="hero-text">
-    <p class="status"><span class="dot"></span><span lang="zh">v0.1.0 正式版 · 已在 Mac 和 Windows 真机上验证</span><span lang="en">v0.1.0 · tested on a real Mac and Windows PC</span></p>
     <h1><span lang="zh">夜里息屏，<br>AI 接着跑。</span><span lang="en">Screens off.<br>Agents on.</span></h1>
     <p class="lead">
       <span lang="zh">睡前给 Claude Code、Codex 或本地模型排好一晚上的任务。息屏跑把屏幕和键盘背光真正关掉，同时不让电脑睡眠；猫踩到键盘也不会亮，只按你定的方式醒来。</span>
       <span lang="en">Queue a night of work for Claude Code, Codex or a local model. BlankRun really turns the displays and keyboard backlight off while keeping the computer awake. A cat on the keyboard won't light it up. It wakes only the way you choose.</span>
     </p>
     <div class="cta">
-      <a class="panel" href="https://github.com/hongfaqiu/blankrun/releases/tag/v0.1.0">
-        <b><span lang="zh">下载 v0.1.0</span><span lang="en">Download v0.1.0</span></b>
-        <small><span lang="zh">macOS 11+ 通用版 3.2 MB · Windows 10/11 1.2 MB · 未签名</span><span lang="en">macOS 11+ universal 3.2 MB · Windows 10/11 1.2 MB · unsigned</span></small>
+      <a class="panel" id="dlMain" href="#download">
+        <b><span class="os-mac"><span lang="zh">下载 Mac 版</span><span lang="en">Download for Mac</span></span><span class="os-win"><span lang="zh">下载 Windows 版</span><span lang="en">Download for Windows</span></span><span class="os-any"><span lang="zh">免费下载</span><span lang="en">Download free</span></span></b>
+        <small><span class="os-mac"><span lang="zh">macOS 11+ · Apple 芯片与 Intel · 3.2 MB</span><span lang="en">macOS 11+ · Apple silicon and Intel · 3.2 MB</span></span><span class="os-win"><span lang="zh">Windows 10/11 · 1.2 MB</span><span lang="en">Windows 10/11 · 1.2 MB</span></span><span class="os-any"><span lang="zh">macOS 与 Windows</span><span lang="en">macOS and Windows</span></span></small>
         <i class="led" aria-hidden="true"></i>
       </a>
-      <a class="ghost" href="https://github.com/hongfaqiu/blankrun"><span lang="zh">查看源码</span><span lang="en">View source</span> →</a>
+      <div class="alt">
+        <a class="os-mac" href="https://github.com/hongfaqiu/blankrun/releases/latest/download/BlankRun_x64-setup.exe"><span lang="zh">Windows 版</span><span lang="en">Windows version</span></a>
+        <a class="os-win" href="https://github.com/hongfaqiu/blankrun/releases/latest/download/BlankRun_universal.dmg"><span lang="zh">Mac 版</span><span lang="en">Mac version</span></a>
+        <span class="os-any"><a href="https://github.com/hongfaqiu/blankrun/releases/latest/download/BlankRun_universal.dmg">macOS</a> · <a href="https://github.com/hongfaqiu/blankrun/releases/latest/download/BlankRun_x64-setup.exe">Windows</a></span>
+        <span class="sep">·</span>
+        <a href="https://github.com/hongfaqiu/blankrun"><span lang="zh">源码</span><span lang="en">Source</span></a>
+      </div>
     </div>
   </div>
   <figure class="hero-shot">
     <picture>
       <source srcset="/img/popover-mac-dark.webp" media="(prefers-color-scheme: dark)">
-      <img src="/img/popover-mac.webp" width="440" height="560" alt="息屏跑菜单栏面板：立即息屏、今晚 23:30 → 07:30 的计划、唤醒方式">
+      <img src="/img/popover-mac.webp" width="640" height="904" alt="息屏跑菜单栏面板：立即息屏、今晚 23:30 → 07:30 的计划、唤醒方式">
     </picture>
   </figure>
 </section>
@@ -65,7 +70,6 @@
 
 <section id="features" class="features">
   <h2><span lang="zh">功能</span><span lang="en">Features</span></h2>
-  <p class="sub"><span lang="zh">下面的功能代码都写好了，还在等真机验证。</span><span lang="en">All of this is written and waiting for real-hardware testing.</span></p>
   <dl>
     <div><dt><span lang="zh">真关屏，不睡眠</span><span lang="en">Real display off, no sleep</span></dt><dd><span lang="zh">macOS 用 IOPMAssertion 阻止睡眠，Windows 用 SetThreadExecutionState；关的是显示器电源，不是盖一层黑图。</span><span lang="en">IOPMAssertion on macOS and SetThreadExecutionState on Windows block sleep. The display is actually powered down, not covered with a black image.</span></dd></div>
     <div><dt><span lang="zh">防误触唤醒</span><span lang="en">No accidental wake</span></dt><dd><span lang="zh">息屏期间拦截键鼠输入。唤醒方式可选：任意键、按住快捷键、移动鼠标、点击、输入密码、只在定时结束时。另有一个随时可用的紧急恢复键。</span><span lang="en">Input is swallowed while blank. Wake by any key, holding a hotkey, mouse move, click, password, or only when the schedule ends. An emergency restore hotkey always works.</span></dd></div>
@@ -74,7 +78,6 @@
     <div><dt><span lang="zh">Windows 待机兜底</span><span lang="en">Modern Standby fallback</span></dt><dd><span lang="zh">有些新款 Windows 笔记本一关屏就进低功耗待机，后台任务会被挂起。检测到这类机器时，改用全黑遮罩。</span><span lang="en">Some Windows laptops drop into Modern Standby when the display turns off, which suspends background jobs. BlankRun detects this and uses a black overlay instead.</span></dd></div>
     <div><dt><span lang="zh">小，而且只在本地</span><span lang="en">Small and local</span></dt><dd><span lang="zh">基于 Tauri 2，用系统自带 WebView，前端零依赖。安装包只有 1–3 MB。不联网、不上传，开源（MIT）。</span><span lang="en">Built on Tauri 2 with the system WebView and a zero-dependency UI. Installers are 1–3 MB. No network, no telemetry, MIT licensed.</span></dd></div>
   </dl>
-  <p class="later"><span lang="zh">之后的版本：外接显示器断电（DDC/CI）、RGB 灯、开机启动、全局快捷键、开始前提醒、全屏视频时跳过。</span><span lang="en">Later: external monitor power via DDC/CI, RGB lighting, launch at login, global hotkey, pre-start reminder, skip during fullscreen video.</span></p>
 </section>
 
 <section id="screens" class="screens">
@@ -85,24 +88,28 @@
   </figure>
   <div class="pair">
     <figure>
-      <picture><source srcset="/img/settings-mac-wake-dark.webp" media="(prefers-color-scheme: dark)"><img src="/img/settings-mac-wake.webp" width="1600" height="1697" loading="lazy" alt="设置 · 唤醒方式"></picture>
+      <picture><source srcset="/img/settings-mac-wake-dark.webp" media="(prefers-color-scheme: dark)"><img src="/img/settings-mac-wake.webp" width="1600" height="1483" loading="lazy" alt="设置 · 唤醒方式"></picture>
       <figcaption><span lang="zh">设置 · 唤醒</span><span lang="en">Settings · Wake</span></figcaption>
     </figure>
     <figure>
-      <img src="/img/settings-win-schedule.webp" width="1600" height="1164" loading="lazy" alt="Windows 设置 · 定时">
+      <img src="/img/settings-win-schedule.webp" width="1600" height="1483" loading="lazy" alt="Windows 设置 · 定时">
       <figcaption><span lang="zh">Windows · 定时</span><span lang="en">Windows · Schedule</span></figcaption>
     </figure>
   </div>
-  <p class="note"><span lang="zh">截图是设计稿渲染出来的，正式版以实际界面为准。</span><span lang="en">Screens are rendered from design mockups; the shipped app may differ.</span></p>
 </section>
 
 <section class="download" id="download">
   <h2><span lang="zh">下载</span><span lang="en">Download</span></h2>
+  <p class="sub"><span lang="zh">v0.1.0 · 免费开源（MIT）· <a href="https://github.com/hongfaqiu/blankrun/releases/latest">更新说明</a></span><span lang="en">v0.1.0 · Free and open source (MIT) · <a href="https://github.com/hongfaqiu/blankrun/releases/latest">Release notes</a></span></p>
   <ul class="files">
-    <li><a href="https://github.com/hongfaqiu/blankrun/releases/download/v0.1.0/BlankRun_0.1.0_universal.dmg">BlankRun_0.1.0_universal.dmg</a><span class="num muted">3.2 MB</span><span class="muted"><span lang="zh">macOS 11+ · Apple 芯片与 Intel</span><span lang="en">macOS 11+ · Apple silicon and Intel</span></span></li>
-    <li><a href="https://github.com/hongfaqiu/blankrun/releases/download/v0.1.0/BlankRun_0.1.0_x64-setup.exe">BlankRun_0.1.0_x64-setup.exe</a><span class="num muted">1.2 MB</span><span class="muted">Windows 10/11 x64</span></li>
+    <li><a href="https://github.com/hongfaqiu/blankrun/releases/latest/download/BlankRun_universal.dmg"><span lang="zh">macOS 版</span><span lang="en">macOS</span></a><span class="num muted">3.2 MB</span><span class="muted"><span lang="zh">macOS 11+ · Apple 芯片与 Intel</span><span lang="en">macOS 11+ · Apple silicon and Intel</span></span></li>
+    <li><a href="https://github.com/hongfaqiu/blankrun/releases/latest/download/BlankRun_x64-setup.exe"><span lang="zh">Windows 版</span><span lang="en">Windows</span></a><span class="num muted">1.2 MB</span><span class="muted">Windows 10/11 x64</span></li>
   </ul>
-  <p><span lang="zh">安装包没有签名：macOS 上按住 Control 点应用选「打开」，或运行 <code>xattr -dr com.apple.quarantine /Applications/BlankRun.app</code>；Windows 出现 SmartScreen 时点「更多信息 → 仍要运行」。macOS 每次更新后需要重新授权「辅助功能」和「输入监控」。详见 <a href="https://github.com/hongfaqiu/blankrun/releases/tag/v0.1.0">发布说明</a>。</span><span lang="en">The installers are unsigned: on macOS, Control-click the app and choose Open, or run <code>xattr -dr com.apple.quarantine /Applications/BlankRun.app</code>. On Windows, click More info → Run anyway in SmartScreen. On macOS, grant Accessibility and Input Monitoring again after each update. See the <a href="https://github.com/hongfaqiu/blankrun/releases/tag/v0.1.0">release notes</a>.</span></p>
+  <h3><span lang="zh">首次打开</span><span lang="en">First launch</span></h3>
+  <dl class="steps">
+    <div><dt>macOS</dt><dd><span lang="zh">把息屏跑拖进「应用程序」，按住 Control 点它选「打开」（或在终端运行 <code>xattr -dr com.apple.quarantine /Applications/BlankRun.app</code>）。然后在「系统设置 › 隐私与安全性」里允许「辅助功能」和「输入监控」，用来拦下误触；每次更新后需要重新允许一次。</span><span lang="en">Drag BlankRun to Applications, then Control-click it and choose Open (or run <code>xattr -dr com.apple.quarantine /Applications/BlankRun.app</code>). Then allow Accessibility and Input Monitoring in System Settings › Privacy &amp; Security so it can block accidental touches. Allow them again after each update.</span></dd></div>
+    <div><dt>Windows</dt><dd><span lang="zh">运行安装程序。如果出现「Windows 已保护你的电脑」，点「更多信息 → 仍要运行」。</span><span lang="en">Run the installer. If SmartScreen says "Windows protected your PC", click More info → Run anyway.</span></dd></div>
+  </dl>
 </section>
 </main>
 
@@ -111,5 +118,6 @@
   <span><a href="https://github.com/hongfaqiu/blankrun">GitHub</a> · <a href="https://github.com/hongfaqiu/blankrun/blob/main/LICENSE">MIT</a> · <a href="https://github.com/hongfaqiu/blankrun/issues"><span lang="zh">反馈</span><span lang="en">Feedback</span></a></span>
 </footer>
 <script src="/lang.js"></script>
+<script src="/dl.js"></script>
 </body>
 </html>

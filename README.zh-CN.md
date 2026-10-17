@@ -44,7 +44,7 @@
 |---|---|
 | <img src="design/png/popover-win.png" width="260"> | <img src="design/png/settings-win-schedule.png" width="360"> |
 
-截图都是设计稿渲染出来的，真机上字体会更接近系统原生。
+截图来自 v0.1.0 的实际界面；在真机上，字体会跟随系统。
 
 ## 文档
 
