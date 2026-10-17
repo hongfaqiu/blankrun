@@ -132,7 +132,7 @@ dependencies = [
 
 [[package]]
 name = "blankrun"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "blankrun-core",
  "libc",
@@ -146,7 +146,7 @@ dependencies = [
 
 [[package]]
 name = "blankrun-core"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "serde",
  "serde_json",
