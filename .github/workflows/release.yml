@@ -55,6 +55,14 @@ jobs:
           tauriScript: npx --yes @tauri-apps/cli@^2
           args: ${{ matrix.args }}
 
+      - name: Check macOS app (ad-hoc signature, architectures)
+        if: runner.os == 'macOS'
+        run: |
+          app=target/universal-apple-darwin/release/bundle/macos/BlankRun.app
+          codesign --verify --deep --strict --verbose=2 "$app"
+          codesign -dv "$app" 2>&1 | grep -E "Signature|Identifier"
+          lipo -info "$app/Contents/MacOS/blankrun"
+
       - name: Show bundle sizes
         shell: bash
         run: ls -l ${{ matrix.bundle }}
