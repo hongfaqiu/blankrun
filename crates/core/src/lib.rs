@@ -7,6 +7,7 @@ pub mod state;
 pub mod update;
 pub mod history;
 pub mod monitors;
+pub mod drain;
 pub mod wake;
 
 pub use config::Config;

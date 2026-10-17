@@ -1,6 +1,7 @@
 //! 平台抽象。每个平台实现 `Platform`，核心状态机输出的 Action 由此执行。
 //! 输入钩子在自己的线程里运行，通过 `emit_input` 把翻译好的事件送进引擎线程。
 use std::sync::OnceLock;
+use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
 use std::time::Instant;
 
 use blankrun_core::{wake::Input, Config};
@@ -153,3 +154,50 @@ mod stub;
 pub use stub::{set_blank_hotkey, set_wake_hotkeys, emergency_restore, instance_lock, local_time, reveal, system_locale, Native};
 
 pub const OS: &str = if cfg!(target_os = "macos") { "mac" } else if cfg!(windows) { "win" } else { "linux" };
+
+// ---------- 唤醒后排空键盘（见 blankrun_core::drain） ----------
+/// 排空中：键盘钩子只按 DRAIN 决定吞不吞，不再上报；鼠标直接放行
+#[cfg_attr(not(any(windows, target_os = "macos")), allow(dead_code))]
+pub static DRAINING: AtomicBool = AtomicBool::new(false);
+#[cfg_attr(not(any(windows, target_os = "macos")), allow(dead_code))]
+static DRAIN: std::sync::Mutex<Option<blankrun_core::drain::Drain>> = std::sync::Mutex::new(None);
+
+/// 钩子回调里调用：None = 不在排空；Some(true) = 吞掉
+#[cfg_attr(not(any(windows, target_os = "macos")), allow(dead_code))]
+pub fn drain_key(code: u32, down: bool) -> Option<bool> {
+    if !DRAINING.load(Relaxed) { return None; }
+    let mut g = DRAIN.lock().unwrap_or_else(|p| p.into_inner());
+    Some(g.as_mut().is_some_and(|d| d.key(code, down, now_ms())))
+}
+
+/// 卸钩子前调用：唤醒时还按着键，就让钩子再活一会儿，排空后由后台线程调用 `finish` 卸掉。
+/// 没有按着的键（或线程起不来）就当场调用 `finish`，返回 None。
+#[cfg_attr(not(any(windows, target_os = "macos")), allow(dead_code))]
+pub fn start_drain(held: Vec<u32>, finish: Box<dyn FnOnce() + Send>) -> Option<std::thread::JoinHandle<()>> {
+    let d = blankrun_core::drain::Drain::new(held.iter().copied(), now_ms());
+    if !d.needed() { finish(); return None; }
+    crate::nblog!("input: draining {} held key(s) before releasing the keyboard: {held:?}", held.len());
+    *DRAIN.lock().unwrap_or_else(|p| p.into_inner()) = Some(d);
+    DRAINING.store(true, Relaxed);
+    let slot = std::sync::Arc::new(std::sync::Mutex::new(Some(finish)));
+    let slot2 = slot.clone();
+    let end = || {
+        DRAINING.store(false, Relaxed);
+        *DRAIN.lock().unwrap_or_else(|p| p.into_inner()) = None;
+    };
+    let h = std::thread::Builder::new().name("nb-drain".into()).spawn(move || {
+        let t0 = now_ms();
+        loop {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            let done = DRAIN.lock().unwrap_or_else(|p| p.into_inner()).as_ref().is_none_or(|d| d.done(now_ms()));
+            if done { break; }
+        }
+        end();
+        crate::nblog!("input: keyboard released after {} ms", now_ms() - t0);
+        if let Some(f) = slot2.lock().unwrap_or_else(|p| p.into_inner()).take() { f(); }
+    });
+    match h {
+        Ok(h) => Some(h),
+        Err(_) => { end(); if let Some(f) = slot.lock().unwrap_or_else(|p| p.into_inner()).take() { f(); } None }
+    }
+}

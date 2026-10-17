@@ -35,6 +35,8 @@ static ALLOW_INJECTED: std::sync::atomic::AtomicBool = std::sync::atomic::Atomic
 #[derive(Default)]
 pub struct Native {
     hook: Option<(u32, JoinHandle<()>)>,
+    /// 唤醒后排空键盘的后台线程（排空完再卸钩子）
+    drain: Option<JoinHandle<()>>,
     hook_err: Option<String>,
     power_notify: HPOWERNOTIFY,
     modern_standby: Option<bool>,
@@ -81,6 +83,7 @@ unsafe extern "system" fn on_power_setting(_ctx: *const core::ffi::c_void, ty: u
 impl Drop for Native {
     fn drop(&mut self) {
         let _ = self.input_hook(false);
+        if let Some(j) = self.drain.take() { let _ = j.join(); }
         if self.power_notify != 0 { unsafe { PowerSettingUnregisterNotification(self.power_notify); } }
     }
 }
@@ -170,6 +173,8 @@ impl Platform for Native {
     fn input_hook(&mut self, on: bool) -> Result {
         if on {
             if self.hook.is_some() { return Ok(()); }
+            // 上一次唤醒的排空还没结束（最多 2 秒）：等它卸完再装新钩子
+            if let Some(j) = self.drain.take() { let _ = j.join(); }
             hook_reset();
             let (tx, rx) = std::sync::mpsc::channel();
             let h = std::thread::Builder::new().name("nb-hook".into()).spawn(move || hook_thread(tx)).map_err(|e| e.to_string())?;
@@ -180,8 +185,12 @@ impl Platform for Native {
             }
         } else {
             if let Some((tid, h)) = self.hook.take() {
-                unsafe { PostThreadMessageW(tid, WM_QUIT, 0, 0); }
-                let _ = h.join();
+                // 唤醒时还按着的键（比如按住的唤醒组合键）：钩子继续吞到它们全部抬起，免得自动重复漏给前台程序
+                let held: Vec<u32> = (0..256u32).filter(|vk| SEEN_DOWN[(*vk as usize >> 6) & 3].load(Relaxed) & (1u64 << (vk & 63)) != 0).collect();
+                self.drain = super::start_drain(held, Box::new(move || unsafe {
+                    PostThreadMessageW(tid, WM_QUIT, 0, 0);
+                    let _ = h.join();
+                }));
             }
             Ok(())
         }
@@ -378,6 +387,11 @@ unsafe extern "system" fn kb_proc(code: i32, wp: WPARAM, lp: LPARAM) -> LRESULT 
     if blankrun_core::wake::route(k.flags & LLKHF_INJECTED != 0, ALLOW_INJECTED.load(Relaxed)) == blankrun_core::wake::Route::PassThrough {
         return CallNextHookEx(std::ptr::null_mut(), code, wp, lp);
     }
+    // 唤醒后排空：只吞唤醒时按着的键的重复和抬起，不再上报
+    let is_down = wp == WM_KEYDOWN as WPARAM || wp == WM_SYSKEYDOWN as WPARAM;
+    if let Some(swallow) = super::drain_key(k.vkCode, is_down) {
+        return if swallow { 1 } else { CallNextHookEx(std::ptr::null_mut(), code, wp, lp) };
+    }
     let down = wp == WM_KEYDOWN as WPARAM || wp == WM_SYSKEYDOWN as WPARAM;
     let (w, bit) = (&SEEN_DOWN[(k.vkCode as usize >> 6) & 3], 1u64 << (k.vkCode & 63));
     if down { w.fetch_or(bit, Relaxed); }
@@ -395,6 +409,7 @@ unsafe extern "system" fn kb_proc(code: i32, wp: WPARAM, lp: LPARAM) -> LRESULT 
 unsafe extern "system" fn ms_proc(code: i32, wp: WPARAM, lp: LPARAM) -> LRESULT {
     if code < 0 { return CallNextHookEx(std::ptr::null_mut(), code, wp, lp); }
     let m = &*(lp as *const MSLLHOOKSTRUCT);
+    if super::DRAINING.load(Relaxed) { return CallNextHookEx(std::ptr::null_mut(), code, wp, lp); }
     if blankrun_core::wake::route(m.flags & LLMHF_INJECTED != 0, ALLOW_INJECTED.load(Relaxed)) == blankrun_core::wake::Route::PassThrough {
         return CallNextHookEx(std::ptr::null_mut(), code, wp, lp);
     }

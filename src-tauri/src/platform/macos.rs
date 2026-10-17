@@ -72,6 +72,7 @@ extern "C" {
     fn CGMainDisplayID() -> u32;
     fn CGDisplayIsAsleep(display: u32) -> u32;
     fn CGEventSourceFlagsState(state: i32) -> u64;
+    fn CGEventSourceKeyState(state: i32, key: u16) -> bool;
     fn CGEventTapCreate(tap: u32, place: u32, options: u32, mask: u64, cb: TapCb, user: *mut c_void) -> *mut c_void;
     fn CGEventTapEnable(tap: *mut c_void, enable: bool);
     fn CGEventGetIntegerValueField(event: *mut c_void, field: u32) -> i64;
@@ -230,6 +231,21 @@ fn keycode_name(code: i64) -> &'static str {
     }
 }
 
+/// 修饰键的 keycode → hotkey 位
+fn mod_bit(code: u32) -> u8 {
+    match code { 59 | 62 => hotkey::CTRL, 58 | 61 => hotkey::ALT, 56 | 60 => hotkey::SHIFT, 55 | 54 => hotkey::META, _ => 0 }
+}
+
+/// 唤醒那一刻还按着、且按下事件被我们吞掉的键
+fn held_keys() -> Vec<u32> {
+    let mut v: Vec<u32> = (0..128u32).filter(|c| KEY_SEEN[(*c as usize) >> 6].load(Relaxed) & (1u64 << (c & 63)) != 0).collect();
+    let seen = MOD_SEEN.load(Relaxed);
+    for c in [54u32, 55, 56, 58, 59, 60, 61, 62] {
+        if seen & mod_bit(c) != 0 && unsafe { CGEventSourceKeyState(1, c as u16) } { v.push(c); }
+    }
+    v
+}
+
 fn flags_mods(f: u64) -> u8 {
     let mut m = 0;
     if f & 0x40000 != 0 { m |= hotkey::CTRL; }
@@ -250,6 +266,16 @@ extern "C" fn tap_cb(_proxy: *mut c_void, ty: u32, ev: *mut c_void, _user: *mut 
         // 「放行远程控制」：别的进程合成的事件（远程控制、屏幕键盘；kCGEventSourceUnixProcessID ≠ 0）原样放过
         if ALLOW_INJECTED.load(Relaxed) && blankrun_core::wake::route(CGEventGetIntegerValueField(ev, 41) != 0, true) == blankrun_core::wake::Route::PassThrough {
             return ev;
+        }
+        // 唤醒后排空：只吞唤醒时按着的键（含修饰键）的重复和抬起，鼠标直接放行
+        if super::DRAINING.load(Relaxed) {
+            let code = CGEventGetIntegerValueField(ev, 9) as u32;
+            let swallow = match ty {
+                10 | 11 => super::drain_key(code, ty == 10).unwrap_or(false),
+                12 => super::drain_key(code, flags_mods(CGEventGetFlags(ev)) & mod_bit(code) != 0).unwrap_or(false),
+                _ => false,
+            };
+            return if swallow { std::ptr::null_mut() } else { ev };
         }
         let t = now_ms();
         // 装 tap 之前就按着的键（比如刚按的 ⌃⌥B），抬起要放行，否则别的 App 会以为修饰键一直按着
@@ -317,6 +343,8 @@ pub struct Native {
     assertion: Option<u32>,
     ac_only: bool,
     tap: Option<JoinHandle<()>>,
+    /// 唤醒后排空键盘的后台线程
+    drain: Option<JoinHandle<()>>,
     tap_err: Option<String>,
     awake_err: Option<String>,
 }
@@ -410,6 +438,7 @@ impl Platform for Native {
     fn input_hook(&mut self, on: bool) -> Result {
         if on {
             if self.tap.is_some() { return Ok(()); }
+            if let Some(j) = self.drain.take() { let _ = j.join(); }
             TAP_STOP.store(false, Relaxed);
             let (tx, rx) = std::sync::mpsc::channel();
             let h = std::thread::Builder::new().name("nb-tap".into()).spawn(move || tap_thread(tx)).map_err(|e| e.to_string())?;
@@ -418,7 +447,10 @@ impl Platform for Native {
                 Err(e) => { let _ = h.join(); self.tap_err = Some(e.clone()); Err(e) }
             }
         } else {
-            if let Some(h) = self.tap.take() { TAP_STOP.store(true, Relaxed); let _ = h.join(); }
+            if let Some(h) = self.tap.take() {
+                // 唤醒时还按着的键：tap 继续吞到它们全部抬起，免得自动重复漏给前台 App
+                self.drain = super::start_drain(held_keys(), Box::new(move || { TAP_STOP.store(true, Relaxed); let _ = h.join(); }));
+            }
             Ok(())
         }
     }
@@ -525,7 +557,11 @@ impl Platform for Native {
 }
 
 impl Drop for Native {
-    fn drop(&mut self) { let _ = self.input_hook(false); let _ = self.keep_awake(false); }
+    fn drop(&mut self) {
+        let _ = self.input_hook(false);
+        if let Some(j) = self.drain.take() { let _ = j.join(); }
+        let _ = self.keep_awake(false);
+    }
 }
 
 /// panic 钩子里调用：不加锁
