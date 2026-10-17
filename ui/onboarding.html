@@ -6,24 +6,35 @@
 <div class="window">
   <div class="content">
     <div class="mark" aria-hidden="true"></div>
-    <h1 class="nl" data-i18n="ob.h1"></h1>
-    <p class="lead"><span data-i18n="ob.lead_a"></span><span class="keys" id="wakeKeys"></span><span data-i18n="ob.lead_b"></span></p>
+    <h1 data-i18n="ob.welcome"></h1>
+    <p class="lead" data-i18n="ob.welcome_lead"></p>
 
-    <div class="step">
-      <span class="n">1</span>
-      <div class="t"><b data-i18n="a.ax"></b><small data-i18n="a.ax_note"></small></div>
-      <div class="c" id="s1"></div>
+    <dl class="tips">
+      <div><dt data-i18n="ob.t_blank"></dt><dd><span data-i18n="ob.t_blank_a"></span><span class="keys" id="blankKeys"></span></dd></div>
+      <div><dt data-i18n="ob.t_wake"></dt><dd><span data-i18n="ob.t_wake_a"></span><span class="keys" id="wakeKeys"></span><span data-i18n="ob.t_wake_b"></span></dd></div>
+      <div><dt data-i18n="ob.t_sched"></dt><dd data-i18n="ob.t_sched_a"></dd></div>
+      <div><dt data-i18n="ob.t_where"></dt><dd data-i18n="ob.t_where_a"></dd></div>
+    </dl>
+
+    <div id="perm" hidden>
+      <h2 data-i18n="ob.perm_h"></h2>
+      <p class="sub" data-i18n="ob.perm_lead"></p>
+      <div class="step">
+        <span class="n">1</span>
+        <div class="t"><b data-i18n="a.ax"></b><small data-i18n="a.ax_note"></small></div>
+        <div class="c" id="s1"></div>
+      </div>
+      <div class="step">
+        <span class="n">2</span>
+        <div class="t"><b data-i18n="a.in"></b><small data-i18n="ob.in_note"></small></div>
+        <div class="c" id="s2"></div>
+      </div>
+      <p class="note nl" data-i18n="ob.note"></p>
     </div>
-    <div class="step">
-      <span class="n">2</span>
-      <div class="t"><b data-i18n="a.in"></b><small data-i18n="ob.in_note"></small></div>
-      <div class="c" id="s2"></div>
-    </div>
-    <p class="note nl" data-i18n="ob.note"></p>
   </div>
   <div class="foot">
-    <button class="btn ghost skip" id="skip" data-i18n="ob.skip"></button>
-    <span class="foot-r"><span class="wait"><span class="dot" id="doneDot"></span><span id="doneText"></span></span><button class="btn" id="done" disabled data-i18n="ob.done"></button></span>
+    <button class="btn ghost skip" id="skip" hidden data-i18n="ob.skip"></button>
+    <span class="foot-r"><span class="wait" id="wait" hidden><span class="dot" id="doneDot"></span><span id="doneText"></span></span><button class="btn primary" id="done" data-i18n="ob.start"></button></span>
   </div>
 </div>
 <script src="common.js"></script>

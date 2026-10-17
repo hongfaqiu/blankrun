@@ -8,10 +8,24 @@
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#F5F5F4" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0C0C0D" media="(prefers-color-scheme: dark)">
-<meta property="og:title" content="黑着跑 BlankRun">
-<meta property="og:description" content="夜里息屏，AI 接着跑。Turn the screens off at night. Keep your AI agents running.">
-<meta property="og:image" content="https://blankrun.cosfoc.com/img/popover-mac.webp">
+<meta name="keywords" content="黑着跑, BlankRun, 息屏, 关屏, 关闭显示器, 防睡眠, 键盘背光, AI agent, 挂机, turn off screen, keep awake, macOS, Windows">
+<link rel="canonical" href="https://blankrun.cosfoc.com/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="黑着跑 BlankRun">
+<meta property="og:title" content="黑着跑 BlankRun · 夜里息屏，AI 接着跑">
+<meta property="og:description" content="一键关掉屏幕和键盘背光，电脑不睡眠，AI agent、编译和下载继续跑。Turn the screens off at night. Keep your AI agents running. macOS + Windows, free and open source.">
+<meta property="og:image" content="https://blankrun.cosfoc.com/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="黑着跑 BlankRun：夜里息屏，AI 接着跑">
 <meta property="og:url" content="https://blankrun.cosfoc.com/">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:locale:alternate" content="en_US">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="黑着跑 BlankRun">
+<meta name="twitter:description" content="Turn the screens off at night. Keep your AI agents running. 夜里息屏，AI 接着跑。">
+<meta name="twitter:image" content="https://blankrun.cosfoc.com/og.png">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareApplication","name":"BlankRun","alternateName":"黑着跑","operatingSystem":"macOS 11+, Windows 10+","applicationCategory":"UtilitiesApplication","softwareVersion":"0.1.1","license":"https://opensource.org/licenses/MIT","url":"https://blankrun.cosfoc.com/","downloadUrl":"https://github.com/hongfaqiu/blankrun/releases/latest","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"description":"Turn the screens and keyboard backlight off while the computer keeps running. 一键息屏，电脑不睡眠。"}</script>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="icon" href="/favicon.png" type="image/png" sizes="32x32">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
@@ -76,7 +90,7 @@
     <div><dt><span lang="zh">定时计划</span><span lang="en">Schedule</span></dt><dd><span lang="zh">比如每天 23:30 → 07:30，支持跨午夜，可以只跳过今晚。</span><span lang="en">For example 23:30 → 07:30 daily. Works across midnight, and you can skip just tonight.</span></dd></div>
     <div><dt><span lang="zh">键盘背光</span><span lang="en">Keyboard backlight</span></dt><dd><span lang="zh">macOS 上和屏幕一起关掉。用的是系统私有接口，启动时先探测，不可用就跳过，不影响其他功能。</span><span lang="en">Turned off together with the screen on macOS. It uses a private API that is probed at runtime and skipped when unavailable.</span></dd></div>
     <div><dt><span lang="zh">Windows 待机兜底</span><span lang="en">Modern Standby fallback</span></dt><dd><span lang="zh">有些新款 Windows 笔记本一关屏就进低功耗待机，后台任务会被挂起。检测到这类机器时，改用全黑遮罩。</span><span lang="en">Some Windows laptops drop into Modern Standby when the display turns off, which suspends background jobs. BlankRun detects this and uses a black overlay instead.</span></dd></div>
-    <div><dt><span lang="zh">小，而且只在本地</span><span lang="en">Small and local</span></dt><dd><span lang="zh">基于 Tauri 2，用系统自带 WebView，前端零依赖。安装包只有 1–3 MB。不联网、不上传，开源（MIT）。</span><span lang="en">Built on Tauri 2 with the system WebView and a zero-dependency UI. Installers are 1–3 MB. No network, no telemetry, MIT licensed.</span></dd></div>
+    <div><dt><span lang="zh">小，而且只在本地</span><span lang="en">Small and local</span></dt><dd><span lang="zh">基于 Tauri 2，用系统自带 WebView，前端零依赖。安装包只有几 MB。除了每天一次检查更新（可关），不联网、不上传，开源（MIT）。</span><span lang="en">Built on Tauri 2 with the system WebView and a zero-dependency UI. Installers are a few MB. No telemetry; the only network use is a daily update check you can turn off. MIT licensed.</span></dd></div>
   </dl>
 </section>
 
@@ -100,7 +114,7 @@
 
 <section class="download" id="download">
   <h2><span lang="zh">下载</span><span lang="en">Download</span></h2>
-  <p class="sub"><span lang="zh">v0.1.0 · 免费开源（MIT）· <a href="https://github.com/hongfaqiu/blankrun/releases/latest">更新说明</a></span><span lang="en">v0.1.0 · Free and open source (MIT) · <a href="https://github.com/hongfaqiu/blankrun/releases/latest">Release notes</a></span></p>
+  <p class="sub"><span lang="zh">v0.1.1 · 免费开源（MIT）· <a href="https://github.com/hongfaqiu/blankrun/releases/latest">更新说明</a></span><span lang="en">v0.1.1 · Free and open source (MIT) · <a href="https://github.com/hongfaqiu/blankrun/releases/latest">Release notes</a></span></p>
   <ul class="files">
     <li><a href="https://github.com/hongfaqiu/blankrun/releases/latest/download/BlankRun_universal.dmg"><span lang="zh">macOS 版</span><span lang="en">macOS</span></a><span class="num muted">3.2 MB</span><span class="muted"><span lang="zh">macOS 11+ · Apple 芯片与 Intel</span><span lang="en">macOS 11+ · Apple silicon and Intel</span></span></li>
     <li><a href="https://github.com/hongfaqiu/blankrun/releases/latest/download/BlankRun_x64-setup.exe"><span lang="zh">Windows 版</span><span lang="en">Windows</span></a><span class="num muted">1.2 MB</span><span class="muted">Windows 10/11 x64</span></li>

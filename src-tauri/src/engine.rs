@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::sync::{mpsc::{Receiver, RecvTimeoutError}, Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use blankrun_core::history::History;
 use blankrun_core::{
     config::{DisplayMethod, WakeMethod},
     schedule::{self, Edge, Gate, Reminder, Tracker, Waiting},
@@ -35,7 +36,7 @@ pub enum Msg {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct Session { pub start_unix: u64, pub end_unix: Option<u64>, pub lit: u32, pub by_schedule: bool, pub power_off: bool }
+pub struct Session { pub start_unix: u64, pub end_unix: Option<u64>, pub lit: u32, pub touches: u32, pub by_schedule: bool, pub trigger: &'static str, pub power_off: bool }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct SchedStatus {
@@ -62,6 +63,10 @@ pub struct Status {
     pub login: Option<bool>,
     /// 误触防护："ok" 有输入钩子；"keys" 没权限，但唤醒键走系统热键、误触后会重新息屏；"none" 没权限且碰一下就会唤醒
     pub input_guard: &'static str,
+    /// 自动更新状态
+    pub update: crate::update::UpdState,
+    /// 现在是否在阻止系统睡眠
+    pub keep_awake: bool,
 }
 
 pub struct Engine {
@@ -89,6 +94,8 @@ pub struct Engine {
     hook_ok: bool,
     /// 本次息屏注册了兜底唤醒键（要在结束时注销）
     wake_keys: bool,
+    /// 倒计时 / 息屏中：按设置决定要不要防睡眠
+    awake_wanted: bool,
     session: Option<Session>,
     last_hint: Option<Instant>,
     last_sched_check: Option<Instant>,
@@ -101,6 +108,10 @@ pub struct Engine {
     last_asleep: Option<bool>,
     /// 刚发出关屏命令后的几秒里屏幕还没真正睡下，这段时间不算「被点亮」
     settle_until: Option<Instant>,
+    /// 这次息屏是谁触发的：manual / hotkey / schedule
+    trigger: &'static str,
+    pub history: History,
+    last_heartbeat: Option<Instant>,
 }
 
 fn unix_now() -> u64 { SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0) }
@@ -108,16 +119,21 @@ fn unix_now() -> u64 { SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as
 impl Engine {
     pub fn new(cfg: Config, cfg_path: PathBuf, mut plat: Native) -> Self {
         plat.configure(&cfg);
+        crate::update::set_enabled(cfg.general.check_updates);
         let kbd_available = plat.capabilities().iter().any(|c| c.id == "kbd" && c.status == "ok");
         let mtime = std::fs::metadata(&cfg_path).and_then(|m| m.modified()).ok();
         let mut e = Self {
             sm: StateMachine::new(cfg.wake.lock_on_wake), policy: WakePolicy::new(&cfg), plat, cfg, cfg_path,
             cfg_mtime: mtime, last_session: None, tracker: Tracker::default(), reminder: Reminder::default(), remind_open: false, gate: Gate::default(), fullscreen: (None, false),
             hotkey_dirty: true, fullscreen_logged: false, login: None, countdown: None, power_off: false,
-            overlay_on: false, power_off_at: None, reblank_at: None, hook_ok: true, wake_keys: false, session: None, last_hint: None,
+            overlay_on: false, power_off_at: None, reblank_at: None, hook_ok: true, wake_keys: false, awake_wanted: false, session: None, last_hint: None,
             last_sched_check: None, last_cfg_check: None, last_status: None, kbd_available,
             displays: 1, last_mon_check: None, keep_display: false, last_asleep: None, settle_until: None,
+            trigger: "manual", history: History::default(), last_heartbeat: None,
         };
+        // 息屏记录；上次息屏中途崩溃/强退的那一条记为 crash
+        e.history = History::from_json(&std::fs::read_to_string(e.history_path()).unwrap_or_default());
+        if e.history.recover() { nblog!("history: last session marked crash-recovered"); e.save_history(); }
         e.login = e.plat.launch_at_login();
         if e.cfg.general.launch_at_login || e.login == Some(true) { e.sync_login(); } // 每次启动重写一遍（App 位置可能变了）
         let until = std::fs::read_to_string(e.skip_path()).ok().and_then(|s| s.trim().parse::<u64>().ok());
@@ -130,6 +146,11 @@ impl Engine {
     }
 
     pub fn marker_path(&self) -> PathBuf { self.cfg_path.with_file_name("blanking.state") }
+    fn history_path(&self) -> PathBuf { self.cfg_path.with_file_name("history.json") }
+    pub fn save_history(&self) {
+        if let Err(e) = std::fs::write(self.history_path(), self.history.to_json()) { nblog!("history: write failed: {e}"); }
+    }
+    pub fn clear_history(&mut self) { self.history.clear(); self.save_history(); nblog!("history cleared"); }
     /// 「跳过今晚」的过期时间（unix 秒），重启后照样有效
     fn skip_path(&self) -> PathBuf { self.cfg_path.with_file_name("skip.until") }
 
@@ -160,12 +181,19 @@ impl Engine {
         if cfg.schedule.enabled && !self.cfg.schedule.enabled && self.tracker.suppressed() { self.unskip(); }
         let (a, b) = (&cfg.schedule, &self.cfg.schedule);
         if a.start != b.start || a.end != b.end || a.days != b.days || a.enabled != b.enabled { self.gate.clear_postpone(); }
+        // 息屏中改了「防睡眠」：马上生效
+        let awake_changed = cfg.power != self.cfg.power;
         let login_changed = cfg.general.launch_at_login != self.cfg.general.launch_at_login;
         if cfg.general.blank_now_hotkey != self.cfg.general.blank_now_hotkey { self.hotkey_dirty = true; }
         self.plat.configure(&cfg);
         self.policy.configure(&cfg);
+        crate::update::set_enabled(cfg.general.check_updates);
         self.cfg = cfg;
         if login_changed { self.sync_login(); }
+        if awake_changed && self.awake_wanted {
+            let on = self.cfg.power.keep_awake;
+            match self.plat.keep_awake(on) { Ok(()) => nblog!("keep awake = {on} (changed while blank)"), Err(e) => nblog!("keep awake = {on} failed: {e}") }
+        }
     }
 
     pub fn save_config(&mut self, cfg: Config) -> Result<(), String> {
@@ -181,8 +209,8 @@ impl Engine {
     fn apply(&mut self, app: &AppHandle, ev: Event) {
         for a in self.sm.handle(ev) {
             let r = match a {
-                Action::StartKeepAwake => self.plat.keep_awake(true),
-                Action::StopKeepAwake => self.plat.keep_awake(false),
+                Action::StartKeepAwake => { self.awake_wanted = true; self.plat.keep_awake(self.cfg.power.keep_awake) }
+                Action::StopKeepAwake => { self.awake_wanted = false; self.plat.keep_awake(false) }
                 Action::DisplayOff => {
                     if !self.overlay_on {
                         self.overlay_on = true;
@@ -226,17 +254,19 @@ impl Engine {
         }
     }
 
-    fn arm(&mut self, app: &AppHandle, delay_s: u32, by_schedule: bool) {
+    fn arm(&mut self, app: &AppHandle, delay_s: u32, trigger: &'static str) {
         match self.sm.state {
             State::Idle => self.apply(app, Event::Arm),
             State::Armed => {}
             _ => return,
         }
-        if delay_s == 0 { self.countdown = None; self.do_blank(app, by_schedule); }
+        self.trigger = trigger;
+        if delay_s == 0 { self.countdown = None; self.do_blank(app); }
         else { self.countdown = Some((Instant::now() + Duration::from_secs(delay_s as u64), delay_s)); }
     }
 
-    fn do_blank(&mut self, app: &AppHandle, by_schedule: bool) {
+    fn do_blank(&mut self, app: &AppHandle) {
+        let (trigger, by_schedule) = (self.trigger, self.trigger == "schedule");
         hide_reminder(app);
         let c = &self.cfg;
         // 「只关所选」时只能用遮罩（系统级关屏会把所有屏一起关掉）
@@ -254,7 +284,11 @@ impl Engine {
         if self.keep_display { let _ = self.plat.keep_display_on(true); }
         // 崩溃标记：下次启动据此还原背光等
         let _ = std::fs::write(self.marker_path(), self.plat.persist().unwrap_or_default());
-        self.session = Some(Session { start_unix: unix_now(), end_unix: None, lit: 0, by_schedule, power_off: self.power_off });
+        let now = unix_now();
+        self.session = Some(Session { start_unix: now, end_unix: None, lit: 0, touches: 0, by_schedule, trigger, power_off: self.power_off });
+        self.history.begin(now, trigger);
+        self.last_heartbeat = Some(Instant::now());
+        self.save_history();
     }
 
     fn cancel(&mut self, app: &AppHandle) {
@@ -262,6 +296,15 @@ impl Engine {
     }
 
     fn wake(&mut self, app: &AppHandle, why: &str) {
+        let ended = match why {
+            _ if self.policy.by_emergency && why == "input matched wake policy" => "emergency",
+            "input matched wake policy" | "wake policy timer" => "wake",
+            "schedule ended" => "schedule",
+            "quit" => "quit",
+            "requested" => "manual",
+            _ => "no_hook",
+        };
+        self.policy.by_emergency = false;
         if self.sm.state == State::Armed { return self.cancel(app); }
         if self.sm.state != State::ScreenOff { return; }
         nblog!("wake: {why}");
@@ -274,15 +317,30 @@ impl Engine {
             let (wd, min) = platform::local_time();
             if schedule::in_window(&self.cfg.schedule, wd, min) { self.skip(); }
             s.end_unix = Some(unix_now());
+            self.history.finish(unix_now(), ended, s.touches, s.lit);
+            self.save_history();
             self.last_session = Some(s);
         }
     }
 
-    fn hint(&mut self, app: &AppHandle, payload: serde_json::Value, throttle: bool) {
+    fn hint(&mut self, app: &AppHandle, mut payload: serde_json::Value, throttle: bool) {
         let now = Instant::now();
         if throttle && self.last_hint.is_some_and(|t| now - t < Duration::from_millis(400)) { return; }
         self.last_hint = Some(now);
+        // 只在光标所在的那块屏上显示（光标被拦住不动，就是用户刚才看的那块）
+        payload["target"] = cursor_overlay(app).map_or(serde_json::Value::Null, serde_json::Value::from);
         let _ = app.emit("nb://overlay", payload);
+    }
+
+    /// 误触后多久重新息屏：至少留够时间把提示看清楚
+    fn reblank_delay(&self) -> u32 { self.cfg.wake.reblank_after_s.max(HINT_MIN_S) }
+
+    /// 被碰到：显示提示；再碰会延长，而不是让提示闪烁
+    fn touched(&mut self, app: &AppHandle) {
+        if let Some(s) = self.session.as_mut() { s.touches += 1; }
+        let s = self.reblank_delay();
+        self.hint(app, serde_json::json!({ "kind": "hint", "reblank_s": s }), true);
+        if self.power_off { self.reblank_at = Some(Instant::now() + Duration::from_secs(s as u64)); }
     }
 
     pub fn handle(&mut self, app: &AppHandle, m: Msg) {
@@ -294,18 +352,12 @@ impl Engine {
                     self.reblank_at = None;
                     self.hint(app, serde_json::json!({ "kind": "hold", "progress": p }), false)
                 }
-                Verdict::Ignored => {
-                    let s = self.cfg.wake.reblank_after_s;
-                    self.hint(app, serde_json::json!({ "kind": "hint", "reblank_s": s }), true);
-                    if self.power_off && self.reblank_at.is_none() {
-                        self.reblank_at = Some(Instant::now() + Duration::from_secs(s.max(1) as u64));
-                    }
-                }
+                Verdict::Ignored => self.touched(app),
             },
             Msg::Input(_) => {}
             Msg::OverlayInput if !self.hook_ok && !platform::wake_keys_ok() => self.wake(app, "overlay input (no hook)"),
             Msg::OverlayInput => {}
-            Msg::Blank { delay_s } => self.arm(app, delay_s, false),
+            Msg::Blank { delay_s } => self.arm(app, delay_s, "manual"),
             Msg::Cancel => self.cancel(app),
             Msg::Wake => self.wake(app, "requested"),
             Msg::SkipTonight => { self.skip(); hide_reminder(app); }
@@ -315,7 +367,7 @@ impl Engine {
                 nblog!("schedule: postponed {min} min");
                 hide_reminder(app);
             }
-            Msg::Hotkey if matches!(self.sm.state, State::Idle | State::Armed) => { nblog!("blank-now hotkey"); self.arm(app, 0, false) }
+            Msg::Hotkey if matches!(self.sm.state, State::Idle | State::Armed) => { nblog!("blank-now hotkey"); self.arm(app, 0, "hotkey") }
             Msg::Hotkey => {}
             Msg::Quit => {
                 nblog!("quit");
@@ -334,9 +386,14 @@ impl Engine {
     }
 
     pub fn tick(&mut self, app: &AppHandle) {
+        // 息屏中每分钟记一次心跳：崩溃后下次启动能算出大概时长
+        if self.sm.state == State::ScreenOff && self.last_heartbeat.map_or(true, |t| t.elapsed() >= Duration::from_secs(60)) {
+            self.last_heartbeat = Some(Instant::now());
+            if let Some(s) = self.session.as_ref() { let (t, l) = (s.touches, s.lit); self.history.touch(unix_now(), t, l); self.save_history(); }
+        }
         let now = Instant::now();
         if let Some((at, _)) = self.countdown {
-            if now >= at { self.countdown = None; self.do_blank(app, false); }
+            if now >= at { self.countdown = None; self.do_blank(app); }
         }
         if let Some(at) = self.power_off_at {
             if now >= at {
@@ -364,8 +421,9 @@ impl Engine {
                 // 没有输入钩子、唤醒键也没注册上：无法分辨误触，屏幕亮了就算唤醒（免得把人锁在外面）
                 self.wake(app, "screen lit and no input hook");
             } else if lit && self.reblank_at.is_none() && !self.policy.is_holding() {
-                if !self.hook_ok { nblog!("screen lit without the wake key (no input hook): re-blank in {}s", self.cfg.wake.reblank_after_s.max(1)); }
-                self.reblank_at = Some(now + Duration::from_secs(self.cfg.wake.reblank_after_s.max(1) as u64));
+                if !self.hook_ok { nblog!("screen lit without the wake key (no input hook): re-blank in {}s", self.reblank_delay()); }
+                // 没有钩子时这里是唯一知道「被碰到」的地方：一样显示提示
+                if !self.hook_ok { self.touched(app); } else { self.reblank_at = Some(now + Duration::from_secs(self.reblank_delay() as u64)); }
             }
             if let Some(at) = self.reblank_at {
                 if now >= at {
@@ -397,7 +455,7 @@ impl Engine {
             let fs = self.fullscreen_now(now);
             let waiting = self.gate.waiting(platform::now_ms(), fs);
             if self.gate.poll(platform::now_ms(), fs) {
-                if self.sm.state == State::Idle && schedule::in_window(&self.cfg.schedule, wd, min) { nblog!("schedule: start"); self.arm(app, 0, true); }
+                if self.sm.state == State::Idle && schedule::in_window(&self.cfg.schedule, wd, min) { nblog!("schedule: start"); self.arm(app, 0, "schedule"); }
             } else if waiting == Some(Waiting::Fullscreen) && !self.fullscreen_logged {
                 nblog!("schedule: waiting, a video is playing full screen");
             }
@@ -415,7 +473,7 @@ impl Engine {
                 self.cfg_mtime = m;
                 // 文件被删掉 = 回到默认设置（和第一次启动一样）
                 let c = if m.is_none() { nblog!("config file removed, using defaults"); Some(Config::default()) }
-                    else { std::fs::read_to_string(&self.cfg_path).ok().and_then(|s| Config::from_toml(&s).ok()) };
+                    else { std::fs::read_to_string(&self.cfg_path).ok().and_then(|s| Config::from_toml(&s).map_err(|e| nblog!("config.toml ignored: {e}")).ok()) };
                 if let Some(c) = c {
                     self.set_config(c);
                     let _ = app.emit("nb://config", ());
@@ -497,6 +555,8 @@ impl Engine {
                 Some((false, _)) => "none",
                 _ => "ok",
             },
+            update: crate::update::state(),
+            keep_awake: self.awake_wanted && self.cfg.power.keep_awake,
         }
     }
 }
@@ -512,6 +572,20 @@ pub fn run(app: AppHandle, eng: Arc<Mutex<Engine>>, rx: Receiver<Msg>) {
         }
         e.tick(&app);
     }
+}
+
+/// 误触提示至少显示几秒
+const HINT_MIN_S: u32 = 5;
+
+/// 光标所在显示器对应的遮罩窗口（和 show_overlays 用同一个编号）
+fn cursor_overlay(app: &AppHandle) -> Option<String> {
+    let c = app.cursor_position().ok()?;
+    let mons = app.available_monitors().ok()?;
+    let i = mons.iter().position(|m| {
+        let (p, s) = (m.position(), m.size());
+        c.x >= p.x as f64 && c.y >= p.y as f64 && c.x < (p.x + s.width as i32) as f64 && c.y < (p.y + s.height as i32) as f64
+    })?;
+    Some(format!("overlay-{i}"))
 }
 
 fn show_overlays(app: &AppHandle, cfg: &Config) {

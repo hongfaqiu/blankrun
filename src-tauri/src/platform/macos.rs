@@ -71,6 +71,7 @@ type TapCb = extern "C" fn(proxy: *mut c_void, ty: u32, event: *mut c_void, user
 extern "C" {
     fn CGMainDisplayID() -> u32;
     fn CGDisplayIsAsleep(display: u32) -> u32;
+    fn CGEventSourceFlagsState(state: i32) -> u64;
     fn CGEventTapCreate(tap: u32, place: u32, options: u32, mask: u64, cb: TapCb, user: *mut c_void) -> *mut c_void;
     fn CGEventTapEnable(tap: *mut c_void, enable: bool);
     fn CGEventGetIntegerValueField(event: *mut c_void, field: u32) -> i64;
@@ -199,6 +200,21 @@ extern "C" fn tap_cb(_proxy: *mut c_void, ty: u32, ev: *mut c_void, _user: *mut 
             return ev;
         }
         let t = now_ms();
+        // 装 tap 之前就按着的键（比如刚按的 ⌃⌥B），抬起要放行，否则别的 App 会以为修饰键一直按着
+        match ty {
+            10 | 11 => {
+                let code = CGEventGetIntegerValueField(ev, 9) as usize & 127;
+                let (w, bit) = (&KEY_SEEN[code >> 6], 1u64 << (code & 63));
+                if ty == 10 { w.fetch_or(bit, Relaxed); } else if w.fetch_and(!bit, Relaxed) & bit == 0 { return ev; }
+            }
+            12 => {
+                let (now_m, prev) = (flags_mods(CGEventGetFlags(ev)), MOD_PREV.swap(flags_mods(CGEventGetFlags(ev)), Relaxed));
+                let (pressed, released) = (now_m & !prev, prev & !now_m);
+                if pressed != 0 { MOD_SEEN.fetch_or(pressed, Relaxed); }
+                if released != 0 && MOD_SEEN.fetch_and(!released, Relaxed) & released == 0 { return ev; }
+            }
+            _ => {}
+        }
         match ty {
             10 | 11 => emit_input(Input::Key {
                 key: keycode_name(CGEventGetIntegerValueField(ev, 9)),
@@ -216,7 +232,14 @@ extern "C" fn tap_cb(_proxy: *mut c_void, ty: u32, ev: *mut c_void, _user: *mut 
     std::ptr::null_mut() // 吞掉
 }
 
+static KEY_SEEN: [AtomicU64; 2] = [AtomicU64::new(0), AtomicU64::new(0)];
+static MOD_SEEN: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+static MOD_PREV: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+
 fn tap_thread(ready: std::sync::mpsc::Sender<std::result::Result<(), String>>) {
+    for w in &KEY_SEEN { w.store(0, Relaxed); }
+    MOD_SEEN.store(0, Relaxed);
+    MOD_PREV.store(flags_mods(unsafe { CGEventSourceFlagsState(1 /* HID system state */) }), Relaxed);
     // 键盘按下/抬起/修饰键、鼠标按键/移动/拖动、滚轮、媒体键(NX_SYSDEFINED=14)
     let mask: u64 = [1u32, 2, 3, 4, 5, 6, 7, 10, 11, 12, 14, 22, 25, 26, 27].iter().fold(0, |m, t| m | (1u64 << t));
     unsafe {
@@ -295,7 +318,24 @@ impl Platform for Native {
         } else {
             let bits = KB_SAVED.swap(u32::MAX, Relaxed);
             if bits != u32::MAX && !kb_set(f32::from_bits(bits)) { return Err("restoring keyboard backlight failed".into()); }
-            if bits != u32::MAX { crate::nblog!("keyboard backlight restored to {} (now {:?})", f32::from_bits(bits), kb_get()); }
+            if bits != u32::MAX {
+                let target = f32::from_bits(bits);
+                crate::nblog!("keyboard backlight restored to {target} (now {:?})", kb_get());
+                // 屏幕还没完全亮起来时 macOS 会把背光自己压回 0：屏幕亮了以后再补几次
+                if target > 0.0 {
+                    let _ = std::thread::Builder::new().name("nb-kbd".into()).spawn(move || {
+                        for i in 0..10 {
+                            std::thread::sleep(std::time::Duration::from_millis(500));
+                            if KB_SAVED.load(Relaxed) != u32::MAX { return; } // 又开始息屏了
+                            match kb_get() {
+                                Some(v) if v + 0.001 >= target => { if i > 0 { crate::nblog!("keyboard backlight back at {v}"); } return; }
+                                _ => { kb_set(target); }
+                            }
+                        }
+                        crate::nblog!("keyboard backlight still {:?} after retries (target {target})", kb_get());
+                    });
+                }
+            }
         }
         Ok(())
     }
@@ -380,8 +420,9 @@ impl Platform for Native {
         // 在 .app 里时用 open -a 启动整个 App（LaunchServices），否则直接跑可执行文件
         let app = exe.ancestors().nth(3).filter(|a| a.extension().is_some_and(|x| x == "app"));
         let args: Vec<String> = match app {
-            Some(a) => vec!["/usr/bin/open".into(), "-a".into(), a.display().to_string()],
-            None => vec![exe.display().to_string()],
+            // --autostart：登录时静默启动到菜单栏，不弹设置窗口
+            Some(a) => vec!["/usr/bin/open".into(), "-a".into(), a.display().to_string(), "--args".into(), "--autostart".into()],
+            None => vec![exe.display().to_string(), "--autostart".into()],
         };
         let esc = |s: &str| s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
         let items: String = args.iter().map(|a| format!("<string>{}</string>", esc(a))).collect();

@@ -3,19 +3,26 @@
   const q = new URLSearchParams(location.search);
   const os = q.get("os") || "mac", state = q.get("state") || "idle";
   const cfg = {
-    general: { launch_at_login: false, language: "auto", blank_now_hotkey: "Ctrl+Alt+B" },
+    general: { launch_at_login: false, language: "auto", blank_now_hotkey: "Ctrl+Alt+B", check_updates: true },
     wake: { method: "hotkey", hotkey: "Ctrl+Alt+W", mouse_threshold_px: 150, mouse_window_ms: 800, lock_on_wake: false, reblank_after_s: 3, hold_ms: 1000 },
     schedule: { enabled: true, start: "23:30", end: "07:30", days: ["mon", "tue", "wed", "thu", "fri"], remind_before_min: 5, skip_when_fullscreen_video: true },
     display: { mode: q.get("mode") || "all", targets: ["DELL U2723QE"], method: "auto" },
     lights: { keyboard_backlight: true, openrgb: false, openrgb_host: "127.0.0.1:6742" },
-    safety: { emergency_hotkey: "Ctrl+Alt+Shift+Esc" }, power: { ac_only: false },
+    safety: { emergency_hotkey: "Ctrl+Alt+Shift+Esc" }, power: { keep_awake: q.get("awake") !== "off", ac_only: false },
   };
   const status = {
     state, countdown_left: 272, countdown_total: 300, now_min: 20 * 60 + 43,
     schedule: { enabled: true, start: "23:30", end: "07:30", in_window: false, until_min: 167, duration_min: 480, skipped: false, waiting: null, postponed_min: null },
     hotkey_error: q.get("hkerr") || null, login: false, input_guard: q.get("guard") || "ok",
-    displays: 2, keyboard: os === "mac", power_off: true,
+    displays: 2, keyboard: os === "mac", power_off: true, keep_awake: state !== "idle",
+    update: { phase: q.get("upd") || "latest", version: q.get("upd") ? "0.1.2" : null, progress: q.get("upd") === "downloading" ? 42 : null, error: null, updated_from: q.get("from") || null },
   };
+  const D = 1792596600, hist = { sessions: [
+    { start: D - 86400 * 2, end: D - 86400 * 2 + 28800, trigger: "schedule", ended: "schedule", touches: 3, reblanks: 1 },
+    { start: D - 86400 + 3000, end: D - 86400 + 5400, trigger: "hotkey", ended: "wake", touches: 0, reblanks: 0 },
+    { start: D, end: D + 15120, trigger: "manual", ended: "crash", touches: 1, reblanks: 0 },
+    { start: D + 40000, end: D + 40720, trigger: "manual", ended: "emergency", touches: 5, reblanks: 2 },
+  ] };
   const caps = os === "mac" ? [
     { id: "awake", key: "awake_ok", status: "ok", tech: "IOPMAssertion · PreventUserIdleSystemSleep" },
     { id: "kbd", key: "kbd_mac_ok", status: "ok", tech: "CoreBrightness" },
@@ -36,10 +43,11 @@
     core: { invoke: async (cmd, args) => {
       calls.push([cmd, args]);
       switch (cmd) {
-        case "get_info": return { os, version: "0.1.0", system_locale: sysLocale, locales: [{ code: "en", name: "English" }, { code: "zh-CN", name: "简体中文" }], config_path: os === "mac" ? "/Users/me/Library/Application Support/com.cosfoc.blankrun/config.toml" : "C:\\Users\\me\\AppData\\Roaming\\com.cosfoc.blankrun\\config.toml" };
+        case "get_info": return { os, version: "0.1.1", system_locale: sysLocale, locales: [{ code: "en", name: "English" }, { code: "zh-CN", name: "简体中文" }], config_path: os === "mac" ? "/Users/me/Library/Application Support/com.cosfoc.blankrun/config.toml" : "C:\\Users\\me\\AppData\\Roaming\\com.cosfoc.blankrun\\config.toml" };
         case "get_config": return JSON.parse(JSON.stringify(cfg));
         case "save_config": Object.assign(cfg, args.cfg); setTimeout(() => window.__emit("nb://config", null), 0); return null;
         case "get_status": return status;
+        case "get_history": return q.get("hist") === "none" ? { sessions: [] } : hist;
         case "skip_tonight": status.schedule.skipped = true; window.__emit("nb://status", status); return null;
         case "postpone": status.schedule.waiting = "postponed"; status.schedule.postponed_min = args.min; window.__emit("nb://status", status); return null;
         case "unskip": status.schedule.skipped = false; window.__emit("nb://status", status); return null;

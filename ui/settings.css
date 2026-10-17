@@ -66,3 +66,8 @@ section{display:none} section.on{display:block}
 .win .r + .r,.win #monitors > .r,.win #monitors + .r{border-top:1px solid var(--card-edge)}
 .win .group-label{font-weight:600;color:var(--ink);font-size:13px;margin:20px 0 8px 0}
 .r .t small.err{color:var(--bad)}
+.about-head .links{display:flex;gap:4px;margin-left:auto}
+.group-label .btn.mini{height:22px;padding:0 8px;font-size:12px;margin-left:auto}
+.hist .r{min-height:44px}
+.hist .c .warn{color:var(--warn,#b26a00)}
+.r .c{gap:8px}

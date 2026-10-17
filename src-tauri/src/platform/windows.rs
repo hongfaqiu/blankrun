@@ -1,6 +1,6 @@
 //! Windows 实现。见 RESEARCH.md §3。
 //! - 防睡眠：SetThreadExecutionState(ES_SYSTEM_REQUIRED)。注意它按线程生效，引擎保证所有动作都在同一个引擎线程里调用。
-//! - 关屏：SC_MONITORPOWER=2；Modern Standby（AoAc）机器上关屏会进 S0 低功耗待机，自动模式下改用遮罩（上层 webview）。
+//! - 关屏：SC_MONITORPOWER=2（只发给自己的隐藏窗口，不广播）；Modern Standby（AoAc）机器上关屏会进 S0 低功耗待机，自动模式下改用遮罩（上层 webview）。
 //! - 屏幕状态：PowerSettingRegisterNotification(GUID_CONSOLE_DISPLAY_STATE) 回调，不需要窗口。
 //! - 输入：WH_KEYBOARD_LL / WH_MOUSE_LL，跑在独立的消息循环线程里，吞掉所有非注入事件。
 //! - 崩溃：执行状态、钩子、遮罩都随进程消失，系统会自己恢复；启动时再补发一次"开屏"。
@@ -9,7 +9,7 @@ use std::thread::JoinHandle;
 
 use blankrun_core::{hotkey, wake::Input};
 use windows_sys::Win32::{
-    Foundation::{LPARAM, LRESULT, POINT, WPARAM},
+    Foundation::{HWND, LPARAM, LRESULT, POINT, WPARAM},
     System::{
         LibraryLoader::GetModuleHandleW,
         Power::*,
@@ -81,8 +81,40 @@ impl Drop for Native {
     }
 }
 
+/// 关屏/开屏请求只发给我们自己的一个隐藏窗口，由它的 DefWindowProc 执行。
+///
+/// 不能 PostMessage(HWND_BROADCAST)：广播会塞进每个顶层窗口的消息队列，被挂起的 UWP 应用
+/// （设置、ShellExperienceHost 等）当时不处理，等用户几分钟后切回它们才把积压的
+/// SC_MONITORPOWER=2 交给 DefWindowProc，屏幕就在空闲时自己黑掉、还会黑亮来回闪。
 fn monitor_power(state: isize) {
-    unsafe { PostMessageW(HWND_BROADCAST, WM_SYSCOMMAND, SC_MONITORPOWER as WPARAM, state as LPARAM); }
+    let hwnd = power_window();
+    if hwnd.is_null() { return; }
+    unsafe { PostMessageW(hwnd, WM_SYSCOMMAND, SC_MONITORPOWER as WPARAM, state as LPARAM); }
+}
+
+/// 专用线程上的隐藏顶层窗口（不显示、不进任务栏），自带消息循环，所以不会被系统当成无响应，
+/// 也能正常收别的广播。懒创建一次，任何线程都可以往里 PostMessage。
+fn power_window() -> HWND {
+    use std::sync::OnceLock;
+    static HWND_CELL: OnceLock<usize> = OnceLock::new();
+    *HWND_CELL.get_or_init(|| {
+        let (tx, rx) = std::sync::mpsc::channel::<usize>();
+        let spawned = std::thread::Builder::new().name("blankrun-power".into()).spawn(move || unsafe {
+            let class: Vec<u16> = "STATIC\0".encode_utf16().collect();
+            let title: Vec<u16> = "BlankRun power\0".encode_utf16().collect();
+            let hwnd = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE, class.as_ptr(), title.as_ptr(), WS_POPUP,
+                0, 0, 0, 0, std::ptr::null_mut(), std::ptr::null_mut(), GetModuleHandleW(std::ptr::null()), std::ptr::null());
+            let _ = tx.send(hwnd as usize);
+            if hwnd.is_null() { return; }
+            let mut msg: MSG = std::mem::zeroed();
+            while GetMessageW(&mut msg, std::ptr::null_mut(), 0, 0) > 0 {
+                TranslateMessage(&msg);
+                DispatchMessageW(&msg);
+            }
+        });
+        if spawned.is_err() { return 0; }
+        rx.recv().unwrap_or(0)
+    }) as HWND
 }
 
 fn display_on_now() {
@@ -134,7 +166,7 @@ impl Platform for Native {
     fn input_hook(&mut self, on: bool) -> Result {
         if on {
             if self.hook.is_some() { return Ok(()); }
-            MODS.store(0, Relaxed);
+            hook_reset();
             let (tx, rx) = std::sync::mpsc::channel();
             let h = std::thread::Builder::new().name("nb-hook".into()).spawn(move || hook_thread(tx)).map_err(|e| e.to_string())?;
             match rx.recv() {
@@ -188,7 +220,7 @@ impl Platform for Native {
         let (key, name) = (wide(RUN_KEY), wide("BlankRun"));
         let r = if on {
             let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-            let v = wide(&format!("\"{}\"", exe.display()));
+            let v = wide(&format!("\"{}\" --autostart", exe.display()));
             unsafe { RegSetKeyValueW(HKEY_CURRENT_USER, key.as_ptr(), name.as_ptr(), REG_SZ, v.as_ptr() as *const _, (v.len() * 2) as u32) }
         } else {
             match unsafe { RegDeleteKeyValueW(HKEY_CURRENT_USER, key.as_ptr(), name.as_ptr()) } { 2 => 0, r => r } // 2 = 本来就没有
@@ -301,11 +333,20 @@ fn vk_mod(vk: u32) -> u8 {
     }
 }
 
+/// 钩子装上以后按下过的键（vk 位图）。装钩子之前就按着的键（比如刚按的 Ctrl+Alt+B），
+/// 它们的抬起要放行，否则别的程序会以为 Ctrl/Alt 一直按着。
+static SEEN_DOWN: [std::sync::atomic::AtomicU64; 4] = [const { std::sync::atomic::AtomicU64::new(0) }; 4];
+static BTN_SEEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+pub(crate) fn hook_reset() { for w in &SEEN_DOWN { w.store(0, Relaxed); } MODS.store(0, Relaxed); BTN_SEEN.store(false, Relaxed); }
+
 unsafe extern "system" fn kb_proc(code: i32, wp: WPARAM, lp: LPARAM) -> LRESULT {
     if code < 0 { return CallNextHookEx(std::ptr::null_mut(), code, wp, lp); }
     let k = &*(lp as *const KBDLLHOOKSTRUCT);
-    if k.flags & LLKHF_INJECTED != 0 { return CallNextHookEx(std::ptr::null_mut(), code, wp, lp); }
     let down = wp == WM_KEYDOWN as WPARAM || wp == WM_SYSKEYDOWN as WPARAM;
+    let (w, bit) = (&SEEN_DOWN[(k.vkCode as usize >> 6) & 3], 1u64 << (k.vkCode & 63));
+    if down { w.fetch_or(bit, Relaxed); }
+    else if w.fetch_and(!bit, Relaxed) & bit == 0 { return CallNextHookEx(std::ptr::null_mut(), code, wp, lp); }
+    // 远程控制软件、屏幕键盘发来的是「注入」事件：一样拦下，也一样能用来唤醒
     let m = vk_mod(k.vkCode);
     let key = if m != 0 {
         if down { MODS.fetch_or(m, Relaxed); } else { MODS.fetch_and(!m, Relaxed); }
@@ -318,7 +359,11 @@ unsafe extern "system" fn kb_proc(code: i32, wp: WPARAM, lp: LPARAM) -> LRESULT 
 unsafe extern "system" fn ms_proc(code: i32, wp: WPARAM, lp: LPARAM) -> LRESULT {
     if code < 0 { return CallNextHookEx(std::ptr::null_mut(), code, wp, lp); }
     let m = &*(lp as *const MSLLHOOKSTRUCT);
-    if m.flags & LLMHF_INJECTED != 0 { return CallNextHookEx(std::ptr::null_mut(), code, wp, lp); }
+    // 注入的（远程控制等）也拦下；只有装钩子之前按下的鼠标键，抬起时放行
+    if matches!(wp as u32, WM_LBUTTONUP | WM_RBUTTONUP | WM_MBUTTONUP | WM_XBUTTONUP) && !BTN_SEEN.swap(false, Relaxed) {
+        return CallNextHookEx(std::ptr::null_mut(), code, wp, lp);
+    }
+    if matches!(wp as u32, WM_LBUTTONDOWN | WM_RBUTTONDOWN | WM_MBUTTONDOWN | WM_XBUTTONDOWN) { BTN_SEEN.store(true, Relaxed); }
     match wp as u32 {
         WM_MOUSEMOVE => {
             // 移动被吞掉后光标不动，所以 pt 与当前光标位置之差就是这一次的位移

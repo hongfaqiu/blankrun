@@ -31,6 +31,8 @@ pub struct WakePolicy {
     hold_ms: u64,
     mouse_threshold_px: f64,
     mouse_window_ms: u64,
+    /// 最近一次 Wake 是紧急键触发的（写息屏记录用）
+    pub by_emergency: bool,
 }
 
 impl WakePolicy {
@@ -65,8 +67,9 @@ impl WakePolicy {
     pub fn feed(&mut self, input: Input) -> Verdict {
         use Verdict::*;
         if let Input::Key { key, mods, down: true, .. } = input {
-            if self.emergency.as_ref().is_some_and(|h| h.matches(key, mods)) { self.reset(); return Wake; }
+            if self.emergency.as_ref().is_some_and(|h| h.matches(key, mods)) { self.reset(); self.by_emergency = true; return Wake; }
         }
+        self.by_emergency = false;
         let method = self.method.unwrap_or(WakeMethod::Hotkey);
         match (method, input) {
             // Password：任意键唤醒后由平台锁屏，交给系统密码框

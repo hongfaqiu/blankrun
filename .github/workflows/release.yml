@@ -22,12 +22,17 @@ jobs:
             name: macos-universal
             rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
             args: --target universal-apple-darwin
-            bundle: target/universal-apple-darwin/release/bundle/dmg/*.dmg
+            bundle: |
+              target/universal-apple-darwin/release/bundle/dmg/*.dmg
+              target/universal-apple-darwin/release/bundle/macos/*.app.tar.gz
+              target/universal-apple-darwin/release/bundle/macos/*.app.tar.gz.sig
           - os: windows-latest
             name: windows-x64
             rust_targets: x86_64-pc-windows-msvc
             args: --bundles nsis
-            bundle: target/release/bundle/nsis/*.exe
+            bundle: |
+              target/release/bundle/nsis/*.exe
+              target/release/bundle/nsis/*.exe.sig
     runs-on: ${{ matrix.os }}
     name: build (${{ matrix.name }})
     steps:
@@ -49,7 +54,11 @@ jobs:
         run: cargo test -p blankrun-core
 
       # 不传 tagName：tauri-action 只负责构建，发布由下面的 release job 统一处理
+      # 自动更新包的 minisign 签名（私钥只在仓库 secrets 里）
       - uses: tauri-apps/tauri-action@v0
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: src-tauri
           tauriScript: npx --yes @tauri-apps/cli@^2
@@ -65,7 +74,7 @@ jobs:
 
       - name: Show bundle sizes
         shell: bash
-        run: ls -l ${{ matrix.bundle }}
+        run: ls -l $(echo "${{ matrix.bundle }}")
 
       - uses: actions/upload-artifact@v4
         with:
@@ -91,6 +100,25 @@ jobs:
           # 再附一份不带版本号的副本，官网用 releases/latest/download/<名字> 固定链接下载最新版
           for f in dist/*_universal.dmg; do cp "$f" dist/BlankRun_universal.dmg; done
           for f in dist/*_x64-setup.exe; do cp "$f" dist/BlankRun_x64-setup.exe; done
+          # 自动更新：Mac 的 .app.tar.gz 改成带版本号的名字，再生成 latest.json（App 从 releases/latest/download/latest.json 读）
+          ver="${TAG#v}"
+          mv dist/BlankRun.app.tar.gz "dist/BlankRun_${ver}_universal.app.tar.gz"
+          mv dist/BlankRun.app.tar.gz.sig "dist/BlankRun_${ver}_universal.app.tar.gz.sig"
+          python3 - "$TAG" "$ver" <<'PY'
+          import json, sys, glob, datetime
+          tag, ver = sys.argv[1], sys.argv[2]
+          base = f"https://github.com/hongfaqiu/blankrun/releases/download/{tag}/"
+          sig = lambda f: open(f + ".sig").read().strip()
+          mac = f"dist/BlankRun_{ver}_universal.app.tar.gz"
+          win = glob.glob(f"dist/BlankRun_{ver}_x64-setup.exe")[0]
+          m = {"url": base + mac[5:], "signature": sig(mac)}
+          w = {"url": base + win[5:], "signature": sig(win)}
+          out = {"version": ver, "notes": f"https://github.com/hongfaqiu/blankrun/releases/tag/{tag}",
+                 "pub_date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                 "platforms": {"darwin-aarch64": m, "darwin-x86_64": m, "windows-x86_64": w}}
+          json.dump(out, open("dist/latest.json", "w"), indent=2)
+          PY
+          cat dist/latest.json
           ls -l dist
           notes=".github/release-notes/${TAG}.md"
           [ -f "$notes" ] || notes=".github/release-notes/${TAG#v}.md"

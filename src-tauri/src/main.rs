@@ -5,6 +5,7 @@
 mod log;
 mod engine;
 mod platform;
+mod update;
 
 use std::sync::{mpsc, Arc, Mutex};
 
@@ -70,6 +71,19 @@ fn postpone(tx: State<Tx>, min: u32) { send(&tx, Msg::Postpone { min: min.clamp(
 #[tauri::command]
 fn overlay_input(tx: State<Tx>) { send(&tx, Msg::OverlayInput) }
 #[tauri::command]
+async fn get_history(e: State<'_, Eng>) -> R<blankrun_core::history::History> { Ok(lock(&e).history.clone()) }
+#[tauri::command]
+async fn clear_history(e: State<'_, Eng>) -> R<()> { lock(&e).clear_history(); Ok(()) }
+#[tauri::command]
+fn open_link(which: String) { update::open(&which) }
+#[tauri::command]
+async fn check_update(app: AppHandle) -> R<()> { update::check(&app, true).await; Ok(()) }
+#[tauri::command]
+async fn install_update(e: State<'_, Eng>, app: AppHandle) -> R<()> {
+    let eng = e.inner().clone();
+    update::install(app, move || eng.lock().map_or(true, |g| g.status().state != "idle")).await
+}
+#[tauri::command]
 fn wake_now(tx: State<Tx>) { send(&tx, Msg::Wake) }
 #[tauri::command]
 fn quit(tx: State<Tx>) { send(&tx, Msg::Quit) }
@@ -123,6 +137,11 @@ fn hide_window(w: tauri::WebviewWindow) { let _ = w.hide(); }
 async fn finish_onboarding(e: State<'_, Eng>, w: tauri::WebviewWindow) -> R<()> {
     let _ = std::fs::write(lock(&e).cfg_path.with_file_name("onboarded"), "1");
     let _ = w.hide();
+    // 欢迎页关掉后把面板在托盘图标旁打开一次，让人知道以后去哪里找它
+    let app = w.app_handle().clone();
+    let _ = w.run_on_main_thread(move || {
+        if let Some(r) = app.tray_by_id("main").and_then(|t| t.rect().ok().flatten()) { toggle_popover(&app, r); }
+    });
     Ok(())
 }
 
@@ -242,6 +261,7 @@ fn main() {
     platform::set_hotkey_sink(Box::new(move || { let _ = hk_tx.send(Msg::Hotkey); }));
 
     let app = tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(move |app| {
             // macOS：只在菜单栏显示，不出现在 Dock
             #[cfg(target_os = "macos")]
@@ -254,10 +274,10 @@ fn main() {
                 let _ = std::fs::write(cfg_path.with_file_name("show.request"), "1");
                 std::process::exit(0);
             }
-            let cfg = std::fs::read_to_string(&cfg_path).ok().and_then(|s| Config::from_toml(&s).ok()).unwrap_or_default();
+            log::init(cfg_path.with_file_name("blankrun.log"));
+            let cfg = std::fs::read_to_string(&cfg_path).ok().and_then(|s| Config::from_toml(&s).map_err(|e| nblog!("config.toml ignored, using defaults: {e}")).ok()).unwrap_or_default();
             let codes: Vec<&str> = locales().iter().map(|(c, _)| *c).collect();
             let tt = tray_text(&blankrun_core::locale::resolve(&cfg.general.language, &platform::system_locale(), &codes));
-            log::init(cfg_path.with_file_name("blankrun.log"));
             let lang = blankrun_core::locale::resolve(&cfg.general.language, &platform::system_locale(), &codes);
             nblog!("start v{} os={} system_locale={:?} lang={lang} args={:?}", env!("CARGO_PKG_VERSION"), platform::OS,
                 platform::system_locale(), std::env::args().skip(1).collect::<Vec<_>>());
@@ -270,13 +290,13 @@ fn main() {
                 let _ = std::fs::remove_file(&marker);
             }
             let first_run = !cfg_path.with_file_name("onboarded").exists();
-            let needs_perm = plat.permissions().is_some_and(|(a, b)| !(a && b));
             for c in plat.capabilities() { nblog!("cap {} {} {}", c.id, c.status, c.tech); }
             nblog!("permissions (accessibility, input monitoring) = {:?}; modern_standby = {}; fullscreen_video = {}; launch_at_login = {:?}",
                 plat.permissions(), plat.power_off_unsafe(), plat.fullscreen_video(), plat.launch_at_login());
             for (i, m) in app.available_monitors().unwrap_or_default().iter().enumerate() {
                 nblog!("monitor {} {:?} at {:?}", engine::monitor_name(i, m), m.size(), m.position());
             }
+            update::start(app.handle().clone(), cfg_path.with_file_name("update.check"));
             let eng: Eng = Arc::new(Mutex::new(Engine::new(cfg, cfg_path, plat)));
             app.manage(eng.clone());
             app.manage(Tx(Mutex::new(tx.clone())));
@@ -284,8 +304,14 @@ fn main() {
             std::thread::Builder::new().name("nb-engine".into()).spawn(move || engine::run(handle, eng, rx))?;
 
             cli(tx.clone());
-            if first_run && needs_perm {
+            // 第一次运行：欢迎页（Mac 缺权限时顺带引导授权）。之后手动打开（开始菜单、启动台、安装完成页）就显示设置；
+            // 只有登录时自动启动（--autostart）和测试参数才静默待在托盘里。
+            let quiet = std::env::args().skip(1).any(|a| a == "--autostart" || a.starts_with("--blank-now") || a.starts_with("--quit-after"));
+            if first_run {
+                nblog!("first run: showing welcome");
                 if let Some(w) = app.get_webview_window("onboarding") { let _ = w.show(); let _ = w.set_focus(); }
+            } else if !quiet {
+                show_settings(app.handle(), None);
             }
 
             let blank = MenuItem::with_id(app, "blank", tt[0], true, None::<&str>)?;
@@ -317,6 +343,25 @@ fn main() {
                 })
                 .build(app)?;
             check_tray(app.handle().clone());
+            // Windows：任务栏在浅色/深色之间切换时（设置里改主题、定时切换）换托盘图标颜色。读注册表很便宜，几秒看一次
+            #[cfg(windows)]
+            {
+                let h = app.handle().clone();
+                let _ = std::thread::Builder::new().name("nb-theme".into()).spawn(move || {
+                    let mut light = platform::taskbar_light();
+                    loop {
+                        std::thread::sleep(std::time::Duration::from_secs(3));
+                        let now = platform::taskbar_light();
+                        if now == light { continue; }
+                        light = now;
+                        nblog!("taskbar theme changed: light={now}");
+                        let h2 = h.clone();
+                        let _ = h.run_on_main_thread(move || {
+                            if let Some(t) = h2.tray_by_id("main") { let _ = t.set_icon(Some(tray_icon().0)); }
+                        });
+                    }
+                });
+            }
             Ok(())
         })
         .on_window_event(|w, e| match e {
@@ -325,7 +370,7 @@ fn main() {
             _ => {}
         })
         .invoke_handler(tauri::generate_handler![
-            get_info, get_config, save_config, get_status, blank_now, cancel, skip_tonight, unskip, postpone, overlay_input, wake_now, quit,
+            get_info, get_config, get_history, clear_history, open_link, check_update, install_update, save_config, get_status, blank_now, cancel, skip_tonight, unskip, postpone, overlay_input, wake_now, quit,
             get_diagnostics, request_permission, reveal_config, export_diagnostics, open_settings, hide_window,
             finish_onboarding, apply_locale
         ])

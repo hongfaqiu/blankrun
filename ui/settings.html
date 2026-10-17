@@ -29,7 +29,7 @@
     </div>
     <div class="group-label"><span data-i18n="g.awake_label"></span></div>
     <div class="group">
-      <div class="r"><div class="t"><span data-i18n="g.awake"></span><small data-i18n="g.awake_note"></small></div><div class="c"><span class="status muted"><span class="dot ok"></span><span data-i18n="st.always_on"></span></span></div></div>
+      <div class="r"><div class="t"><span data-i18n="g.awake"></span><small data-i18n="g.awake_note"></small></div><div class="c"><button class="toggle" role="switch" data-k="power.keep_awake"></button></div></div>
       <div class="r only-mac"><div class="t"><span data-i18n="g.ac"></span><small data-i18n="g.ac_note"></small></div><div class="c"><button class="toggle" role="switch" data-k="power.ac_only"></button></div></div>
       <div class="r only-win" id="s0Row" hidden><div class="t"><span data-i18n="g.s0"></span><small data-i18n="g.s0_note"></small></div><div class="c"><span class="status muted"><span class="dot"></span><span data-i18n="st.avoided"></span></span></div></div>
     </div>
@@ -118,6 +118,13 @@
   <section id="about">
     <div class="about-head">
       <div><h1><span data-i18n="a.name"></span> <span class="num muted ver" id="ver"></span></h1><div class="small muted sub" data-i18n="a.sub"></div></div>
+      <div class="links"><button class="btn ghost" data-link="site" data-i18n="a.site"></button><button class="btn ghost" data-link="github">GitHub</button></div>
+    </div>
+    <div class="group-label"><span data-i18n="a.upd_label"></span></div>
+    <div class="group">
+      <div class="r"><div class="t"><span id="updText"></span><small id="updNote"></small></div>
+        <div class="c"><button class="btn ghost" id="updNotes" data-link="releases" data-i18n="a.upd_notes" hidden></button><button class="btn" id="updCheck" data-i18n="a.upd_check"></button><button class="btn primary" id="updInstall" data-i18n="a.upd_install" hidden></button></div></div>
+      <div class="r"><div class="t"><span data-i18n="g.upd"></span><small data-i18n="g.upd_note"></small></div><div class="c"><button class="toggle" role="switch" data-k="general.check_updates"></button></div></div>
     </div>
     <div id="permBlock" hidden>
       <div class="group-label"><span data-i18n="a.perm_label"></span></div>
@@ -128,9 +135,10 @@
     </div>
     <div class="group-label"><span data-i18n="a.caps_label"></span></div>
     <div class="group" id="caps"></div>
-    <div class="group-label"><span data-i18n="a.last_label"></span></div>
+    <div class="group-label"><span data-i18n="a.hist_label"></span><button class="btn ghost mini" id="histClear" data-i18n="a.hist_clear" hidden></button></div>
+    <div class="group hist" id="hist"><div class="r"><div class="t"><small data-i18n="a.hist_none"></small></div></div></div>
     <div class="group">
-      <div class="r"><div class="t"><span class="num" id="lastRange" data-i18n="a.last_none"></span><small id="lastNote"></small></div><div class="c"><button class="btn" id="exportDiag" data-i18n="a.export"></button></div></div>
+      <div class="r"><div class="t"><span data-i18n="a.export"></span><small data-i18n="a.export_note"></small></div><div class="c"><button class="btn" id="exportDiag" data-i18n="a.export_btn"></button></div></div>
     </div>
   </section>
 

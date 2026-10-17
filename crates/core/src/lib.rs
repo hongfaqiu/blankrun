@@ -4,6 +4,8 @@ pub mod hotkey;
 pub mod locale;
 pub mod schedule;
 pub mod state;
+pub mod update;
+pub mod history;
 pub mod wake;
 
 pub use config::Config;

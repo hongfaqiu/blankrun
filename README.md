@@ -8,7 +8,7 @@
 
 <p align="center"><a href="https://blankrun.cosfoc.com">Website</a> · <a href="https://github.com/hongfaqiu/blankrun/releases">Download</a> · macOS + Windows · MIT</p>
 
-> **Status: v0.1.0, the first stable release. Blanking, keep-awake, wake and restore have been checked on a MacBook Air M4 (macOS 26.5) and a dual-monitor Windows 11 desktop. The installers are unsigned.** [Download v0.1.0](https://github.com/hongfaqiu/blankrun/releases/tag/v0.1.0)
+> **Status: v0.1.1. Blanking, keep-awake, wake and restore have been checked on a MacBook Air M4 (macOS 26.5) and a dual-monitor Windows 11 desktop. The installers are unsigned.** [Download the latest version](https://github.com/hongfaqiu/blankrun/releases/latest)
 
 <p align="center"><img src="docs/screenshots/popover-mac-en.png" width="380" alt="Menu bar panel"> <img src="docs/screenshots/popover-mac-en-dark.png" width="380" alt="Menu bar panel (dark)"></p>
 
@@ -21,7 +21,7 @@ BlankRun lives in the menu bar (the notification area on Windows). One click rea
 Features:
 
 - **Blank now or after a delay**: right away, or after 1, 5 or 15 minutes.
-- **No sleep while blank**: IOPMAssertion on macOS, SetThreadExecutionState on Windows.
+- **No sleep while blank** (on by default, can be turned off): IOPMAssertion on macOS, SetThreadExecutionState on Windows.
 - **Schedule**: for example 23:30 to 07:30 every day. Works across midnight, and you can skip just tonight.
 - **Configurable wake**: any key, holding a shortcut (⌃⌥W for 1 second by default), moving the mouse, clicking, locking on wake so you enter your password, or only when the schedule ends. A separate emergency shortcut always restores everything.
 - **No accidental wake**: keyboard and mouse input is blocked while blank. If the screen lights up anyway, it goes dark again within seconds. On macOS without Accessibility permission, the wake shortcut still works and stray touches are re-blanked.
@@ -30,7 +30,9 @@ Features:
 - **Windows Modern Standby**: on PCs that drop into low-power standby when the display turns off, BlankRun uses a black overlay instead so jobs aren't suspended.
 - **English and Chinese UI**: follows the system language by default. Switch in Settings › General › Language and the tray menu, wake hints and onboarding update immediately, with no restart.
 - **Small**: built on Tauri 2 with a zero-dependency UI. Measured for v0.1.0: 1.2 MB Windows installer, 3.2 MB universal macOS DMG.
-- **Local only**: no network, no uploads.
+- **Auto-update**: checks once a day (can be turned off). Updates are signed and install only when you click "Update and restart", never while the screen is blank. From v0.1.1 on; v0.1.0 needs one manual install.
+- **Blank history**: the last 30 sessions with time, trigger, how they ended and how many accidental touches were blocked. Stored locally and can be cleared.
+- **Local only**: apart from the daily update check, nothing goes over the network and nothing is uploaded.
 
 Later versions: external monitor power via DDC/CI, RGB lighting.
 

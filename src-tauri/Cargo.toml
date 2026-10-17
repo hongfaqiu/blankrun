@@ -13,11 +13,13 @@ tauri-build = { version = "2", default-features = false, features = [] }
 
 [dependencies]
 blankrun-core = { path = "../crates/core" }
-# 只开必要特性：wry(WebView) + 托盘 + 资源压缩。不开 devtools/updater/plugin 等。
+# 只开必要特性：wry(WebView) + 托盘 + 资源压缩。不开 devtools 等。
 tauri = { version = "2", default-features = false, features = ["wry", "tray-icon", "compression", "common-controls-v6"] }
 # 以下都已经是 tauri 的传递依赖，不增加体积
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# 自动更新：用系统 TLS（Mac Security.framework / Windows SChannel），不带 rustls、zip，体积最小
+tauri-plugin-updater = { version = "2", default-features = false, features = ["native-tls", "system-proxy"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

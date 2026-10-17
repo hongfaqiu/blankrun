@@ -87,7 +87,64 @@ function renderStatus() {
     else next = t("s.next_nodays");
   }
   $("#schedNext").textContent = next;
+  renderUpdate();
+  if (status.state !== lastState) { lastState = status.state; if (status.state === "idle") loadHistory(); }
 }
+let lastState = null, history = [];
+function renderUpdate() {
+  const u = status.update || {}, ph = u.phase || "idle";
+  const busy = ph === "checking" || ph === "downloading" || ph === "installing";
+  const blank = status.state !== "idle";
+  $("#updText").textContent =
+    ph === "available" ? t("a.upd_new", { v: u.version }) :
+    ph === "downloading" ? t("a.upd_downloading", { p: u.progress || 0 }) :
+    ph === "installing" ? t("a.upd_installing") :
+    ph === "checking" ? t("a.upd_checking") :
+    ph === "latest" ? t("a.upd_latest") :
+    ph === "error" ? t("a.upd_error") : t("a.upd_idle", { v: INFO ? INFO.version : "" });
+  const notes = [];
+  if (ph === "error" && u.error) notes.push(u.error);
+  if (ph === "available") notes.push(t(blank ? "a.upd_blank" : OS === "mac" ? "a.upd_mac" : "a.upd_win"));
+  if (u.updated_from) notes.push(t(OS === "mac" ? "a.upd_done_mac" : "a.upd_done", { v: u.updated_from }));
+  $("#updNote").textContent = notes.join(" · ");
+  $("#updNotes").hidden = ph !== "available";
+  $("#updInstall").hidden = ph !== "available" && ph !== "downloading" && ph !== "installing";
+  $("#updInstall").disabled = busy || blank;
+  $("#updCheck").hidden = ph === "available" || ph === "downloading" || ph === "installing";
+  $("#updCheck").disabled = busy;
+}
+const TRIG = { manual: "a.tr_manual", hotkey: "a.tr_hotkey", schedule: "a.tr_schedule" };
+async function loadHistory() {
+  try { history = (await invoke("get_history")).sessions || []; } catch (e) { return; }
+  renderHistory();
+}
+function renderHistory() {
+  const box = $("#hist");
+  $("#histClear").hidden = !history.length;
+  if (!history.length) { box.replaceChildren(h("div", "r", "")); box.firstChild.append(h("div", "t", "")); box.firstChild.firstChild.append(h("small", "", t("a.hist_none"))); return; }
+  const day = (u) => new Date(u * 1000).toLocaleDateString(LANG, { month: "numeric", day: "numeric", weekday: "short" });
+  const hm = (u) => new Date(u * 1000).toLocaleTimeString(LANG, { hour: "2-digit", minute: "2-digit", hour12: false });
+  const dur = (s) => { const m = Math.round(s / 60); return m < 60 ? t("a.dur_m", { m }) : t("a.dur_hm", { h: Math.floor(m / 60), m: m % 60 }); };
+  box.replaceChildren(...history.slice().reverse().map((s) => {
+    const r = h("div", "r");
+    const tt = h("div", "t");
+    tt.append(h("span", "num", `${day(s.start)}  ${hm(s.start)} – ${s.ended === "running" ? t("a.now") : hm(s.end)}`));
+    const bits = [t(TRIG[s.trigger] || "a.tr_manual"), t("a.end_" + s.ended)];
+    if (s.touches) bits.push(t("a.h_touches", { n: s.touches }));
+    if (s.reblanks) bits.push(t("a.h_reblanks", { n: s.reblanks }));
+    tt.append(h("small", "", bits.join(" · ")));
+    const c = h("div", "c"); c.append(h("span", "num muted", s.ended === "running" ? "" : dur(s.end - s.start)));
+    if (s.ended === "crash") c.firstChild.classList.add("warn");
+    r.append(tt, c); return r;
+  }));
+}
+$("#histClear").addEventListener("click", async () => {
+  if (!confirm(t("a.hist_confirm"))) return;
+  await invoke("clear_history"); history = []; renderHistory();
+});
+$("#updCheck").addEventListener("click", () => invoke("check_update"));
+$("#updInstall").addEventListener("click", () => invoke("install_update").catch(() => {}));
+document.querySelectorAll("[data-link]").forEach((b) => b.addEventListener("click", () => invoke("open_link", { which: b.dataset.link })));
 
 function renderMonitors() {
   const box = $("#monitors");
@@ -126,7 +183,7 @@ async function loadDiag() {
     perm($("#permIn"), diag.perms[1], "input");
   }
   // 上次息屏
-  renderLast();
+  loadHistory();
 }
 
 /** 能力列表：名称 / 状态 / 说明来自词条 cap.<key>.*，tech 是接口名和原始错误，不翻译 */
@@ -143,13 +200,6 @@ function renderCaps() {
   }));
   const kbd = diag.caps.find((c) => c.id === "kbd");
   $("#kbdNote").textContent = kbd && kbd.status !== "ok" ? t(`cap.${kbd.key}.note`) : t("b.kbd_note");
-}
-function renderLast() {
-  const ls = diag && diag.last_session;
-  if (!ls) return;
-  const f = (u) => new Date(u * 1000).toLocaleString(LANG, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false });
-  $("#lastRange").textContent = `${f(ls.start_unix)} – ${ls.end_unix ? f(ls.end_unix) : t("a.now")}`;
-  $("#lastNote").textContent = t("a.last_note", { by: t(ls.by_schedule ? "a.by_sched" : "a.by_manual"), how: t(ls.power_off ? "a.how_power" : "a.how_overlay"), n: ls.lit });
 }
 /** 语言下拉：跟随系统 + ui/i18n 里的每种语言（用各自的语言写名字） */
 function renderLangs() {
@@ -239,7 +289,7 @@ $$(".tp").forEach((tp) => {
 listen("nb://tray_hidden", () => { $("#trayHidden").hidden = false; });
 
 (async () => {
-  const info = await initPlatform(() => { renderLangs(); render(); renderCaps(); renderLast(); });
+  const info = await initPlatform(() => { renderLangs(); render(); renderCaps(); renderHistory(); });
   $("#cfgPath").textContent = info.config_path;
   $("#ver").textContent = info.version;
   [cfg, status] = await Promise.all([invoke("get_config"), invoke("get_status")]);

@@ -14,6 +14,10 @@ for (const os of ["mac", "win"]) {
   jobs.push([`popover.html?os=${os}&state=countdown`, `popover-${os}-countdown`, 320, 452]);
   for (const s of ["general", "blank", "wake", "schedule", "about"]) jobs.push([`settings.html?os=${os}#${s}`, `settings-${os}-${s}`, 820, 760]);
 }
+jobs.push([`settings.html?os=mac&upd=available&from=0.1.0#about`, `settings-mac-about-upd`, 820, 1100]);
+jobs.push([`settings.html?os=win&lang=en#about`, `settings-win-about-en`, 820, 1100]);
+jobs.push([`popover.html?os=win&upd=available`, `popover-win-upd`, 320, 500]);
+jobs.push([`popover.html?os=mac&state=blank&awake=off`, `popover-mac-noawake`, 320, 452]);
 jobs.push([`settings.html?os=mac&mode=selected#blank`, `settings-mac-blank-selected`, 820, 760]);
 jobs.push([`overlay.html?os=mac`, `overlay-mac-hint`, 1280, 800, { kind: "hint", reblank_s: 3 }]);
 jobs.push([`overlay.html?os=win`, `overlay-win-hold`, 1280, 800, { kind: "hold", progress: 0.62 }]);

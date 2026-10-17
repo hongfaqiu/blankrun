@@ -34,10 +34,12 @@ pub struct GeneralConfig {
     pub language: String,
     /// 「立即息屏」全局快捷键（Mac 上显示为 ⌃⌥B）
     pub blank_now_hotkey: String,
+    /// 每天最多一次访问 GitHub 看有没有新版本（只读版本号，不下载、不上传）
+    pub check_updates: bool,
 }
 impl Default for GeneralConfig {
     fn default() -> Self {
-        Self { launch_at_login: false, language: LANG_AUTO.into(), blank_now_hotkey: "Ctrl+Alt+B".into() }
+        Self { launch_at_login: false, language: LANG_AUTO.into(), blank_now_hotkey: "Ctrl+Alt+B".into(), check_updates: true }
     }
 }
 
@@ -112,11 +114,16 @@ impl Default for SafetyConfig {
     fn default() -> Self { Self { emergency_hotkey: "Ctrl+Alt+Shift+Esc".into() } }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct PowerConfig {
+    /// 息屏期间阻止系统睡眠（默认开）。关掉后按系统自己的睡眠设置走，关屏、拦截输入、唤醒都不变
+    pub keep_awake: bool,
     /// 仅 macOS：只在接通电源时防睡眠，用电池时照常睡眠。默认关闭
     pub ac_only: bool,
+}
+impl Default for PowerConfig {
+    fn default() -> Self { Self { keep_awake: true, ac_only: false } }
 }
 
 impl Config {
@@ -128,6 +135,16 @@ impl Config {
     /// 校验并规范化：旧版本写的 language = "zh" 迁移成 "zh-CN"
     pub fn normalize(&mut self) -> Result<(), String> {
         if self.general.language == "zh" { self.general.language = "zh-CN".into(); }
+        // 手改配置文件写出离谱的数也别出事：夹到合理范围
+        let w = &mut self.wake;
+        w.hold_ms = w.hold_ms.min(10_000);
+        w.reblank_after_s = w.reblank_after_s.clamp(1, 600);
+        w.mouse_threshold_px = w.mouse_threshold_px.clamp(10, 10_000);
+        w.mouse_window_ms = w.mouse_window_ms.clamp(100, 10_000);
+        self.schedule.remind_before_min = self.schedule.remind_before_min.min(240);
+        for t in [&self.schedule.start, &self.schedule.end] {
+            if crate::schedule::parse_hhmm(t).is_none() { return Err(format!("invalid time: {t} (use HH:MM)")); }
+        }
         if !valid_language(&self.general.language) { return Err(format!("invalid language: {}", self.general.language)); }
         Ok(())
     }
@@ -151,6 +168,10 @@ mod tests {
         assert!(!c.general.launch_at_login);
         assert_eq!(c.general.language, "auto");
         assert_eq!(c.general.blank_now_hotkey, "Ctrl+Alt+B");
+        assert!(c.general.check_updates);
+        // 0.1.0 的配置没有 keep_awake：迁移成开
+        assert!(Config::from_toml("[power]\nac_only = true\n").unwrap().power.keep_awake);
+        assert!(!Config::from_toml("[power]\nkeep_awake = false\n").unwrap().power.keep_awake);
         assert_eq!(c.wake.hold_ms, 1000);
         assert_eq!(c.schedule.days.len(), 7);
         assert_eq!(c.schedule.remind_before_min, 5);
@@ -173,5 +194,15 @@ mod tests {
         assert!(Config::from_toml("[general]\nlanguage = \"../x\"\n").is_err());
         assert!(valid_language("zh-Hant-TW") && valid_language("pt-BR") && !valid_language("") && !valid_language("e"));
         assert_eq!(Config::from_toml(&c.to_toml()).unwrap(), c);
+    }
+
+    #[test]
+    fn normalize_validates_and_clamps() {
+        let mut c = Config::default();
+        c.wake.reblank_after_s = 0; c.wake.hold_ms = 99_999; c.schedule.remind_before_min = 9999;
+        c.normalize().unwrap();
+        assert_eq!((c.wake.reblank_after_s, c.wake.hold_ms, c.schedule.remind_before_min), (1, 10_000, 240));
+        let mut c = Config::default(); c.schedule.start = "25:00".into();
+        assert!(c.normalize().is_err());
     }
 }

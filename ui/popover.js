@@ -24,7 +24,16 @@ function renderStatus() {
   $("#countBox").hidden = !counting;
   if (counting) $("#count").textContent = `${Math.floor(s.countdown_left / 60)}:${pad2(s.countdown_left % 60)}`;
   $("#stDot").className = "dot" + (counting ? " ink" : s.state === "blank" ? " standby" : "");
-  $("#stText").textContent = t(counting ? "p.counting" : s.state === "blank" ? "p.blanked" : "p.idle");
+  const noAwake = !!cfg && cfg.power.keep_awake === false && s.state !== "idle";
+  $("#stText").textContent = t((counting ? "p.counting" : s.state === "blank" ? "p.blanked" : "p.idle") + (noAwake ? "_sleep" : ""));
+  const u = s.update || {}, ph = u.phase;
+  const showUpd = ph === "available" || ph === "downloading" || ph === "installing";
+  $("#updRow").hidden = !showUpd;
+  if (showUpd) {
+    $("#updText").textContent = ph === "available" ? t("p.upd_new", { v: u.version }) : ph === "installing" ? t("a.upd_installing") : t("a.upd_downloading", { p: u.progress || 0 });
+    $("#updGo").disabled = ph !== "available" || s.state !== "idle";
+    $("#updGo").title = s.state !== "idle" ? t("a.upd_blank") : "";
+  }
   const off = [t("p.off_displays", { n: s.displays })]; if (s.keyboard) off.push(t("p.off_kbd"));
   $("#offText").textContent = off.join(" · ");
   $("#blankSub").textContent = t((s.displays > 1 ? "p.sub_n" : "p.sub") + (s.keyboard ? "_kbd" : ""), { n: s.displays });
@@ -49,7 +58,8 @@ function renderGuard(s) {
   const g = $("#guard"), on = s.input_guard === "keys" || s.input_guard === "none";
   g.hidden = !on;
   if (on) $("#guardText").textContent = t(s.input_guard === "keys" ? "p.guard_keys" : "p.guard_none", { s: cfg ? cfg.wake.reblank_after_s : 3 });
-  const want = 452 + (on ? Math.ceil(g.getBoundingClientRect().height) + 12 : 0);
+  const ur = $("#updRow");
+  const want = 452 + (on ? Math.ceil(g.getBoundingClientRect().height) + 12 : 0) + (ur.hidden ? 0 : Math.ceil(ur.getBoundingClientRect().height));
   if (want !== popH && window.__TAURI__ && window.__TAURI__.window) {
     popH = want;
     const w = window.__TAURI__.window;
@@ -99,6 +109,9 @@ function syncNative() {
   [cfg, status] = await Promise.all([invoke("get_config"), invoke("get_status")]);
   renderCfg(); renderStatus();
   listen("nb://status", (s) => { status = s; renderStatus(); });
-  listen("nb://config", async () => { cfg = await invoke("get_config"); renderCfg(); });
+  listen("nb://config", async () => { cfg = await invoke("get_config"); renderCfg(); renderStatus(); });
   listen("nb://shown", async () => { status = await invoke("get_status"); renderStatus(); });
 })();
+
+$("#updGo").addEventListener("click", () => invoke("install_update").catch(() => {}));
+$("#updNotes").addEventListener("click", () => invoke("open_link", { which: "releases" }));
