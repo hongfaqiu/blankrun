@@ -272,7 +272,8 @@ fn main() {
             let first_run = !cfg_path.with_file_name("onboarded").exists();
             let needs_perm = plat.permissions().is_some_and(|(a, b)| !(a && b));
             for c in plat.capabilities() { nblog!("cap {} {} {}", c.id, c.status, c.tech); }
-            nblog!("permissions (accessibility, input monitoring) = {:?}; modern_standby = {}", plat.permissions(), plat.power_off_unsafe());
+            nblog!("permissions (accessibility, input monitoring) = {:?}; modern_standby = {}; fullscreen_video = {}; launch_at_login = {:?}",
+                plat.permissions(), plat.power_off_unsafe(), plat.fullscreen_video(), plat.launch_at_login());
             for (i, m) in app.available_monitors().unwrap_or_default().iter().enumerate() {
                 nblog!("monitor {} {:?} at {:?}", engine::monitor_name(i, m), m.size(), m.position());
             }
