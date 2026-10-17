@@ -83,18 +83,27 @@ fn with_physical<R>(dev: &str, mut f: impl FnMut(windows_sys::Win32::Foundation:
     }
 }
 
-/// VCP D6（电源模式）当前值：1 = 开，4/5 = 关；None = 读不到（不支持 DDC/CI 或 OSD 里关了）
+/// VCP D6（电源模式）当前值：1 = 开，2–5 = 各级待机/关；None = 读不到（不支持 DDC/CI 或 OSD 里关了）。
+/// DDC/CI 走 I²C，偶尔会失败或回垃圾值（实测 SAC DM73u 偶发 err 203、HP X27q 唤醒后回过 0xAAAA），所以重试几次、只认 1–5。
 pub fn ddc_power(dev: &str) -> Option<u32> {
-    with_physical(dev, |h| unsafe {
-        let (mut cur, mut max) = (0u32, 0u32);
-        (GetVCPFeatureAndVCPFeatureReply(h, 0xD6, std::ptr::null_mut(), &mut cur, &mut max) != 0).then_some(cur)
-    })
+    for i in 0..3 {
+        if i > 0 { std::thread::sleep(std::time::Duration::from_millis(60)); }
+        let v = with_physical(dev, |h| unsafe {
+            let (mut cur, mut max) = (0u32, 0u32);
+            (GetVCPFeatureAndVCPFeatureReply(h, 0xD6, std::ptr::null_mut(), &mut cur, &mut max) != 0).then_some(cur)
+        });
+        if let Some(v @ 1..=5) = v { return Some(v); }
+    }
+    None
 }
 
-/// 写 VCP D6：4 = DPM 关（有信号/再写 1 能唤醒），1 = 开
+/// 写 VCP D6：4 = DPM 关（有信号/再写 1 能唤醒），1 = 开。失败重试一次
 pub fn set_ddc_power(dev: &str, v: u32) -> Result<(), String> {
-    with_physical(dev, |h| unsafe { (SetVCPFeature(h, 0xD6, v) != 0).then_some(()) })
-        .ok_or_else(|| format!("SetVCPFeature(D6={v}) failed on {dev}"))
+    for i in 0..2 {
+        if i > 0 { std::thread::sleep(std::time::Duration::from_millis(100)); }
+        if with_physical(dev, |h| unsafe { (SetVCPFeature(h, 0xD6, v) != 0).then_some(()) }).is_some() { return Ok(()); }
+    }
+    Err(format!("SetVCPFeature(D6={v}) failed on {dev}"))
 }
 
 pub fn probe(dev: &str, names: &HashMap<String, String>) -> MonHw {

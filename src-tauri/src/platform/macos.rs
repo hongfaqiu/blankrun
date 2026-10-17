@@ -457,7 +457,7 @@ impl Platform for Native {
                 None if !unsafe { AXIsProcessTrusted() } => Cap::new("hook", "hook_bad", "bad", "CGEventTap · Accessibility not granted"),
                 None => Cap::new("hook", "hook_mac_ok", "ok", "CGEventTap"),
             },
-            Cap::new("ddc", "ddc_todo", "off", "DDC/CI"),
+            Cap::new("ddc", "ddc_mac", if display_services().is_some() { "ok" } else { "off" }, "DisplayServices"),
             Cap::new("rgb", "rgb_todo", "off", "OpenRGB SDK"),
         ]
     }

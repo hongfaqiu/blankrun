@@ -195,6 +195,8 @@ NB_LOCALE("zh-CN", {
   "cap.hook_bad.name": "输入拦截", "cap.hook_bad.state": "失败",
   "cap.s0_standby.name": "现代待机（S0）", "cap.s0_standby.state": "已规避", "cap.s0_standby.note": "这台电脑关屏后可能自动进入低功耗状态，自动模式下改用遮罩息屏",
   "cap.s0_ok.name": "显示器断电", "cap.s0_ok.state": "可用", "cap.s0_ok.note": "传统睡眠模式，可以安全关屏",
+  "cap.ddc_win.name": "逐台断电（DDC/CI）", "cap.ddc_win.state": "可用", "cap.ddc_win.note": "每台显示器的处理方式见「息屏」页；需要在显示器菜单里打开 DDC/CI",
+  "cap.ddc_mac.name": "内建屏关背光", "cap.ddc_mac.state": "可用", "cap.ddc_mac.note": "外接显示器暂时只能盖黑色遮罩",
   "cap.ddc_todo.name": "显示器断电（DDC/CI）", "cap.ddc_todo.state": "未实现", "cap.ddc_todo.note": "后续版本提供",
   "cap.rgb_todo.name": "OpenRGB", "cap.rgb_todo.state": "未实现", "cap.rgb_todo.note": "后续版本提供",
   "cap.stub_off.name": "当前平台", "cap.stub_off.state": "不支持", "cap.stub_off.note": "仅供开发编译，没有实际功能",

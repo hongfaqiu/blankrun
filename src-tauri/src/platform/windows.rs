@@ -209,7 +209,7 @@ impl Platform for Native {
                 Cap::new("s0", "s0_ok", "ok", "SC_MONITORPOWER")
             },
             Cap::new("kbd", "kbd_win_off", "off", "—"),
-            Cap::new("ddc", "ddc_todo", "off", "DDC/CI"),
+            Cap::new("ddc", "ddc_win", "ok", "DDC/CI · VCP D6"),
             Cap::new("rgb", "rgb_todo", "off", "OpenRGB SDK"),
         ]
     }
@@ -254,7 +254,8 @@ impl Platform for Native {
     }
 
     fn probe_monitor(&mut self, id: &str, _x: f64, _y: f64) -> super::MonHw {
-        if let Some(h) = self.mon_cache.get(id) { return h.clone(); }
+        // 读不到 DDC 的物理屏不缓存结论：下次再探（I²C 偶发失败）
+        if let Some(h) = self.mon_cache.get(id).filter(|h| h.virtual_ || h.power.is_some()) { return h.clone(); }
         let names = super::win_monitors::friendly_names();
         let h = super::win_monitors::probe(id, &names);
         crate::nblog!("monitor {id}: label={:?} adapter={:?} virtual={} power={:?}", h.label, h.detail, h.virtual_, h.power);

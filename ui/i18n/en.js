@@ -197,6 +197,8 @@ NB_LOCALE("en", {
   "cap.hook_bad.name": "Input blocking", "cap.hook_bad.state": "Failed",
   "cap.s0_standby.name": "Modern Standby (S0)", "cap.s0_standby.state": "Handled", "cap.s0_standby.note": "This PC may enter low-power standby when the display turns off, so Automatic mode uses an overlay",
   "cap.s0_ok.name": "Display power-off", "cap.s0_ok.state": "Available", "cap.s0_ok.note": "Legacy sleep model. Turning the display off is safe",
+  "cap.ddc_win.name": "Per-display power-off (DDC/CI)", "cap.ddc_win.state": "Available", "cap.ddc_win.note": "See Screen Off for how each display is handled. DDC/CI must be on in the display's menu",
+  "cap.ddc_mac.name": "Built-in display backlight", "cap.ddc_mac.state": "Available", "cap.ddc_mac.note": "External displays use a black overlay for now",
   "cap.ddc_todo.name": "Monitor power (DDC/CI)", "cap.ddc_todo.state": "Not yet", "cap.ddc_todo.note": "Planned for a later version",
   "cap.rgb_todo.name": "OpenRGB", "cap.rgb_todo.state": "Not yet", "cap.rgb_todo.note": "Planned for a later version",
   "cap.stub_off.name": "This platform", "cap.stub_off.state": "Unsupported", "cap.stub_off.note": "Development build only, no functionality",
