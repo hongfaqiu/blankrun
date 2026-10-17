@@ -120,6 +120,8 @@ pub struct Engine {
     /// 已经单独断电的屏
     mon_off: Vec<(String, f64, f64)>,
     last_mon_reassert: Option<Instant>,
+    /// 本次息屏里每块屏被重新点亮的次数
+    mon_relit: std::collections::HashMap<String, u32>,
     rdp_logged: bool,
 }
 
@@ -139,7 +141,7 @@ impl Engine {
             last_sched_check: None, last_cfg_check: None, last_status: None, kbd_available,
             displays: 1, last_mon_check: None, keep_display: false, last_asleep: None, settle_until: None,
             trigger: "manual", history: History::default(), last_heartbeat: None,
-            overlay_idx: vec![], mon_off_plan: vec![], mon_off: vec![], last_mon_reassert: None, rdp_logged: false,
+            overlay_idx: vec![], mon_off_plan: vec![], mon_off: vec![], last_mon_reassert: None, mon_relit: Default::default(), rdp_logged: false,
         };
         // 息屏记录；上次息屏中途崩溃/强退的那一条记为 crash
         e.history = History::from_json(&std::fs::read_to_string(e.history_path()).unwrap_or_default());
@@ -291,6 +293,7 @@ impl Engine {
         let list: Vec<_> = mons.iter().map(|(m, _, _)| m.clone()).collect();
         let plan = monitors::plan(&self.cfg.display, &list, !self.plat.power_off_unsafe(), self.cfg.wake.allow_remote);
         self.power_off = plan.global_off;
+        self.mon_relit.clear();
         self.overlay_idx = plan.per.iter().enumerate().filter(|(_, m)| **m != Method::Skip).map(|(i, _)| i).collect();
         self.mon_off_plan = plan.per.iter().zip(&mons).filter(|(m, _)| **m == Method::Off).map(|(_, (m, x, y))| (m.id.clone(), *x, *y)).collect();
         for ((m, _, _), how) in mons.iter().zip(&plan.per) { nblog!("plan: {} ({}) virtual={} power={:?} -> {how:?}", m.id, m.label, m.virtual_, m.power); }
@@ -469,7 +472,12 @@ impl Engine {
             // 单独断电的屏被远程会话 / 信号变化重新点亮：再关一次
             if !self.policy.is_holding() {
                 for (id, x, y) in self.mon_off.clone() {
+                    if self.mon_relit.get(&id).copied().unwrap_or(0) >= 3 { continue; }
                     if self.plat.monitor_lit(&id, x, y) == Some(true) {
+                        let n = self.mon_relit.entry(id.clone()).or_insert(0);
+                        *n += 1;
+                        // 有的显示器有信号就自己醒（或 D6 读数不可靠）：反复关会每 5 秒闪一次，3 次后放弃，只留遮罩
+                        if *n >= 3 { nblog!("monitor {id}: keeps waking up, leaving it to the overlay"); continue; }
                         nblog!("monitor {id}: lit again, powering off");
                         let _ = self.plat.monitor_power(&id, x, y, true);
                     }
