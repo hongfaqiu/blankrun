@@ -132,7 +132,7 @@ dependencies = [
 
 [[package]]
 name = "blankrun"
-version = "0.1.0-alpha"
+version = "0.1.0"
 dependencies = [
  "blankrun-core",
  "libc",
@@ -145,7 +145,7 @@ dependencies = [
 
 [[package]]
 name = "blankrun-core"
-version = "0.1.0-alpha"
+version = "0.1.0"
 dependencies = [
  "serde",
  "toml 0.8.23",

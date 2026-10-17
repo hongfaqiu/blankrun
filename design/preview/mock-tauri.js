@@ -36,7 +36,7 @@
     core: { invoke: async (cmd, args) => {
       calls.push([cmd, args]);
       switch (cmd) {
-        case "get_info": return { os, version: "0.1.0-alpha", system_locale: sysLocale, locales: [{ code: "en", name: "English" }, { code: "zh-CN", name: "简体中文" }], config_path: os === "mac" ? "/Users/me/Library/Application Support/com.cosfoc.blankrun/config.toml" : "C:\\Users\\me\\AppData\\Roaming\\com.cosfoc.blankrun\\config.toml" };
+        case "get_info": return { os, version: "0.1.0", system_locale: sysLocale, locales: [{ code: "en", name: "English" }, { code: "zh-CN", name: "简体中文" }], config_path: os === "mac" ? "/Users/me/Library/Application Support/com.cosfoc.blankrun/config.toml" : "C:\\Users\\me\\AppData\\Roaming\\com.cosfoc.blankrun\\config.toml" };
         case "get_config": return JSON.parse(JSON.stringify(cfg));
         case "save_config": Object.assign(cfg, args.cfg); setTimeout(() => window.__emit("nb://config", null), 0); return null;
         case "get_status": return status;

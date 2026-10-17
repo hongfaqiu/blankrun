@@ -83,13 +83,14 @@ jobs:
         with:
           path: dist
           merge-multiple: true
-      - name: Create pre-release
+      - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
         run: |
           ls -l dist
           notes=".github/release-notes/${TAG}.md"
+          [ -f "$notes" ] || notes=".github/release-notes/${TAG#v}.md"
           [ -f "$notes" ] || notes=/dev/null
-          pre=""; case "$TAG" in *-*) pre="--prerelease";; esac
+          pre="--latest"; case "$TAG" in *-*) pre="--prerelease";; esac
           gh release create "$TAG" dist/* --title "BlankRun 息屏跑 ${TAG}" --notes-file "$notes" $pre --verify-tag
