@@ -11,8 +11,8 @@ function renderCfg() {
   const wake = $("#wakeText");
   if (w.method === "hotkey") {
     const k = h("span", "keys"); renderKeys(k, w.hotkey);
-    wake.replaceChildren("按住 ", k, ` ${(w.hold_ms / 1000).toFixed(1).replace(/\.0$/, "")} 秒`);
-  } else wake.textContent = WAKE_TEXT[w.method] || w.method;
+    wake.replaceChildren(t("p.hold_a"), k, t("p.hold_b", { s: secs(w.hold_ms) }));
+  } else wake.textContent = t("wake." + w.method);
   if (OS === "mac") renderKeys($("#emKeys"), cfg.safety.emergency_hotkey);
   else $("#emKeys").replaceChildren(h("span", "mono", cfg.safety.emergency_hotkey));
 }
@@ -24,10 +24,10 @@ function renderStatus() {
   $("#countBox").hidden = !counting;
   if (counting) $("#count").textContent = `${Math.floor(s.countdown_left / 60)}:${pad2(s.countdown_left % 60)}`;
   $("#stDot").className = "dot" + (counting ? " ink" : s.state === "blank" ? " standby" : "");
-  $("#stText").textContent = counting ? "倒计时中 · 已开始防睡眠" : s.state === "blank" ? "息屏中 · 正在防睡眠" : "待命 · 未在防睡眠";
-  const off = [`${s.displays} 台显示器`]; if (s.keyboard) off.push("键盘背光");
+  $("#stText").textContent = t(counting ? "p.counting" : s.state === "blank" ? "p.blanked" : "p.idle");
+  const off = [t("p.off_displays", { n: s.displays })]; if (s.keyboard) off.push(t("p.off_kbd"));
   $("#offText").textContent = off.join(" · ");
-  $("#blankSub").textContent = `关掉${s.displays > 1 ? ` ${s.displays} 台` : ""}显示器${s.keyboard ? "和键盘背光" : ""}，电脑保持运行`;
+  $("#blankSub").textContent = t((s.displays > 1 ? "p.sub_n" : "p.sub") + (s.keyboard ? "_kbd" : ""), { n: s.displays });
 
   const sc = s.schedule;
   $("#planToggle").classList.toggle("on", sc.enabled);
@@ -35,7 +35,7 @@ function renderStatus() {
   $("#planDot").classList.toggle("standby", sc.enabled && !sc.skipped);
   document.body.classList.toggle("plan-off", !sc.enabled);
   const pt = $("#planTime"); pt.replaceChildren(sc.start, h("span", "arrow", "→"), sc.end);
-  $("#planWhen").textContent = !sc.enabled ? "未开启" : sc.skipped ? "今晚已跳过" : sc.in_window ? "进行中" : sc.until_min != null ? `${fmtDur(sc.until_min)}后开始` : "";
+  $("#planWhen").textContent = !sc.enabled ? t("p.when_off") : sc.skipped ? t("p.when_skipped") : sc.in_window ? t("p.when_in") : sc.until_min != null ? t("p.when_until", { d: fmtDur(sc.until_min) }) : "";
   drawTrack($("#track"), sc.start, sc.end, s.now_min);
 }
 
@@ -63,8 +63,16 @@ document.addEventListener("keydown", (e) => {
   if (e.metaKey && e.key.toLowerCase() === "q") invoke("quit");
 });
 
+/** 托盘菜单和窗口标题跟着界面语言走（弹出面板在启动时就加载了，由它来同步） */
+function syncNative() {
+  const text = {};
+  ["tray.blank", "tray.settings", "tray.quit", "tray.tooltip", "title.popover", "title.settings", "title.onboarding"].forEach((k) => (text[k] = t(k)));
+  invoke("apply_locale", { text });
+}
+
 (async () => {
-  await initPlatform();
+  await initPlatform(() => { syncNative(); renderCfg(); renderStatus(); });
+  syncNative();
   renderDelay();
   [cfg, status] = await Promise.all([invoke("get_config"), invoke("get_status")]);
   renderCfg(); renderStatus();

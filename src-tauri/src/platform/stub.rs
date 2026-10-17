@@ -10,7 +10,7 @@ impl Platform for Native {
     fn keyboard_backlight(&mut self, _off: bool) -> Result { Ok(()) }
     fn input_hook(&mut self, _on: bool) -> Result { Ok(()) }
     fn lock_screen(&mut self) -> Result { Ok(()) }
-    fn capabilities(&mut self) -> Vec<Cap> { vec![Cap::new("stub", "当前平台", "仅供开发编译，没有实际功能", "off", "不支持")] }
+    fn capabilities(&mut self) -> Vec<Cap> { vec![Cap::new("stub", "stub_off", "off", std::env::consts::OS)] }
 }
 
 pub fn emergency_restore() {}
@@ -27,4 +27,9 @@ pub fn local_time() -> (u8, u16) {
 
 pub fn reveal(path: &std::path::Path) {
     let _ = std::process::Command::new("xdg-open").arg(path.parent().unwrap_or(path)).spawn();
+}
+
+pub fn system_locale() -> String {
+    ["LC_ALL", "LC_MESSAGES", "LANG"].iter().filter_map(|k| std::env::var(k).ok()).find(|v| !v.is_empty() && v != "C" && v != "POSIX")
+        .map(|v| v.split('.').next().unwrap_or("").replace('_', "-")).unwrap_or_default()
 }

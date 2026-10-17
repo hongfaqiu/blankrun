@@ -31,7 +31,7 @@
 ```toml
 [general]
 launch_at_login = false    # 登录 / 开机时启动，默认关，由用户自己打开
-language = "auto"          # auto | zh | en（auto = 跟随系统）
+language = "auto"          # auto（跟随系统）或 ui/i18n 里的语言代码：zh-CN | en …；旧值 zh 会迁移成 zh-CN
 blank_now_hotkey = "Ctrl+Alt+B"   # 立即息屏；Mac 上显示为 ⌃⌥B
 [wake]
 method = "hotkey"          # any_key | hotkey | mouse_move | click | password | schedule_only

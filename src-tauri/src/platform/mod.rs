@@ -8,13 +8,15 @@ use serde::Serialize;
 
 pub type Result<T = ()> = std::result::Result<T, String>;
 
-/// 诊断页「这台电脑能做到什么」里的一行
+/// 诊断页「这台电脑能做到什么」里的一行。
+/// 文案不在这里：界面按 `key` 去 ui/i18n/<语言>.js 里查 `cap.<key>.name / .state / .note`；
+/// `tech` 只放接口名和原始错误（不翻译）。
 #[derive(Debug, Clone, Serialize)]
-pub struct Cap { pub id: &'static str, pub label: &'static str, pub detail: String, pub status: &'static str /* ok|warn|bad|off */, pub text: String }
+pub struct Cap { pub id: &'static str, pub key: &'static str, pub status: &'static str /* ok|warn|bad|off */, pub tech: String }
 
 impl Cap {
-    pub fn new(id: &'static str, label: &'static str, detail: impl Into<String>, status: &'static str, text: impl Into<String>) -> Self {
-        Self { id, label, detail: detail.into(), status, text: text.into() }
+    pub fn new(id: &'static str, key: &'static str, status: &'static str, tech: impl Into<String>) -> Self {
+        Self { id, key, status, tech: tech.into() }
     }
 }
 
@@ -61,16 +63,16 @@ pub fn now_ms() -> u64 { T0.get_or_init(Instant::now).elapsed().as_millis() as u
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(target_os = "macos")]
-pub use macos::{emergency_restore, local_time, raise_overlay, reveal, Native};
+pub use macos::{emergency_restore, local_time, raise_overlay, reveal, system_locale, Native};
 
 #[cfg(windows)]
 mod windows;
 #[cfg(windows)]
-pub use self::windows::{emergency_restore, local_time, reveal, Native};
+pub use self::windows::{emergency_restore, local_time, reveal, system_locale, Native};
 
 #[cfg(not(any(target_os = "macos", windows)))]
 mod stub;
 #[cfg(not(any(target_os = "macos", windows)))]
-pub use stub::{emergency_restore, local_time, reveal, Native};
+pub use stub::{emergency_restore, local_time, reveal, system_locale, Native};
 
 pub const OS: &str = if cfg!(target_os = "macos") { "mac" } else if cfg!(windows) { "win" } else { "linux" };

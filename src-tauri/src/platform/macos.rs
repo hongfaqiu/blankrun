@@ -29,6 +29,10 @@ extern "C" {
     fn CFRunLoopRunInMode(mode: CFStringRef, seconds: f64, return_after_source: u8) -> i32;
     fn CFMachPortCreateRunLoopSource(alloc: *const c_void, port: *mut c_void, order: isize) -> *mut c_void;
     fn CFMachPortInvalidate(port: *mut c_void);
+    fn CFLocaleCopyPreferredLanguages() -> *const c_void;
+    fn CFArrayGetCount(a: *const c_void) -> isize;
+    fn CFArrayGetValueAtIndex(a: *const c_void, i: isize) -> *const c_void;
+    fn CFStringGetCString(s: CFStringRef, buf: *mut c_char, len: isize, enc: u32) -> u8;
 }
 
 #[link(name = "IOKit", kind = "framework")]
@@ -192,7 +196,7 @@ fn tap_thread(ready: std::sync::mpsc::Sender<std::result::Result<(), String>>) {
     let mask: u64 = [1u32, 2, 3, 4, 5, 6, 7, 10, 11, 12, 14, 22, 25, 26, 27].iter().fold(0, |m, t| m | (1u64 << t));
     unsafe {
         let tap = CGEventTapCreate(1 /* session */, 0 /* head */, 0 /* default=可吞 */, mask, tap_cb, std::ptr::null_mut());
-        if tap.is_null() { let _ = ready.send(Err("CGEventTapCreate 失败：需要在「隐私与安全性 › 辅助功能」里允许 BlankRun（息屏跑）".into())); return; }
+        if tap.is_null() { let _ = ready.send(Err("CGEventTapCreate failed: allow BlankRun in Privacy & Security › Accessibility".into())); return; }
         TAP.store(tap as usize, Relaxed);
         let src = CFMachPortCreateRunLoopSource(std::ptr::null(), tap, 0);
         CFRunLoopAddSource(CFRunLoopGetCurrent(), src, kCFRunLoopDefaultMode);
@@ -270,10 +274,10 @@ impl Platform for Native {
         if off {
             let Some(cur) = kb_get() else { return Ok(()) }; // 不支持：降级，只关屏幕
             if KB_SAVED.load(Relaxed) == u32::MAX { KB_SAVED.store(cur.to_bits(), Relaxed); }
-            if !kb_set(0.0) { return Err("setBrightness:forKeyboard: 返回失败".into()); }
+            if !kb_set(0.0) { return Err("setBrightness:forKeyboard: failed".into()); }
         } else {
             let bits = KB_SAVED.swap(u32::MAX, Relaxed);
-            if bits != u32::MAX && !kb_set(f32::from_bits(bits)) { return Err("还原键盘背光失败".into()); }
+            if bits != u32::MAX && !kb_set(f32::from_bits(bits)) { return Err("restoring keyboard backlight failed".into()); }
         }
         Ok(())
     }
@@ -307,27 +311,27 @@ impl Platform for Native {
                 }
             }
         }
-        Err("SACLockScreenImmediate 不可用".into())
+        Err("SACLockScreenImmediate unavailable".into())
     }
 
     fn capabilities(&mut self) -> Vec<Cap> {
         let detail = "IOPMAssertion · PreventUserIdleSystemSleep";
         vec![
             match &self.awake_err {
-                Some(e) => Cap::new("awake", "防止系统睡眠", format!("{detail} · {e}"), "bad", "调用失败"),
-                None => Cap::new("awake", "防止系统睡眠", detail, "ok", "正常"),
+                Some(e) => Cap::new("awake", "awake_bad", "bad", format!("{detail} · {e}")),
+                None => Cap::new("awake", "awake_ok", "ok", detail),
             },
             if kb_probe().is_some() {
-                Cap::new("kbd", "键盘背光", "CoreBrightness · 系统更新后可能失效，失效时只关屏幕", "ok", "可用")
+                Cap::new("kbd", "kbd_mac_ok", "ok", "CoreBrightness")
             } else {
-                Cap::new("kbd", "键盘背光", "CoreBrightness 接口不可用（没有背光键盘，或系统更新后接口变了），只关屏幕", "off", "不可用")
+                Cap::new("kbd", "kbd_mac_off", "off", "CoreBrightness")
             },
             match &self.tap_err {
-                Some(e) => Cap::new("hook", "输入拦截", format!("CGEventTap · {e}"), "bad", "失败"),
-                None => Cap::new("hook", "输入拦截", "CGEventTap · 会话级", "ok", "正常"),
+                Some(e) => Cap::new("hook", "hook_bad", "bad", format!("CGEventTap · {e}")),
+                None => Cap::new("hook", "hook_mac_ok", "ok", "CGEventTap"),
             },
-            Cap::new("ddc", "显示器断电（DDC/CI）", "后续版本提供", "off", "未实现"),
-            Cap::new("rgb", "OpenRGB", "后续版本提供", "off", "未实现"),
+            Cap::new("ddc", "ddc_todo", "off", "DDC/CI"),
+            Cap::new("rgb", "rgb_todo", "off", "OpenRGB SDK"),
         ]
     }
 
@@ -353,7 +357,7 @@ impl Platform for Native {
         let Some(s) = saved else { return Ok(()) };
         declare_user_activity();
         if let Some(v) = s.strip_prefix("kbd=").and_then(|v| v.trim().parse::<f32>().ok()) {
-            if !kb_set(v) { return Err("还原键盘背光失败".into()); }
+            if !kb_set(v) { return Err("restoring keyboard backlight failed".into()); }
         }
         Ok(())
     }
@@ -394,5 +398,22 @@ pub fn raise_overlay(ns_window: *mut c_void) {
         let set_cb: extern "C" fn(Id, Id, usize) = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
         // canJoinAllSpaces | stationary | fullScreenAuxiliary
         set_cb(ns_window, sel("setCollectionBehavior:"), 1 | 16 | 256);
+    }
+}
+
+/// 系统首选语言（BCP 47，例如 "zh-Hans-CN"、"en-US"）；取不到时返回空串
+pub fn system_locale() -> String {
+    unsafe {
+        let a = CFLocaleCopyPreferredLanguages();
+        if a.is_null() { return String::new(); }
+        let mut out = String::new();
+        if CFArrayGetCount(a) > 0 {
+            let mut buf = [0 as c_char; 64];
+            if CFStringGetCString(CFArrayGetValueAtIndex(a, 0), buf.as_mut_ptr(), buf.len() as isize, UTF8) != 0 {
+                out = std::ffi::CStr::from_ptr(buf.as_ptr()).to_string_lossy().into_owned();
+            }
+        }
+        CFRelease(a);
+        out
     }
 }

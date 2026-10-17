@@ -10,9 +10,9 @@ function check() {
   s.append(p); return s;
 }
 function stepUI(el, ok, which) {
-  if (ok) { const d = h("span", "done"); d.append(check(), "已开启"); el.replaceChildren(d); return; }
+  if (ok) { const d = h("span", "done"); d.append(check(), t("ob.enabled")); el.replaceChildren(d); el.dataset.state = "ok"; return; }
   if (el.dataset.state === "ask") return;
-  const b = h("button", "btn primary", "打开系统设置");
+  const b = h("button", "btn primary", t("btn.open_settings"));
   b.onclick = () => invoke("request_permission", { which });
   el.replaceChildren(b);
   el.dataset.state = "ask";
@@ -23,7 +23,7 @@ async function refresh() {
   stepUI($("#s1"), ax, "accessibility"); if (ax) $("#s1").dataset.state = "ok";
   stepUI($("#s2"), inp, "input"); if (inp) $("#s2").dataset.state = "ok";
   const n = (+ax) + (+inp);
-  $("#doneText").textContent = `已完成 ${n} / 2`;
+  $("#doneText").textContent = t("ob.progress", { n });
   $("#doneDot").className = "dot" + (n === 2 ? " ok" : "");
   $("#done").disabled = n < 2;
   $("#done").classList.toggle("primary", n === 2);
@@ -31,9 +31,11 @@ async function refresh() {
 $("#skip").addEventListener("click", () => invoke("finish_onboarding"));
 $("#done").addEventListener("click", () => invoke("finish_onboarding"));
 (async () => {
-  await initPlatform();
+  // 换语言时清掉按钮让它按新语言重建
+  await initPlatform(() => { $$("#s1, #s2").forEach((e) => (e.dataset.state = "")); refresh(); });
   const cfg = await invoke("get_config");
   renderKeys($("#wakeKeys"), cfg.wake.hotkey);
+  listen("nb://config", async () => { const c = await invoke("get_config"); renderKeys($("#wakeKeys"), c.wake.hotkey); });
   refresh();
   setInterval(() => { if (!document.hidden) refresh(); }, 1000);
 })();

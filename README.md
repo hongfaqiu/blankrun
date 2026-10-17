@@ -1,109 +1,116 @@
 <p align="center"><img src="src-tauri/icons/128x128.png" width="72" alt="BlankRun icon"></p>
 
-<h1 align="center">息屏跑 BlankRun</h1>
+<h1 align="center">BlankRun</h1>
 
-<p align="center">夜里关掉屏幕和灯，让 AI 接着跑。<br>Turn the screens off at night. Keep your AI agents running.</p>
+<p align="center">Turn the screens off at night. Keep your AI agents running.</p>
 
-<p align="center"><a href="https://blankrun.cosfoc.com">官网 Website</a> · <a href="https://github.com/hongfaqiu/blankrun/releases">Releases</a> · macOS + Windows · MIT</p>
+<p align="center"><b>English</b> · <a href="README.zh-CN.md">简体中文</a></p>
 
-> **状态：v0.1.0-alpha 早期预览版，还没有在真机上测试过，安装包未签名。** [下载 / Download](https://github.com/hongfaqiu/blankrun/releases/tag/v0.1.0-alpha)
-> **Status: v0.1.0-alpha early preview. Not yet tested on real hardware. Unsigned builds.**
+<p align="center"><a href="https://blankrun.cosfoc.com">Website</a> · <a href="https://github.com/hongfaqiu/blankrun/releases">Download</a> · macOS + Windows · MIT</p>
 
-<p align="center"><img src="design/png/popover-mac.png" width="380" alt="菜单栏面板"> <img src="design/png/popover-mac-dark.png" width="380" alt="菜单栏面板（深色）"></p>
+> **Status: v0.1.0-alpha, an early preview. Not yet tested on real hardware. The installers are unsigned.** [Download v0.1.0-alpha](https://github.com/hongfaqiu/blankrun/releases/tag/v0.1.0-alpha)
 
-## 这是什么
+<p align="center"><img src="docs/screenshots/popover-mac-en.png" width="380" alt="Menu bar panel"> <img src="docs/screenshots/popover-mac-en-dark.png" width="380" alt="Menu bar panel (dark)"></p>
 
-睡前给 Claude Code、Codex 或本地模型布置好一晚上的任务，顺便挂着编译和下载。可屏幕亮一整夜太刺眼，让电脑睡眠任务又会断。
+## What it is
 
-息屏跑常驻在菜单栏（Windows 上是托盘），一键把屏幕真正关掉，同时阻止系统睡眠，让任务继续跑。息屏期间它会拦下误触，只认你设定的唤醒方式。
+You queue up a night of work for Claude Code, Codex or a local model, plus a build and some downloads. A screen glowing all night is too bright, but letting the computer sleep stops the jobs.
 
-计划中的功能如下，代码已写，**尚未在真机上验证**：
+BlankRun lives in the menu bar (the notification area on Windows). One click really turns the displays off and blocks system sleep, so your jobs keep running. While the screen is off, it ignores accidental input and only wakes the way you chose.
 
-- **立即息屏 / 倒计时息屏**：可以立即息屏，也可以延迟 1、5、15 分钟。
-- **息屏时防睡眠**：macOS 用 IOPMAssertion，Windows 用 SetThreadExecutionState。
-- **定时计划**：例如每天 23:30 到 07:30，支持跨午夜，也可以跳过今晚。
-- **可配置唤醒**：任意键、按住快捷键（默认 ⌃⌥W 按住 1 秒）、移动鼠标、点击、唤醒后锁屏输密码，或者只在定时结束时唤醒；另有一个紧急恢复快捷键。
-- **防误触**：息屏期间拦截键鼠输入；屏幕被意外点亮时，几秒内自动再关。
-- **键盘背光**：macOS 上一起关掉。用的是私有接口，运行时先探测，不可用时自动跳过。
-- **Windows Modern Standby**：检测到关屏会让机器进入低功耗待机的机型时，改用全黑遮罩，避免任务被挂起。
-- **体积小**：基于 Tauri 2，前端零依赖。v0.1.0-alpha 实测：Windows 安装包 1.2 MB，macOS 通用版 DMG 2.9 MB。
-- **本地运行**：不联网，不上传。
+These are the planned features. The code is written but **not yet verified on real hardware**:
 
-后续版本：外接显示器断电（DDC/CI）、RGB 灯控制、开机启动、全局快捷键、开始前提醒、全屏视频时跳过定时。
+- **Blank now or after a delay**: right away, or after 1, 5 or 15 minutes.
+- **No sleep while blank**: IOPMAssertion on macOS, SetThreadExecutionState on Windows.
+- **Schedule**: for example 23:30 to 07:30 every day. Works across midnight, and you can skip just tonight.
+- **Configurable wake**: any key, holding a shortcut (⌃⌥W for 1 second by default), moving the mouse, clicking, locking on wake so you enter your password, or only when the schedule ends. A separate emergency shortcut always restores everything.
+- **No accidental wake**: keyboard and mouse input is blocked while blank. If the screen lights up anyway, it goes dark again within seconds.
+- **Keyboard backlight**: turned off together with the screen on macOS. It uses a private API that is probed at runtime and skipped when unavailable.
+- **Windows Modern Standby**: on PCs that drop into low-power standby when the display turns off, BlankRun uses a black overlay instead so jobs aren't suspended.
+- **English and Chinese UI**: follows the system language by default. Switch in Settings › General › Language and the tray menu, wake hints and onboarding update immediately, with no restart.
+- **Small**: built on Tauri 2 with a zero-dependency UI. Measured for v0.1.0-alpha: 1.2 MB Windows installer, 2.9 MB universal macOS DMG.
+- **Local only**: no network, no uploads.
 
-## What is it
+Later versions: external monitor power via DDC/CI, RGB lighting, launch at login, a global shortcut, a reminder before the schedule starts, skipping during fullscreen video.
 
-You queue up a night of work for Claude Code, Codex or a local model, plus a build and some downloads. The screen shouldn't glow all night, but letting the computer sleep would stop the jobs.
+## Screenshots
 
-BlankRun lives in the menu bar (system tray on Windows). One click really turns the displays off while blocking system sleep, so jobs keep running. While the screen is off it swallows accidental input and only wakes the way you choose: any key, hold a hotkey, mouse move, click, password, or only when the schedule ends. It also handles schedules, keyboard backlight on macOS, auto re-blank, and a fallback for Windows Modern Standby. It is built with Tauri 2, ships 1–3 MB installers and runs fully offline.
-
-All of this is written but **not yet verified on real hardware**. Expect rough edges.
-
-## 截图 Screenshots
-
-| 设置 · 唤醒 | 息屏中 | 首次引导 |
+| Settings · Wake | Screen off | First-run setup |
 |---|---|---|
-| <img src="design/png/settings-mac-wake.png" width="300"> | <img src="design/png/blank-mac-hint.png" width="300"> | <img src="design/png/onboarding-mac.png" width="300"> |
+| <img src="docs/screenshots/settings-mac-wake-en.png" width="300"> | <img src="docs/screenshots/overlay-mac-hint-en.png" width="300"> | <img src="docs/screenshots/onboarding-mac-en.png" width="300"> |
 
-| Windows 托盘面板 | 设置 · 定时 (Windows) |
+| Windows tray panel | Settings · Schedule (Windows) |
 |---|---|
-| <img src="design/png/popover-win.png" width="260"> | <img src="design/png/settings-win-schedule.png" width="360"> |
+| <img src="docs/screenshots/popover-win-en.png" width="260"> | <img src="docs/screenshots/settings-win-schedule-en.png" width="360"> |
 
-截图都是设计稿渲染出来的，真机上字体会更接近系统原生。
+Screenshots are rendered from the real UI in a browser preview. On a real machine, fonts look closer to the native system UI.
 
-## 文档
+## Docs
 
-- [DESIGN.md](DESIGN.md)：设计文档
-- [RESEARCH.md](RESEARCH.md)：调研与规划
-- [design/](design/)：界面设计稿与设计卡
-- [site/](site/)：官网源文件（静态 HTML/CSS）
+- [DESIGN.md](DESIGN.md): design document (Chinese)
+- [RESEARCH.md](RESEARCH.md): research and plan (Chinese)
+- [design/](design/): UI mockups and design card
+- [site/](site/): website source (static HTML/CSS)
 
-## 目录结构
+## Layout
 ```
-Cargo.toml              workspace + 体积优先的 release profile
-crates/core/            平台无关核心（可在任何主机 cargo test）
-  src/state.rs          状态机 Idle → Armed → ScreenOff → Waking，输出 Action
-  src/config.rs         config.toml 结构（DESIGN.md §3），全部字段有默认值
-  src/schedule.rs       定时计划（跨午夜、距下次开始、开始/结束边沿 + 跳过今晚）
-  src/wake.rs           唤醒策略 / 防误触（按住快捷键、鼠标累计位移、紧急键）
-  src/hotkey.rs         "Ctrl+Alt+W" 解析与匹配
-src-tauri/              Tauri 2 托盘/菜单栏应用
-  src/main.rs           托盘与弹出面板、窗口、Tauri 命令（配置、息屏、诊断、权限）
-  src/engine.rs         引擎线程：状态机 + 倒计时 + 定时 + 唤醒策略 + 遮罩窗口 + 意外点亮后重新息屏
-  src/platform/mod.rs   Platform trait、输入事件通道
-  src/platform/macos.rs   IOPMAssertion、IORequestIdle/pmset、CoreBrightness 背光（运行时探测）、CGEventTap（未在真机测试）
-  src/platform/windows.rs SetThreadExecutionState、SC_MONITORPOWER、Modern Standby 检测、显示器状态回调、LL 键鼠钩子
-  src/platform/stub.rs  其他平台 no-op，仅供编译检查
-ui/                     正式界面：原生 HTML/JS/CSS，无框架、无打包器、无内联样式（CSP）
-  popover / settings / overlay / onboarding .html + 各自的 .js/.css，共享 nb.css、common.js
-site/                   官网（静态 HTML/CSS）；push 到 main 后由 Cloudflare Pages（项目 blankrun-site）自动部署到 blankrun.cosfoc.com
-design/                 设计稿；design/preview/ 用假的 __TAURI__ 在 Chrome 里渲染 ui/ 检查布局
+Cargo.toml              workspace + size-first release profile
+crates/core/            platform-independent core (cargo test on any host)
+  src/state.rs          state machine Idle → Armed → ScreenOff → Waking, emits Actions
+  src/config.rs         config.toml schema (DESIGN.md §3); every field has a default
+  src/schedule.rs       schedule (across midnight, time until next start, start/end edges, skip tonight)
+  src/wake.rs           wake policy and accidental-wake guard (hold shortcut, mouse distance, emergency key)
+  src/hotkey.rs         "Ctrl+Alt+W" parsing and matching
+  src/locale.rs         UI language choice (match system or explicit; same rules as ui/common.js)
+src-tauri/              Tauri 2 tray / menu bar app
+  src/main.rs           tray and panel, windows, Tauri commands (config, blank, diagnostics, permissions, locale)
+  src/engine.rs         engine thread: state machine, countdown, schedule, wake policy, overlays, re-blank
+  src/platform/mod.rs   Platform trait, input event channel
+  src/platform/macos.rs   IOPMAssertion, IORequestIdle/pmset, CoreBrightness backlight (probed), CGEventTap (untested on hardware)
+  src/platform/windows.rs SetThreadExecutionState, SC_MONITORPOWER, Modern Standby detection, display-state callback, LL hooks
+  src/platform/stub.rs  no-op for other platforms, compile checks only
+ui/                     the real UI: plain HTML/JS/CSS, no framework, no bundler, no inline styles (CSP)
+  popover / settings / overlay / onboarding .html + their .js/.css, shared nb.css and common.js
+  i18n/<code>.js        UI strings (en, zh-CN), one file per language
+site/                   website (static HTML/CSS); pushes to main auto-deploy via Cloudflare Pages (project blankrun-site) to blankrun.cosfoc.com
+design/                 mockups; design/preview/ renders ui/ in Chrome with a fake __TAURI__ to check layouts
+docs/screenshots/       English screenshots used in this README
 ```
-配置文件位置：系统应用配置目录下的 `com.cosfoc.blankrun/config.toml`。
+Config file: `com.cosfoc.blankrun/config.toml` in the system app-config directory.
 
-## 体积目标
-| 产物 | 目标 |
+## Size targets
+| Artifact | Target |
 |---|---|
-| Windows 安装包（NSIS, lzma，WebView2 用系统自带） | ≤ 3 MB |
+| Windows installer (NSIS, lzma, system WebView2) | ≤ 3 MB |
 | macOS DMG | ≤ 4 MB |
-| 主程序（单架构） | ≤ 5 MB |
+| Main binary (single arch) | ≤ 5 MB |
 
-手段：`opt-level="z"`、`lto`、`codegen-units=1`、`panic="abort"`、`strip`；Tauri 关闭默认特性只留 `wry`/`tray-icon`/`compression`；
-Windows 用 `windows-sys` 而非 `windows`；核心不用 chrono/regex/tokio 等重依赖；前端零依赖。新增 crate 前请先评估体积。
+How: `opt-level="z"`, `lto`, `codegen-units=1`, `panic="abort"`, `strip`; Tauri default features off, keeping only `wry`/`tray-icon`/`compression`;
+`windows-sys` instead of `windows`; no chrono/regex/tokio in the core; zero frontend dependencies. Check the size impact before adding a crate.
 
-## 开发
+## Development
 ```
-cargo test -p blankrun-core                              # 核心单测，任意平台
-cargo check -p blankrun --target x86_64-pc-windows-gnu   # 在 Linux 上检查 Windows 代码
-cargo install tauri-cli --version "^2" && cargo tauri build  # 在 Mac / Windows 本机打包
+cargo test -p blankrun-core                              # core tests, any platform
+cargo check -p blankrun --target x86_64-pc-windows-gnu   # check the Windows code on Linux
+cargo install tauri-cli --version "^2" && cargo tauri build  # package on a Mac / Windows machine
 ```
-macOS 目标只能在 Mac（或 CI 的 macOS runner）上构建。Linux 上可以做类型检查（不链接）：
+macOS targets only build on a Mac (or a macOS CI runner). On Linux you can type-check without linking:
 ```
 rustup target add aarch64-apple-darwin
-# objc2-exception-helper 的构建脚本要编译 .m 文件，用一个只产生空目标文件的假 cc 绕过（只用于 check）
+# objc2-exception-helper's build script compiles a .m file; a fake cc that emits an empty object works around it (check only)
 CC_aarch64_apple_darwin=$PWD/tools/fake-cc.sh AR_aarch64_apple_darwin=ar cargo check -p blankrun --target aarch64-apple-darwin
 ```
-界面预览：`NODE_PATH=<含 playwright-core 的 node_modules> node design/preview/render.mjs`，输出到 `design/preview/out/`。
+UI preview: `NODE_PATH=<node_modules with playwright-core> node design/preview/render.mjs` renders both languages to `design/preview/out/`.
+
+Releases: pushing a `v*` tag runs `.github/workflows/release.yml`, which builds a universal macOS DMG and a Windows NSIS installer and publishes a GitHub Release (tags with `-` become pre-releases). Running the workflow manually builds without publishing.
+
+## Adding a UI language
+
+1. Copy `ui/i18n/en.js` to `ui/i18n/<code>.js` (for example `ja.js` or `zh-TW.js`). Change `NB_LOCALE("en", …)` and `"_name"` to the new code and the language's own name (for example "日本語").
+2. Translate the strings. Anything left out falls back to English. `.mac` / `.win` suffixes are platform-specific variants, `{n}` and similar are placeholders, and `{ "one": …, "other": … }` are plural forms.
+3. Rebuild. `build.rs` scans `ui/i18n/`, so the language shows up in Settings › General › Language, and "Match system" picks it automatically.
+
+Before the UI loads, the tray menu uses `tray_text` in `src-tauri/src/main.rs` (Chinese and English). Once the UI loads it switches to the `tray.*` strings from the locale file, so a new language needs no Rust changes.
 
 ## License
 

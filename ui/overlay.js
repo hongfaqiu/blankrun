@@ -6,11 +6,11 @@ function line() {
   const w = cfg.wake, el = $("#line");
   if (w.method === "hotkey") {
     const k = h("span", "keys"); renderKeys(k, w.hotkey, "k");
-    el.replaceChildren("按住", k, `${(w.hold_ms / 1000).toFixed(1).replace(/\.0$/, "")} 秒唤醒`);
+    el.replaceChildren(t("o.hold_a"), k, t("o.hold_b", { s: secs(w.hold_ms) }));
   } else if (w.method === "schedule_only") {
     const k = h("span", "keys"); renderKeys(k, cfg.safety.emergency_hotkey, "k");
-    el.replaceChildren(`${cfg.schedule.end} 自动唤醒 · 紧急恢复`, k);
-  } else el.textContent = (WAKE_TEXT[w.method] || "") + "唤醒";
+    el.replaceChildren(t("o.sched", { end: cfg.schedule.end }), k);
+  } else el.textContent = t("o.wake." + w.method);
 }
 
 function showHint(p) {
@@ -38,4 +38,5 @@ function showHint(p) {
   await initPlatform();
   cfg = await invoke("get_config");
   listen("nb://overlay", showHint);
+  listen("nb://config", async () => { cfg = await invoke("get_config"); });
 })();

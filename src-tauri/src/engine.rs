@@ -98,6 +98,8 @@ impl Engine {
     }
 
     pub fn save_config(&mut self, cfg: Config) -> Result<(), String> {
+        let mut cfg = cfg;
+        cfg.normalize()?;
         if let Some(dir) = self.cfg_path.parent() { std::fs::create_dir_all(dir).map_err(|e| e.to_string())?; }
         std::fs::write(&self.cfg_path, cfg.to_toml()).map_err(|e| e.to_string())?;
         self.cfg_mtime = std::fs::metadata(&self.cfg_path).and_then(|m| m.modified()).ok();
@@ -383,7 +385,7 @@ fn show_overlays(app: &AppHandle, cfg: &Config) {
 
 /// 显示器名（设置页的「只关所选」按这个匹配）
 pub fn monitor_name(i: usize, m: &tauri::Monitor) -> String {
-    m.name().cloned().filter(|n| !n.is_empty()).unwrap_or_else(|| format!("显示器 {}", i + 1))
+    m.name().cloned().filter(|n| !n.is_empty()).unwrap_or_else(|| format!("Display {}", i + 1))
 }
 
 fn hide_overlays(app: &AppHandle) {

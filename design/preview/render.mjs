@@ -18,6 +18,8 @@ jobs.push([`settings.html?os=mac&mode=selected#blank`, `settings-mac-blank-selec
 jobs.push([`overlay.html?os=mac`, `overlay-mac-hint`, 1280, 800, { kind: "hint", reblank_s: 3 }]);
 jobs.push([`overlay.html?os=win`, `overlay-win-hold`, 1280, 800, { kind: "hold", progress: 0.62 }]);
 jobs.push([`onboarding.html?os=mac&perm=no`, `onboarding-mac`, 600, 600]);
+// 英文版（配置里选 English）；所有 url 都带 ?
+for (const [url, name, w, hgt, ov] of jobs.slice()) jobs.push([url.includes("#") ? url.replace("#", "&lang=en#") : url + "&lang=en", name + "-en", w, hgt, ov]);
 const browser = await chromium.launch({ executablePath: "/usr/bin/google-chrome", args: ["--no-sandbox", "--allow-file-access-from-files"] });
 const errors = [];
 for (const scheme of ["light", "dark"]) {

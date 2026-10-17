@@ -151,3 +151,4 @@ button.toggle:disabled{opacity:.4}
 .track .band.solo{border-radius:3px}
 .track .band.tail{border-radius:0 3px 3px 0}
 .track .band.head{border-radius:3px 0 0 3px}
+.nl{white-space:pre-line}

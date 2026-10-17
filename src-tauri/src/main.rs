@@ -17,6 +17,20 @@ use tauri::{
 };
 
 type Eng = Arc<Mutex<Engine>>;
+/// 托盘菜单项，界面切换语言后由 apply_locale 改文字
+struct Tray { blank: MenuItem<tauri::Wry>, settings: MenuItem<tauri::Wry>, quit: MenuItem<tauri::Wry> }
+
+/// ui/i18n 里有哪些语言：build.rs 扫描得到 "en=English;zh-CN=简体中文"
+fn locales() -> Vec<(&'static str, &'static str)> {
+    env!("BLANKRUN_LOCALES").split(';').filter_map(|s| s.split_once('=')).collect()
+}
+/// 托盘菜单的初始文字（界面加载前用；之后以 ui/i18n 的词条为准）。没有的语言用英文。
+fn tray_text(lang: &str) -> [&'static str; 4] {
+    match lang.split('-').next().unwrap_or("") {
+        "zh" => ["立即息屏", "设置…", "退出息屏跑", "息屏跑 BlankRun"],
+        _ => ["Blank Screen Now", "Settings…", "Quit BlankRun", "BlankRun"],
+    }
+}
 struct Tx(Mutex<mpsc::Sender<Msg>>);
 
 fn send(tx: &State<Tx>, m: Msg) { let _ = tx.0.lock().unwrap().send(m); }
@@ -27,7 +41,9 @@ type R<T> = Result<T, String>;
 
 #[tauri::command]
 async fn get_info(e: State<'_, Eng>) -> R<Value> {
-    Ok(json!({ "os": platform::OS, "version": env!("CARGO_PKG_VERSION"), "config_path": lock(&e).cfg_path }))
+    let locales: Vec<Value> = locales().iter().map(|(c, n)| json!({ "code": c, "name": n })).collect();
+    Ok(json!({ "os": platform::OS, "version": env!("CARGO_PKG_VERSION"), "config_path": lock(&e).cfg_path,
+               "system_locale": platform::system_locale(), "locales": locales }))
 }
 #[tauri::command]
 async fn get_config(e: State<'_, Eng>) -> R<Config> { Ok(lock(&e).cfg.clone()) }
@@ -80,6 +96,18 @@ async fn export_diagnostics(e: State<'_, Eng>, text: String) -> R<String> {
     std::fs::write(&p, text).map_err(|e| e.to_string())?;
     platform::reveal(&p);
     Ok(p.display().to_string())
+}
+/// 界面选好语言后把托盘菜单和窗口标题换成对应文字（切换语言时实时生效，不用重启）
+#[tauri::command]
+fn apply_locale(app: AppHandle, tray: State<Tray>, text: std::collections::HashMap<String, String>) {
+    let get = |k: &str| text.get(k).map(|s| s.as_str()).filter(|s| !s.is_empty());
+    if let Some(t) = get("tray.blank") { let _ = tray.blank.set_text(t); }
+    if let Some(t) = get("tray.settings") { let _ = tray.settings.set_text(t); }
+    if let Some(t) = get("tray.quit") { let _ = tray.quit.set_text(t); }
+    if let (Some(t), Some(icon)) = (get("tray.tooltip"), app.tray_by_id("main")) { let _ = icon.set_tooltip(Some(t)); }
+    for label in ["popover", "settings", "onboarding"] {
+        if let (Some(t), Some(w)) = (get(&format!("title.{label}")), app.get_webview_window(label)) { let _ = w.set_title(t); }
+    }
 }
 #[tauri::command]
 fn open_settings(app: AppHandle, section: Option<String>) { show_settings(&app, section.as_deref()) }
@@ -141,6 +169,8 @@ fn main() {
 
             let cfg_path = app.path().app_config_dir()?.join("config.toml");
             let cfg = std::fs::read_to_string(&cfg_path).ok().and_then(|s| Config::from_toml(&s).ok()).unwrap_or_default();
+            let codes: Vec<&str> = locales().iter().map(|(c, _)| *c).collect();
+            let tt = tray_text(&blankrun_core::locale::resolve(&cfg.general.language, &platform::system_locale(), &codes));
             let mut plat = Native::default();
             // 上次异常退出（崩溃、强退、断电）留下的标记：还原背光、点亮屏幕
             let marker = cfg_path.with_file_name("blanking.state");
@@ -160,15 +190,16 @@ fn main() {
                 if let Some(w) = app.get_webview_window("onboarding") { let _ = w.show(); let _ = w.set_focus(); }
             }
 
-            let blank = MenuItem::with_id(app, "blank", "立即息屏", true, None::<&str>)?;
-            let settings = MenuItem::with_id(app, "settings", "设置…", true, None::<&str>)?;
-            let quit = MenuItem::with_id(app, "quit", "退出息屏跑", true, None::<&str>)?;
+            let blank = MenuItem::with_id(app, "blank", tt[0], true, None::<&str>)?;
+            let settings = MenuItem::with_id(app, "settings", tt[1], true, None::<&str>)?;
+            let quit = MenuItem::with_id(app, "quit", tt[2], true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&blank, &settings, &quit])?;
+            app.manage(Tray { blank: blank.clone(), settings: settings.clone(), quit: quit.clone() });
             let menu_tx = tx.clone();
 
             TrayIconBuilder::with_id("main")
                 .icon(app.default_window_icon().cloned().expect("icon"))
-                .tooltip("息屏跑 BlankRun")
+                .tooltip(tt[3])
                 .menu(&menu)
                 .show_menu_on_left_click(false)
                 .on_tray_icon_event(|tray, e| {
@@ -195,7 +226,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             get_info, get_config, save_config, get_status, blank_now, cancel, skip_tonight, overlay_input, wake_now, quit,
             get_diagnostics, request_permission, reveal_config, export_diagnostics, open_settings, hide_window,
-            finish_onboarding
+            finish_onboarding, apply_locale
         ])
         .build(tauri::generate_context!())
         .expect("error while building BlankRun");

@@ -16,25 +16,28 @@
     displays: 2, keyboard: os === "mac", power_off: true,
   };
   const caps = os === "mac" ? [
-    { id: "awake", label: "防止系统睡眠", detail: "IOPMAssertion · PreventUserIdleSystemSleep", status: "ok", text: "正常" },
-    { id: "kbd", label: "键盘背光", detail: "CoreBrightness · 系统更新后可能失效，失效时只关屏幕", status: "ok", text: "可用" },
-    { id: "hook", label: "输入拦截", detail: "CGEventTap · 会话级", status: "ok", text: "正常" },
-    { id: "ddc", label: "显示器断电（DDC/CI）", detail: "后续版本提供", status: "off", text: "未实现" },
+    { id: "awake", key: "awake_ok", status: "ok", tech: "IOPMAssertion · PreventUserIdleSystemSleep" },
+    { id: "kbd", key: "kbd_mac_ok", status: "ok", tech: "CoreBrightness" },
+    { id: "hook", key: "hook_mac_ok", status: "ok", tech: "CGEventTap" },
+    { id: "ddc", key: "ddc_todo", status: "off", tech: "DDC/CI" },
   ] : [
-    { id: "awake", label: "防止系统睡眠", detail: "SetThreadExecutionState · ES_SYSTEM_REQUIRED", status: "ok", text: "正常" },
-    { id: "hook", label: "输入钩子", detail: "WH_KEYBOARD_LL / WH_MOUSE_LL · 无需管理员权限", status: "ok", text: "正常" },
-    { id: "s0", label: "现代待机（S0）", detail: "这台电脑关屏后可能自动进入低功耗状态，自动模式下改用遮罩息屏", status: "off", text: "已规避" },
-    { id: "kbd", label: "键盘背光", detail: "未识别到这台电脑的背光接口，厂商插件会在后续版本提供", status: "off", text: "不支持" },
+    { id: "awake", key: "awake_ok", status: "ok", tech: "SetThreadExecutionState · ES_SYSTEM_REQUIRED" },
+    { id: "hook", key: "hook_win_ok", status: "ok", tech: "WH_KEYBOARD_LL / WH_MOUSE_LL" },
+    { id: "s0", key: "s0_standby", status: "off", tech: "AoAc / Modern Standby" },
+    { id: "kbd", key: "kbd_win_off", status: "off", tech: "—" },
   ];
+  // ?lang=zh-CN|en 设置配置里的语言；?sys= 模拟系统语言（默认 zh-CN）
+  if (q.get("lang")) cfg.general.language = q.get("lang");
+  const sysLocale = q.get("sys") || "zh-CN";
   const handlers = {};
   const calls = (window.__calls = []);
   window.__TAURI__ = {
     core: { invoke: async (cmd, args) => {
       calls.push([cmd, args]);
       switch (cmd) {
-        case "get_info": return { os, version: "0.1.0", config_path: os === "mac" ? "/Users/me/Library/Application Support/com.cosfoc.blankrun/config.toml" : "C:\\Users\\me\\AppData\\Roaming\\com.cosfoc.blankrun\\config.toml" };
+        case "get_info": return { os, version: "0.1.0-alpha", system_locale: sysLocale, locales: [{ code: "en", name: "English" }, { code: "zh-CN", name: "简体中文" }], config_path: os === "mac" ? "/Users/me/Library/Application Support/com.cosfoc.blankrun/config.toml" : "C:\\Users\\me\\AppData\\Roaming\\com.cosfoc.blankrun\\config.toml" };
         case "get_config": return JSON.parse(JSON.stringify(cfg));
-        case "save_config": Object.assign(cfg, args.cfg); return null;
+        case "save_config": Object.assign(cfg, args.cfg); setTimeout(() => window.__emit("nb://config", null), 0); return null;
         case "get_status": return status;
         case "get_diagnostics": return { caps, perms: os === "mac" ? [true, q.get("perm") !== "no"] : null, monitors: ["Built-in Retina Display", "DELL U2723QE", "LG HDR 4K"], modern_standby: os === "win", last_session: { start_unix: 1792596600, end_unix: 1792625400, lit: 2, by_schedule: true, power_off: true } };
         default: return null;

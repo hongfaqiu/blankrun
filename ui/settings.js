@@ -10,14 +10,14 @@ function save() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(async () => {
     try { await invoke("save_config", { cfg }); }
-    catch (e) { toast("保存失败：" + e); }
+    catch (e) { toast(t("toast.save_fail", { e })); }
     saveTimer = null;
   }, 250);
 }
 function change(path, v) { setK(path, v); render(); save(); }
 
 let toastTimer = null;
-function toast(msg) { const t = $("#toast"); t.textContent = msg; t.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => (t.hidden = true), 2600); }
+function toast(msg) { const el = $("#toast"); el.textContent = msg; el.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => (el.hidden = true), 2600); }
 
 // ---------- 导航 ----------
 function show(id) {
@@ -41,25 +41,22 @@ function render() {
   $$(".recorder[data-hk]").forEach((r) => { r.classList.toggle("rec", recording === r); renderKeys($(".keys", r), getK(r.dataset.hk)); });
 
   const w = cfg.wake;
-  $("#holdVal").textContent = (w.hold_ms / 1000).toFixed(1) + " 秒";
+  $("#holdVal").textContent = t("unit.s", { s: (w.hold_ms / 1000).toFixed(1) });
   $("#holdRow").classList.toggle("dim", w.method !== "hotkey");
   $("#mouseRow").classList.toggle("dim", w.method !== "mouse_move");
   $("#rgbHost").textContent = cfg.lights.openrgb_host;
-  $("#methodNote").textContent = {
-    auto: "自动：能断电的断电，不能断电的用遮罩",
-    power_off: "让显示器进入睡眠（断电）。屏幕被碰亮后会按下面的设置自动再关",
-    overlay: "只铺黑色遮罩，背光仍亮着；适合关屏会让系统睡下去的电脑",
-  }[cfg.display.method];
+  $("#methodNote").textContent = t("b.note." + cfg.display.method);
 
   // 定时
   const s = cfg.schedule;
   const days = $("#days");
-  if (!days.children.length) DAYS.forEach((d, i) => { const b = h("button", "", DAY_ZH[i]); b.dataset.d = d; days.append(b); });
+  if (!days.children.length) DAYS.forEach((d) => { const b = h("button"); b.dataset.d = d; b.dataset.i18n = "day." + d; days.append(b); });
+  $$("button", days).forEach((b) => (b.textContent = t(b.dataset.i18n)));
   $$("button", days).forEach((b) => b.classList.toggle("on", s.days.includes(b.dataset.d)));
   const ps = parseHM(s.start), pe = parseHM(s.end);
   if (ps != null && pe != null) {
     const dur = pe > ps ? pe - ps : pe + 1440 - ps;
-    $("#schedDur").textContent = `${pe > ps ? "当天" : "次日"}结束 · 共 ${fmtDur(dur)}`;
+    $("#schedDur").textContent = t(pe > ps ? "s.dur_same" : "s.dur_next", { d: fmtDur(dur) });
   }
   drawTrack($("#track"), s.start, s.end, status ? status.now_min : 0);
   renderMonitors();
@@ -71,12 +68,13 @@ function renderStatus() {
   const sc = status.schedule, en = cfg.schedule.enabled;
   $("#schedDot").classList.toggle("standby", en && !sc.skipped);
   $("#skipBtn").hidden = !en || sc.skipped;
-  let next = "关闭时只能手动息屏";
+  const v = { start: cfg.schedule.start, end: cfg.schedule.end };
+  let next = t("s.next_off");
   if (en) {
-    if (sc.skipped) next = "本次已跳过，下一个时段照常";
-    else if (sc.in_window) next = `进行中，${cfg.schedule.end} 结束`;
-    else if (sc.until_min != null) next = `下次：${fmtDur(sc.until_min)}后（${cfg.schedule.start}）开始，${cfg.schedule.end} 结束`;
-    else next = "没有勾选任何一天";
+    if (sc.skipped) next = t("s.next_skipped");
+    else if (sc.in_window) next = t("s.next_in", v);
+    else if (sc.until_min != null) next = t("s.next_until", { ...v, d: fmtDur(sc.until_min) });
+    else next = t("s.next_nodays");
   }
   $("#schedNext").textContent = next;
 }
@@ -84,15 +82,15 @@ function renderStatus() {
 function renderMonitors() {
   const box = $("#monitors");
   const mons = diag ? diag.monitors : [];
-  $("#monCount").textContent = mons.length ? `检测到 ${mons.length} 台` : "";
+  $("#monCount").textContent = mons.length ? t("b.mon_count", { n: mons.length }) : "";
   const sel = cfg.display.mode === "selected";
   box.replaceChildren(...mons.map((name) => {
     const r = h("div", "r mon" + (sel ? "" : " dim"));
     const on = !sel || cfg.display.targets.includes(name);
     const lead = h("div", "lead-ic");
     lead.append(h("span", "check" + (on ? " on" : "")));
-    const t = h("div", "t"); t.append(h("span", "", name), h("small", "", sel ? (on ? "息屏时盖上黑色遮罩" : "保持点亮") : "随「全部显示器」一起关闭"));
-    lead.append(t); r.append(lead);
+    const tx = h("div", "t"); tx.append(h("span", "", name), h("small", "", t(sel ? (on ? "b.mon_on_sel" : "b.mon_off_sel") : "b.mon_all")));
+    lead.append(tx); r.append(lead);
     r.dataset.mon = name;
     return r;
   }));
@@ -103,33 +101,52 @@ async function loadDiag() {
   renderMonitors();
   $("#s0Row").hidden = !diag.modern_standby;
   // 能力列表
-  $("#caps").replaceChildren(...diag.caps.map((c) => {
-    const r = h("div", "r");
-    const t = h("div", "t"); t.append(h("span", "", c.label), h("small", "mono", c.detail));
-    const st = h("span", "status " + (c.status === "ok" ? "" : c.status)); st.append(h("span", "dot " + (c.status === "ok" ? "ok" : c.status === "bad" ? "bad" : "")), c.text);
-    const cc = h("div", "c"); cc.append(st);
-    r.append(t, cc); return r;
-  }));
+  renderCaps();
   const kbd = diag.caps.find((c) => c.id === "kbd");
-  if (kbd && kbd.status !== "ok") { $("#kbdToggle").disabled = true; $("#kbdNote").textContent = kbd.detail; render(); }
+  if (kbd && kbd.status !== "ok") { $("#kbdToggle").disabled = true; render(); }
   // 权限（仅 Mac）
   if (diag.perms) {
     $("#permBlock").hidden = false;
     const perm = (el, ok, which) => {
-      const st = h("span", "status" + (ok ? "" : " bad")); st.append(h("span", "dot " + (ok ? "ok" : "bad")), ok ? "已授权" : "未授权");
+      const st = h("span", "status" + (ok ? "" : " bad")); st.append(h("span", "dot " + (ok ? "ok" : "bad")), t(ok ? "st.granted" : "st.denied"));
       el.replaceChildren(st);
-      if (!ok) { const b = h("button", "btn primary", "打开系统设置"); b.onclick = () => invoke("request_permission", { which }); el.append(b); }
+      if (!ok) { const b = h("button", "btn primary", t("btn.open_settings")); b.onclick = () => invoke("request_permission", { which }); el.append(b); }
     };
     perm($("#permAx"), diag.perms[0], "accessibility");
     perm($("#permIn"), diag.perms[1], "input");
   }
   // 上次息屏
-  const ls = diag.last_session;
-  if (ls) {
-    const f = (u) => { const d = new Date(u * 1000); return `${d.getMonth() + 1}/${d.getDate()} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`; };
-    $("#lastRange").textContent = `${f(ls.start_unix)} – ${ls.end_unix ? f(ls.end_unix) : "现在"}`;
-    $("#lastNote").textContent = `${ls.by_schedule ? "按计划" : "手动"}息屏 · ${ls.power_off ? "显示器断电" : "黑色遮罩"} · 期间屏幕被意外点亮 ${ls.lit} 次，都按设置重新息屏`;
-  }
+  renderLast();
+}
+
+/** 能力列表：名称 / 状态 / 说明来自词条 cap.<key>.*，tech 是接口名和原始错误，不翻译 */
+function renderCaps() {
+  if (!diag) return;
+  $("#caps").replaceChildren(...diag.caps.map((c) => {
+    const r = h("div", "r");
+    const note = lookup(`cap.${c.key}.note`);
+    const sm = h("small"); if (note) sm.append(note + " · "); sm.append(h("span", "mono", c.tech));
+    const tt = h("div", "t"); tt.append(h("span", "", t(`cap.${c.key}.name`)), sm);
+    const st = h("span", "status " + (c.status === "ok" ? "" : c.status)); st.append(h("span", "dot " + (c.status === "ok" ? "ok" : c.status === "bad" ? "bad" : "")), t(`cap.${c.key}.state`));
+    const cc = h("div", "c"); cc.append(st);
+    r.append(tt, cc); return r;
+  }));
+  const kbd = diag.caps.find((c) => c.id === "kbd");
+  $("#kbdNote").textContent = kbd && kbd.status !== "ok" ? t(`cap.${kbd.key}.note`) : t("b.kbd_note");
+}
+function renderLast() {
+  const ls = diag && diag.last_session;
+  if (!ls) return;
+  const f = (u) => new Date(u * 1000).toLocaleString(LANG, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false });
+  $("#lastRange").textContent = `${f(ls.start_unix)} – ${ls.end_unix ? f(ls.end_unix) : t("a.now")}`;
+  $("#lastNote").textContent = t("a.last_note", { by: t(ls.by_schedule ? "a.by_sched" : "a.by_manual"), how: t(ls.power_off ? "a.how_power" : "a.how_overlay"), n: ls.lit });
+}
+/** 语言下拉：跟随系统 + ui/i18n 里的每种语言（用各自的语言写名字） */
+function renderLangs() {
+  const sel = $("#langSel");
+  const opts = [["auto", t("g.lang_auto")], ...INFO.locales.map((l) => [l.code, l.name])];
+  sel.replaceChildren(...opts.map(([v, n]) => { const o = h("option", "", n); o.value = v; return o; }));
+  if (cfg) sel.value = cfg.general.language;
 }
 
 // ---------- 交互 ----------
@@ -194,23 +211,25 @@ document.addEventListener("keydown", (e) => {
 }, true);
 
 $("#reveal").addEventListener("click", () => invoke("reveal_config"));
-$("#skipBtn").addEventListener("click", async () => { await invoke("skip_tonight"); toast("今晚的计划已跳过"); });
+$("#skipBtn").addEventListener("click", async () => { await invoke("skip_tonight"); toast(t("toast.skipped")); });
 $("#exportDiag").addEventListener("click", async () => {
   await loadDiag();
   const info = await invoke("get_info");
-  const text = [`BlankRun ${info.version} (${info.os})`, `时间 ${new Date().toString()}`, "", "[能力]",
-    ...diag.caps.map((c) => `- ${c.label}: ${c.text} · ${c.detail}`),
-    diag.perms ? `\n[权限] 辅助功能=${diag.perms[0]} 输入监控=${diag.perms[1]}` : "",
-    `\n[显示器] ${diag.monitors.join(", ")}`, `\n[上次息屏] ${JSON.stringify(diag.last_session)}`,
-    "\n[配置]", JSON.stringify(cfg, null, 2)].join("\n");
-  try { const p = await invoke("export_diagnostics", { text }); toast("已导出到 " + p); } catch (e) { toast("导出失败：" + e); }
+  // 诊断信息固定用英文，方便贴到 issue 里
+  const text = [`BlankRun ${info.version} (${info.os}) · ui=${LANG} · system=${info.system_locale}`, `time ${new Date().toString()}`, "", "[capabilities]",
+    ...diag.caps.map((c) => `- ${c.id}: ${c.key} (${c.status}) · ${c.tech}`),
+    diag.perms ? `\n[permissions] accessibility=${diag.perms[0]} input_monitoring=${diag.perms[1]}` : "",
+    `\n[displays] ${diag.monitors.join(", ")}`, `\n[last session] ${JSON.stringify(diag.last_session)}`,
+    "\n[config]", JSON.stringify(cfg, null, 2)].join("\n");
+  try { const p = await invoke("export_diagnostics", { text }); toast(t("toast.exported", { p })); } catch (e) { toast(t("toast.export_fail", { e })); }
 });
 
 (async () => {
-  const info = await initPlatform();
+  const info = await initPlatform(() => { renderLangs(); render(); renderCaps(); renderLast(); });
   $("#cfgPath").textContent = info.config_path;
   $("#ver").textContent = info.version;
   [cfg, status] = await Promise.all([invoke("get_config"), invoke("get_status")]);
+  renderLangs();
   show();
   render();
   loadDiag();

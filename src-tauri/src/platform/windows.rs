@@ -160,21 +160,21 @@ impl Platform for Native {
         let ms = self.modern_standby();
         vec![
             match self.awake_ok {
-                Some(false) => Cap::new("awake", "防止系统睡眠", "SetThreadExecutionState · ES_SYSTEM_REQUIRED", "bad", "调用失败"),
-                _ => Cap::new("awake", "防止系统睡眠", "SetThreadExecutionState · ES_SYSTEM_REQUIRED", "ok", "正常"),
+                Some(false) => Cap::new("awake", "awake_bad", "bad", "SetThreadExecutionState · ES_SYSTEM_REQUIRED"),
+                _ => Cap::new("awake", "awake_ok", "ok", "SetThreadExecutionState · ES_SYSTEM_REQUIRED"),
             },
             match &self.hook_err {
-                Some(e) => Cap::new("hook", "输入钩子", format!("WH_KEYBOARD_LL / WH_MOUSE_LL · {e}"), "bad", "安装失败"),
-                None => Cap::new("hook", "输入钩子", "WH_KEYBOARD_LL / WH_MOUSE_LL · 无需管理员权限", "ok", "正常"),
+                Some(e) => Cap::new("hook", "hook_bad", "bad", format!("WH_KEYBOARD_LL / WH_MOUSE_LL · {e}")),
+                None => Cap::new("hook", "hook_win_ok", "ok", "WH_KEYBOARD_LL / WH_MOUSE_LL"),
             },
             if ms {
-                Cap::new("s0", "现代待机（S0）", "这台电脑关屏后可能自动进入低功耗状态，自动模式下改用遮罩息屏", "off", "已规避")
+                Cap::new("s0", "s0_standby", "off", "AoAc / Modern Standby")
             } else {
-                Cap::new("s0", "显示器断电", "SC_MONITORPOWER · 传统睡眠模式，可以安全关屏", "ok", "可用")
+                Cap::new("s0", "s0_ok", "ok", "SC_MONITORPOWER")
             },
-            Cap::new("kbd", "键盘背光", "未识别到这台电脑的背光接口，厂商插件会在后续版本提供", "off", "不支持"),
-            Cap::new("ddc", "显示器断电（DDC/CI）", "后续版本提供", "off", "未实现"),
-            Cap::new("rgb", "OpenRGB", "后续版本提供", "off", "未实现"),
+            Cap::new("kbd", "kbd_win_off", "off", "—"),
+            Cap::new("ddc", "ddc_todo", "off", "DDC/CI"),
+            Cap::new("rgb", "rgb_todo", "off", "OpenRGB SDK"),
         ]
     }
 
@@ -271,4 +271,17 @@ pub fn local_time() -> (u8, u16) {
 
 pub fn reveal(path: &std::path::Path) {
     let _ = std::process::Command::new("explorer").arg(format!("/select,{}", path.display())).spawn();
+}
+
+/// 用户界面语言（例如 "zh-CN"、"en-US"）；取不到时返回空串
+pub fn system_locale() -> String {
+    use windows_sys::Win32::Globalization::{GetUserPreferredUILanguages, MUI_LANGUAGE_NAME};
+    let (mut num, mut len) = (0u32, 0u32);
+    unsafe {
+        if GetUserPreferredUILanguages(MUI_LANGUAGE_NAME, &mut num, std::ptr::null_mut(), &mut len) == 0 || len == 0 { return String::new(); }
+        let mut buf = vec![0u16; len as usize];
+        if GetUserPreferredUILanguages(MUI_LANGUAGE_NAME, &mut num, buf.as_mut_ptr(), &mut len) == 0 { return String::new(); }
+        let end = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
+        String::from_utf16_lossy(&buf[..end])
+    }
 }

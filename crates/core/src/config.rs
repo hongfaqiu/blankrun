@@ -13,22 +13,31 @@ pub struct Config {
     pub power: PowerConfig,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "snake_case")]
-pub enum Language { #[default] Auto, Zh, En }
+/// 界面语言："auto" 跟随系统，否则是 ui/i18n/ 下的语言代码（如 "zh-CN"、"en"）。
+/// 新增语言只需加一个 ui/i18n/<代码>.js，这里不用改。
+pub const LANG_AUTO: &str = "auto";
+
+/// 语言代码是否合法：auto，或 BCP 47 形式（字母开头，2–3 位主语言 + 可选子标签）
+pub fn valid_language(s: &str) -> bool {
+    if s == LANG_AUTO { return true; }
+    let mut parts = s.split('-');
+    let main = parts.next().unwrap_or("");
+    (2..=3).contains(&main.len()) && main.chars().all(|c| c.is_ascii_alphabetic())
+        && parts.all(|p| (2..=8).contains(&p.len()) && p.chars().all(|c| c.is_ascii_alphanumeric()))
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct GeneralConfig {
     /// 登录 / 开机时启动；公开发布版默认关闭，由用户自己打开
     pub launch_at_login: bool,
-    pub language: Language,
+    pub language: String,
     /// 「立即息屏」全局快捷键（Mac 上显示为 ⌃⌥B）
     pub blank_now_hotkey: String,
 }
 impl Default for GeneralConfig {
     fn default() -> Self {
-        Self { launch_at_login: false, language: Language::Auto, blank_now_hotkey: "Ctrl+Alt+B".into() }
+        Self { launch_at_login: false, language: LANG_AUTO.into(), blank_now_hotkey: "Ctrl+Alt+B".into() }
     }
 }
 
@@ -111,7 +120,17 @@ pub struct PowerConfig {
 }
 
 impl Config {
-    pub fn from_toml(s: &str) -> Result<Self, String> { toml::from_str(s).map_err(|e| e.to_string()) }
+    pub fn from_toml(s: &str) -> Result<Self, String> {
+        let mut c: Self = toml::from_str(s).map_err(|e| e.to_string())?;
+        c.normalize()?;
+        Ok(c)
+    }
+    /// 校验并规范化：旧版本写的 language = "zh" 迁移成 "zh-CN"
+    pub fn normalize(&mut self) -> Result<(), String> {
+        if self.general.language == "zh" { self.general.language = "zh-CN".into(); }
+        if !valid_language(&self.general.language) { return Err(format!("invalid language: {}", self.general.language)); }
+        Ok(())
+    }
     pub fn to_toml(&self) -> String { toml::to_string(self).unwrap_or_default() }
 }
 
@@ -130,7 +149,7 @@ mod tests {
     fn new_field_defaults() {
         let c = Config::from_toml("").unwrap();
         assert!(!c.general.launch_at_login);
-        assert_eq!(c.general.language, Language::Auto);
+        assert_eq!(c.general.language, "auto");
         assert_eq!(c.general.blank_now_hotkey, "Ctrl+Alt+B");
         assert_eq!(c.wake.hold_ms, 1000);
         assert_eq!(c.schedule.days.len(), 7);
@@ -145,10 +164,14 @@ mod tests {
         let c = Config::from_toml(
             "[general]\nlanguage = \"en\"\nlaunch_at_login = true\n[power]\nac_only = true\n[schedule]\nremind_before_min = 0\n",
         ).unwrap();
-        assert_eq!(c.general.language, Language::En);
+        assert_eq!(c.general.language, "en");
         assert!(c.general.launch_at_login && c.power.ac_only);
         assert_eq!(c.schedule.remind_before_min, 0);
-        assert!(Config::from_toml("[general]\nlanguage = \"fr\"\n").is_err());
+        // 任意合法语言代码都能存（界面没有这个语言时回落到英文）；旧的 "zh" 迁移成 "zh-CN"
+        assert_eq!(Config::from_toml("[general]\nlanguage = \"fr\"\n").unwrap().general.language, "fr");
+        assert_eq!(Config::from_toml("[general]\nlanguage = \"zh\"\n").unwrap().general.language, "zh-CN");
+        assert!(Config::from_toml("[general]\nlanguage = \"../x\"\n").is_err());
+        assert!(valid_language("zh-Hant-TW") && valid_language("pt-BR") && !valid_language("") && !valid_language("e"));
         assert_eq!(Config::from_toml(&c.to_toml()).unwrap(), c);
     }
 }
