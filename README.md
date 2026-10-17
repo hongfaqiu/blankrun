@@ -6,8 +6,8 @@
 
 <p align="center"><a href="https://blankrun.cosfoc.com">官网 Website</a> · <a href="https://github.com/hongfaqiu/blankrun/releases">Releases</a> · macOS + Windows · MIT</p>
 
-> **状态：早期开发中，还没有在真机上测试过，暂无可下载的安装包。**
-> **Status: early development. Not yet tested on real hardware. No downloadable build yet.**
+> **状态：v0.1.0-alpha 早期预览版，还没有在真机上测试过，安装包未签名。** [下载 / Download](https://github.com/hongfaqiu/blankrun/releases/tag/v0.1.0-alpha)
+> **Status: v0.1.0-alpha early preview. Not yet tested on real hardware. Unsigned builds.**
 
 <p align="center"><img src="design/png/popover-mac.png" width="380" alt="菜单栏面板"> <img src="design/png/popover-mac-dark.png" width="380" alt="菜单栏面板（深色）"></p>
 
@@ -26,7 +26,7 @@
 - **防误触**：息屏期间拦截键鼠输入；屏幕被意外点亮时，几秒内自动再关。
 - **键盘背光**：macOS 上一起关掉。用的是私有接口，运行时先探测，不可用时自动跳过。
 - **Windows Modern Standby**：检测到关屏会让机器进入低功耗待机的机型时，改用全黑遮罩，避免任务被挂起。
-- **体积小**：基于 Tauri 2，前端零依赖。目标是 Windows 安装包 ≤ 3 MB、macOS DMG ≤ 4 MB（尚未实测）。
+- **体积小**：基于 Tauri 2，前端零依赖。v0.1.0-alpha 实测：Windows 安装包 1.2 MB，macOS 通用版 DMG 2.9 MB。
 - **本地运行**：不联网，不上传。
 
 后续版本：外接显示器断电（DDC/CI）、RGB 灯控制、开机启动、全局快捷键、开始前提醒、全屏视频时跳过定时。
@@ -35,7 +35,7 @@
 
 You queue up a night of work for Claude Code, Codex or a local model, plus a build and some downloads. The screen shouldn't glow all night, but letting the computer sleep would stop the jobs.
 
-BlankRun lives in the menu bar (system tray on Windows). One click really turns the displays off while blocking system sleep, so jobs keep running. While the screen is off it swallows accidental input and only wakes the way you choose: any key, hold a hotkey, mouse move, click, password, or only when the schedule ends. It also handles schedules, keyboard backlight on macOS, auto re-blank, and a fallback for Windows Modern Standby. It is built with Tauri 2, aims for a tiny binary and runs fully offline.
+BlankRun lives in the menu bar (system tray on Windows). One click really turns the displays off while blocking system sleep, so jobs keep running. While the screen is off it swallows accidental input and only wakes the way you choose: any key, hold a hotkey, mouse move, click, password, or only when the schedule ends. It also handles schedules, keyboard backlight on macOS, auto re-blank, and a fallback for Windows Modern Standby. It is built with Tauri 2, ships 1–3 MB installers and runs fully offline.
 
 All of this is written but **not yet verified on real hardware**. Expect rough edges.
 

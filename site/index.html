@@ -31,16 +31,16 @@
 <main>
 <section class="hero">
   <div class="hero-text">
-    <p class="status"><span class="dot"></span><span lang="zh">早期开发中 · 还没在真机上测试</span><span lang="en">Early development · not yet tested on hardware</span></p>
+    <p class="status"><span class="dot"></span><span lang="zh">v0.1.0-alpha 预览版 · 还没在真机上测试</span><span lang="en">v0.1.0-alpha preview · not yet tested on hardware</span></p>
     <h1><span lang="zh">夜里息屏，<br>AI 接着跑。</span><span lang="en">Screens off.<br>Agents on.</span></h1>
     <p class="lead">
       <span lang="zh">睡前给 Claude Code、Codex 或本地模型排好一晚上的任务。息屏跑把屏幕和键盘背光真正关掉，同时不让电脑睡眠；猫踩到键盘也不会亮，只按你定的方式醒来。</span>
       <span lang="en">Queue a night of work for Claude Code, Codex or a local model. BlankRun really turns the displays and keyboard backlight off while keeping the computer awake. A cat on the keyboard won't light it up. It wakes only the way you choose.</span>
     </p>
     <div class="cta">
-      <a class="panel" href="https://github.com/hongfaqiu/blankrun/releases">
-        <b><span lang="zh">下载 · 即将推出</span><span lang="en">Download · coming soon</span></b>
-        <small><span lang="zh">macOS 11+ 与 Windows 10/11 · 关注 GitHub Releases</span><span lang="en">macOS 11+ and Windows 10/11 · watch GitHub Releases</span></small>
+      <a class="panel" href="https://github.com/hongfaqiu/blankrun/releases/tag/v0.1.0-alpha">
+        <b><span lang="zh">下载 v0.1.0-alpha</span><span lang="en">Download v0.1.0-alpha</span></b>
+        <small><span lang="zh">macOS 11+ 通用版 2.9 MB · Windows 10/11 1.2 MB · 未签名</span><span lang="en">macOS 11+ universal 2.9 MB · Windows 10/11 1.2 MB · unsigned</span></small>
         <i class="led" aria-hidden="true"></i>
       </a>
       <a class="ghost" href="https://github.com/hongfaqiu/blankrun"><span lang="zh">查看源码</span><span lang="en">View source</span> →</a>
@@ -72,7 +72,7 @@
     <div><dt><span lang="zh">定时计划</span><span lang="en">Schedule</span></dt><dd><span lang="zh">比如每天 23:30 → 07:30，支持跨午夜，可以只跳过今晚。</span><span lang="en">For example 23:30 → 07:30 daily. Works across midnight, and you can skip just tonight.</span></dd></div>
     <div><dt><span lang="zh">键盘背光</span><span lang="en">Keyboard backlight</span></dt><dd><span lang="zh">macOS 上和屏幕一起关掉。用的是系统私有接口，启动时先探测，不可用就跳过，不影响其他功能。</span><span lang="en">Turned off together with the screen on macOS. It uses a private API that is probed at runtime and skipped when unavailable.</span></dd></div>
     <div><dt><span lang="zh">Windows 待机兜底</span><span lang="en">Modern Standby fallback</span></dt><dd><span lang="zh">有些新款 Windows 笔记本一关屏就进低功耗待机，后台任务会被挂起。检测到这类机器时，改用全黑遮罩。</span><span lang="en">Some Windows laptops drop into Modern Standby when the display turns off, which suspends background jobs. BlankRun detects this and uses a black overlay instead.</span></dd></div>
-    <div><dt><span lang="zh">小，而且只在本地</span><span lang="en">Small and local</span></dt><dd><span lang="zh">基于 Tauri 2，用系统自带 WebView，前端零依赖。目标是安装包 3–4 MB。不联网、不上传，开源（MIT）。</span><span lang="en">Built on Tauri 2 with the system WebView and a zero-dependency UI. The target installer size is 3–4 MB. No network, no telemetry, MIT licensed.</span></dd></div>
+    <div><dt><span lang="zh">小，而且只在本地</span><span lang="en">Small and local</span></dt><dd><span lang="zh">基于 Tauri 2，用系统自带 WebView，前端零依赖。安装包只有 1–3 MB。不联网、不上传，开源（MIT）。</span><span lang="en">Built on Tauri 2 with the system WebView and a zero-dependency UI. Installers are 1–3 MB. No network, no telemetry, MIT licensed.</span></dd></div>
   </dl>
   <p class="later"><span lang="zh">之后的版本：外接显示器断电（DDC/CI）、RGB 灯、开机启动、全局快捷键、开始前提醒、全屏视频时跳过。</span><span lang="en">Later: external monitor power via DDC/CI, RGB lighting, launch at login, global hotkey, pre-start reminder, skip during fullscreen video.</span></p>
 </section>
@@ -98,7 +98,11 @@
 
 <section class="download" id="download">
   <h2><span lang="zh">下载</span><span lang="en">Download</span></h2>
-  <p><span lang="zh">还没有可以下载的安装包。macOS 版要先完成 Developer ID 签名和公证，Windows 版要先在真机上测完关屏和防睡眠。第一个版本会发布在 <a href="https://github.com/hongfaqiu/blankrun/releases">GitHub Releases</a>，点 Watch → Custom → Releases 就能收到通知。</span><span lang="en">There is no installer yet. The macOS build needs Developer ID signing and notarization first, and the Windows build needs real-hardware testing of display-off and sleep blocking. The first release will appear on <a href="https://github.com/hongfaqiu/blankrun/releases">GitHub Releases</a>. Use Watch → Custom → Releases to get notified.</span></p>
+  <ul class="files">
+    <li><a href="https://github.com/hongfaqiu/blankrun/releases/download/v0.1.0-alpha/BlankRun_0.1.0-alpha_universal.dmg">BlankRun_0.1.0-alpha_universal.dmg</a><span class="num muted">2.9 MB</span><span class="muted"><span lang="zh">macOS 11+ · Apple 芯片与 Intel</span><span lang="en">macOS 11+ · Apple silicon and Intel</span></span></li>
+    <li><a href="https://github.com/hongfaqiu/blankrun/releases/download/v0.1.0-alpha/BlankRun_0.1.0-alpha_x64-setup.exe">BlankRun_0.1.0-alpha_x64-setup.exe</a><span class="num muted">1.2 MB</span><span class="muted">Windows 10/11 x64</span></li>
+  </ul>
+  <p><span lang="zh">这是早期预览版，还没在真机上测试过，有 4 个设置项暂时只保存不生效。安装包没有签名：macOS 上按住 Control 点应用选「打开」，或运行 <code>xattr -dr com.apple.quarantine /Applications/BlankRun.app</code>；Windows 出现 SmartScreen 时点「更多信息 → 仍要运行」。详见 <a href="https://github.com/hongfaqiu/blankrun/releases/tag/v0.1.0-alpha">发布说明</a>。</span><span lang="en">This is an early preview that hasn't been tested on real hardware, and four settings are saved but not applied yet. The installers are unsigned: on macOS, Control-click the app and choose Open, or run <code>xattr -dr com.apple.quarantine /Applications/BlankRun.app</code>. On Windows, click More info → Run anyway in SmartScreen. See the <a href="https://github.com/hongfaqiu/blankrun/releases/tag/v0.1.0-alpha">release notes</a>.</span></p>
 </section>
 </main>
 
