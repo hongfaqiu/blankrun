@@ -190,9 +190,31 @@ fn show_settings(app: &AppHandle, section: Option<&str>) {
     }
 }
 
+/// 面板：点外面（失焦）就收起。刚弹出的 300ms 内的失焦不算（Windows 上点托盘图标那一下会先抢走焦点），
+/// 面板里开着原生下拉框时也不算。
+static POP_SHOWN: Mutex<Option<std::time::Instant>> = Mutex::new(None);
+static POP_BLUR_HIDDEN: Mutex<Option<std::time::Instant>> = Mutex::new(None);
+static POP_HOLD: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+#[tauri::command]
+fn popover_hold(on: bool) { POP_HOLD.store(on, std::sync::atomic::Ordering::Relaxed); }
+
+fn popover_blur(w: &tauri::Window) {
+    if POP_HOLD.load(std::sync::atomic::Ordering::Relaxed) { return; }
+    if POP_SHOWN.lock().ok().and_then(|g| *g).is_some_and(|t| t.elapsed() < std::time::Duration::from_millis(300)) { return; }
+    if w.is_visible().unwrap_or(false) {
+        let _ = w.hide();
+        if let Ok(mut g) = POP_BLUR_HIDDEN.lock() { *g = Some(std::time::Instant::now()); }
+    }
+}
+
 fn toggle_popover(app: &AppHandle, anchor: tauri::Rect) {
     let Some(w) = app.get_webview_window("popover") else { return };
     if w.is_visible().unwrap_or(false) { let _ = w.hide(); return; }
+    // 面板开着时点托盘图标：按下那一刻面板已因失焦收起，这次点击就只是「关」，别再打开
+    if POP_BLUR_HIDDEN.lock().ok().and_then(|mut g| g.take()).is_some_and(|t| t.elapsed() < std::time::Duration::from_millis(400)) { return; }
+    POP_HOLD.store(false, std::sync::atomic::Ordering::Relaxed);
+    if let Ok(mut g) = POP_SHOWN.lock() { *g = Some(std::time::Instant::now()); }
     let scale = w.scale_factor().unwrap_or(1.0);
     let (pos, size) = (anchor.position.to_physical::<f64>(scale), anchor.size.to_physical::<f64>(scale));
     let pw = w.outer_size().map(|s| (s.width as f64, s.height as f64)).unwrap_or((320.0 * scale, 480.0 * scale));
@@ -367,10 +389,11 @@ fn main() {
         .on_window_event(|w, e| match e {
             // 设置等窗口关闭时只隐藏，应用继续驻留托盘；遮罩窗口由引擎 destroy
             WindowEvent::CloseRequested { api, .. } if !w.label().starts_with("overlay-") => { api.prevent_close(); let _ = w.hide(); }
+            WindowEvent::Focused(false) if w.label() == "popover" => popover_blur(w),
             _ => {}
         })
         .invoke_handler(tauri::generate_handler![
-            get_info, get_config, get_history, clear_history, open_link, check_update, install_update, save_config, get_status, blank_now, cancel, skip_tonight, unskip, postpone, overlay_input, wake_now, quit,
+            get_info, get_config, popover_hold, get_history, clear_history, open_link, check_update, install_update, save_config, get_status, blank_now, cancel, skip_tonight, unskip, postpone, overlay_input, wake_now, quit,
             get_diagnostics, request_permission, reveal_config, export_diagnostics, open_settings, hide_window,
             finish_onboarding, apply_locale
         ])

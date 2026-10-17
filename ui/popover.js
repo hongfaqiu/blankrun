@@ -58,8 +58,8 @@ function renderGuard(s) {
   const g = $("#guard"), on = s.input_guard === "keys" || s.input_guard === "none";
   g.hidden = !on;
   if (on) $("#guardText").textContent = t(s.input_guard === "keys" ? "p.guard_keys" : "p.guard_none", { s: cfg ? cfg.wake.reblank_after_s : 3 });
-  const ur = $("#updRow");
-  const want = 452 + (on ? Math.ceil(g.getBoundingClientRect().height) + 12 : 0) + (ur.hidden ? 0 : Math.ceil(ur.getBoundingClientRect().height));
+  // 按内容高度定窗口高度（底栏下沿）
+  const want = Math.ceil(document.querySelector(".menu").getBoundingClientRect().bottom);
   if (want !== popH && window.__TAURI__ && window.__TAURI__.window) {
     popH = want;
     const w = window.__TAURI__.window;
@@ -115,3 +115,7 @@ function syncNative() {
 
 $("#updGo").addEventListener("click", () => invoke("install_update").catch(() => {}));
 $("#updNotes").addEventListener("click", () => invoke("open_link", { which: "releases" }));
+
+// 面板里打开下拉框时，原生下拉会让窗口失焦：这期间别自动收起
+document.addEventListener("focusin", (e) => { if (e.target.tagName === "SELECT") invoke("popover_hold", { on: true }); });
+document.addEventListener("focusout", (e) => { if (e.target.tagName === "SELECT") invoke("popover_hold", { on: false }); });

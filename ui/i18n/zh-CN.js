@@ -193,6 +193,8 @@ NB_LOCALE("zh-CN", {
   "g.upd": "自动检查更新",
   "g.upd_note": "每天一次，从 GitHub 读取最新版本信息；有新版本只提示，你点了才下载安装",
   "a.upd_new": "有新版本 {v}",
+  "p.settings": "设置",
+  "p.quit": "\u9000\u51fa",
   "p.upd_new": "有新版本 {v}",
   "p.counting_sleep": "倒计时中 · 未阻止睡眠",
   "p.blanked_sleep": "息屏中 · 未阻止睡眠",

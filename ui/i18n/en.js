@@ -195,6 +195,8 @@ NB_LOCALE("en", {
   "g.upd": "Check for updates automatically",
   "g.upd_note": "Once a day, reads the latest version from GitHub. New versions are only announced; nothing installs until you click",
   "a.upd_new": "Version {v} is available",
+  "p.settings": "Settings",
+  "p.quit": "Quit",
   "p.upd_new": "Version {v} available",
   "p.counting_sleep": "Counting down · sleep not blocked",
   "p.blanked_sleep": "Screen off · sleep not blocked",

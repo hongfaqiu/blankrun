@@ -20,10 +20,16 @@ body{background:var(--paper)}
 .kv dt{color:var(--ink3)} .kv dd{margin:0;display:flex;align-items:center;gap:6px;justify-content:space-between}
 .kv .keys{vertical-align:middle}
 .link:hover{color:var(--ink2)}
-.menu{padding:5px}
-.menu button{display:flex;width:100%;justify-content:space-between;align-items:center;height:28px;padding:0 11px;border-radius:6px;text-align:left}
-.menu button:hover{background:var(--hover)}
-.menu .mono{color:var(--ink3);font-size:11px}
+/* 底栏：左「设置」、右「退出」，都是安静的文字按钮，悬停才出底色 */
+.menu{display:flex;align-items:center;justify-content:space-between;padding:6px 8px 8px;border-top:1px solid var(--line)}
+.menu button{display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 10px;border-radius:6px;font-size:12px;color:var(--ink2);transition:background-color .12s,color .12s}
+.menu button:hover{background:var(--hover);color:var(--ink)}
+.menu button:focus-visible{outline:2px solid var(--ink3);outline-offset:0}
+.menu .ico{flex:none;color:var(--ink3)}
+.menu button:hover .ico{color:var(--ink2)}
+.menu .m-quit{color:var(--ink3)}
+.menu .m-quit:hover{color:var(--bad)}
+.menu .mono{color:var(--ink3);font-size:11px;margin-left:2px}
 .count{font:500 26px var(--mono);letter-spacing:-.02em}
 .btn.cancel{height:28px;background:transparent;border-color:rgba(255,255,255,.22);color:#fff;box-shadow:none}
 .head-r{display:flex;align-items:center;gap:8px}
