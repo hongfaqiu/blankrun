@@ -3,6 +3,9 @@
 //! - 防睡眠：IOPMAssertion PreventUserIdleSystemSleep（= caffeinate -i）；ac_only 时用 PreventSystemSleep（只在接电源时生效）。
 //! - 关屏：pmset displaysleepnow（IODisplayWrangler 的 IORequestIdle 在新系统上无效）。
 //! - 恢复：IOPMAssertionDeclareUserActivity 点亮屏幕。
+//! - 内建屏单独关闭：Apple 芯片 + macOS 13 起用 SkyLight 私有 `SLSConfigureDisplayEnabled(false)`「断开」，
+//!   和合盖、BetterDisplay「断开显示器」、Lunar BlackOut 同一机制：屏幕从桌面布局里消失，面板进待机。
+//!   运行时 dlsym，拿不到、被拒绝或只剩这一块屏时退回 DisplayServices 背光调 0 + 遮罩。
 //! - 键盘背光：运行时 dlopen 私有的 CoreBrightness.framework，KeyboardBrightnessClient，每个方法先 respondsToSelector，缺任何一个就降级为"只关屏幕"。
 //! - 输入：CGEventTap（会话级、主动过滤），需要「辅助功能」权限；回调吞掉所有事件并翻译后送进引擎。
 //!   「键鼠照常用」（Mac Mini 模式）时只吞唤醒键 / 紧急键，别的事件原样返回（= 放行），光标被挡在关掉的屏外面。
@@ -96,6 +99,11 @@ extern "C" {
     fn CGEventSetLocation(event: *mut c_void, p: CGPoint);
     fn CGWarpMouseCursorPosition(p: CGPoint) -> i32;
     fn CGAssociateMouseAndMouseCursorPosition(connected: u32) -> i32;
+    fn CGBeginDisplayConfiguration(config: *mut *mut c_void) -> i32;
+    fn CGCompleteDisplayConfiguration(config: *mut c_void, option: u32) -> i32;
+    fn CGCancelDisplayConfiguration(config: *mut c_void) -> i32;
+    fn CGDisplayIsActive(display: u32) -> u32;
+    fn CGDisplayVendorNumber(display: u32) -> u32;
 }
 
 #[link(name = "ApplicationServices", kind = "framework")]
@@ -218,6 +226,129 @@ fn set_builtin_off(id: u32, off: bool) -> Result {
         crate::nblog!("built-in display {sid}: brightness restored to {v}");
     }
     Ok(())
+}
+
+// ---------- 内建屏「断开」（SkyLight SLSConfigureDisplayEnabled） ----------
+type CfgEnabled = unsafe extern "C" fn(*mut c_void, u32, bool) -> i32;
+/// 当前被我们断开的屏（CGDirectDisplayID，0 = 没有）。崩溃标记里也记一份，下次启动接回
+static DISCONNECTED: AtomicU32 = AtomicU32::new(0);
+/// 本次息屏断开失败过：之后只调背光（遮罩已经盖上，再断开会把遮罩窗口挪到外接屏上）
+static DISCONNECT_FAILED: AtomicBool = AtomicBool::new(false);
+/// 设置里的 display.builtin_off
+static BUILTIN_OFF: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
+
+fn sysctl_str(name: &std::ffi::CStr) -> String {
+    let mut buf = [0u8; 128];
+    let mut len = buf.len();
+    let r = unsafe { libc::sysctlbyname(name.as_ptr(), buf.as_mut_ptr() as *mut c_void, &mut len, std::ptr::null_mut(), 0) };
+    if r != 0 || len == 0 { return String::new(); }
+    String::from_utf8_lossy(&buf[..len.min(buf.len())]).trim_end_matches('\0').trim().to_string()
+}
+
+/// SLSConfigureDisplayEnabled（老名字 CGSConfigureDisplayEnabled），只探测一次
+fn display_enable_fn() -> Option<CfgEnabled> {
+    static F: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+    let p = *F.get_or_init(|| unsafe {
+        let sl = libc::dlopen(c"/System/Library/PrivateFrameworks/SkyLight.framework/SkyLight".as_ptr(), libc::RTLD_LAZY);
+        for h in [sl, libc::RTLD_DEFAULT] {
+            if h.is_null() { continue; }
+            for name in [c"SLSConfigureDisplayEnabled", c"CGSConfigureDisplayEnabled"] {
+                let f = libc::dlsym(h, name.as_ptr());
+                if !f.is_null() { return f as usize; }
+            }
+        }
+        0
+    });
+    (p != 0).then(|| unsafe { std::mem::transmute::<usize, CfgEnabled>(p) })
+}
+
+/// 按设置和机器决定内建屏能不能用「断开」
+fn disconnect_supported() -> bool {
+    let setting = BUILTIN_OFF.lock().map(|g| g.clone()).unwrap_or_default();
+    let os_major = sysctl_str(c"kern.osproductversion").split('.').next().and_then(|v| v.parse().ok()).unwrap_or(0);
+    let how = blankrun_core::monitors::builtin_off(if setting.is_empty() { "auto" } else { &setting },
+        &sysctl_str(c"machdep.cpu.brand_string"), &sysctl_str(c"hw.model"), os_major, cfg!(target_arch = "aarch64"));
+    how == blankrun_core::monitors::BuiltinOff::Disconnect && display_enable_fn().is_some()
+}
+
+/// 开/关一块屏。关：先用 kCGConfigureForSession（就算我们没机会接回，注销或重启后系统也会还原），
+/// 1 秒内没生效再用 kCGConfigurePermanently（Crisp 的经验：有的系统上只有它真正生效）。
+/// 开：用 kCGConfigurePermanently——「开着」本来就是默认状态，永久保存也无害，还能盖掉之前永久保存的「关」。
+fn set_display_enabled(id: u32, enabled: bool) -> Result {
+    if enabled { return configure_display(id, true, 2); }
+    configure_display(id, false, 1)?;
+    for _ in 0..10 {
+        if unsafe { CGDisplayIsActive(id) } == 0 { return Ok(()); }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    crate::nblog!("built-in display {id}: still active after a session-scoped disconnect, retrying permanently");
+    configure_display(id, false, 2)?;
+    for _ in 0..10 {
+        if unsafe { CGDisplayIsActive(id) } == 0 { return Ok(()); }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    // 没断开：别留个永久的「关」在那里
+    let _ = configure_display(id, true, 2);
+    Err("display stayed active after SLSConfigureDisplayEnabled".into())
+}
+
+/// 一个显示配置事务：Begin → SLSConfigureDisplayEnabled → Complete(option)
+fn configure_display(id: u32, enabled: bool, option: u32) -> Result {
+    let f = display_enable_fn().ok_or("SLSConfigureDisplayEnabled unavailable")?;
+    unsafe {
+        let mut cfg: *mut c_void = std::ptr::null_mut();
+        let e = CGBeginDisplayConfiguration(&mut cfg);
+        if e != 0 || cfg.is_null() { return Err(format!("CGBeginDisplayConfiguration = {e}")); }
+        let e = f(cfg, id, enabled);
+        if e != 0 { CGCancelDisplayConfiguration(cfg); return Err(format!("SLSConfigureDisplayEnabled({id}, {enabled}) = {e}")); }
+        let e = CGCompleteDisplayConfiguration(cfg, option);
+        if e != 0 { return Err(format!("CGCompleteDisplayConfiguration = {e}")); }
+    }
+    Ok(())
+}
+
+/// 除 `except` 以外，系统当前还在用的真实显示器数。
+/// 别的屏都没了时 macOS 会放一个厂商号为 0 / 'unkn' / 'virt' 的占位显示器，不算。
+fn other_real_displays(except: u32) -> usize {
+    let mut ids = [0u32; 16];
+    let mut n = 0u32;
+    if unsafe { CGGetActiveDisplayList(16, ids.as_mut_ptr(), &mut n) } != 0 { return 0; }
+    let fake = [0, u32::MAX, u32::from_be_bytes(*b"unkn"), u32::from_be_bytes(*b"virt")];
+    ids[..(n as usize).min(16)].iter().filter(|&&d| d != except && unsafe { CGDisplayIsActive(d) } != 0 && !fake.contains(&unsafe { CGDisplayVendorNumber(d) })).count()
+}
+
+/// 接回我们断开的屏（没有就什么都不做）
+fn reconnect_builtin(why: &str) -> Result {
+    let d = DISCONNECTED.swap(0, Relaxed);
+    if d == 0 { return Ok(()); }
+    let r = set_display_enabled(d, true);
+    match &r {
+        Ok(()) => crate::nblog!("built-in display {d}: reconnected ({why})"),
+        // 失败也别丢了这个 id：崩溃标记 / 下次启动还会再试
+        Err(e) => { DISCONNECTED.store(d, Relaxed); crate::nblog!("built-in display {d}: reconnect failed ({why}): {e}") }
+    }
+    r
+}
+
+/// 关内建屏：能断开就断开，不行退回背光 0（返回 Err 让引擎补上遮罩）
+fn builtin_off(d: u32) -> Result {
+    if DISCONNECT_FAILED.load(Relaxed) || !disconnect_supported() { return set_builtin_off(d, true); }
+    if other_real_displays(d) == 0 {
+        set_builtin_off(d, true)?;
+        return Err("built-in is the only display: not disconnecting it, backlight 0 instead".into());
+    }
+    match set_display_enabled(d, false) {
+        Ok(()) => {
+            DISCONNECTED.store(d, Relaxed);
+            crate::nblog!("built-in display {d}: disconnected (SLSConfigureDisplayEnabled), now active={}", unsafe { CGDisplayIsActive(d) } != 0);
+            Ok(())
+        }
+        Err(e) => {
+            DISCONNECT_FAILED.store(true, Relaxed);
+            set_builtin_off(d, true)?;
+            Err(format!("{e}; backlight 0 instead"))
+        }
+    }
 }
 
 static ALLOW_INJECTED: AtomicBool = AtomicBool::new(false);
@@ -413,25 +544,55 @@ fn display_sleep_now() -> Result {
 }
 
 impl Platform for Native {
-    fn configure(&mut self, cfg: &Config) { self.ac_only = cfg.power.ac_only; ALLOW_INJECTED.store(cfg.wake.allow_remote, Relaxed); }
+    fn configure(&mut self, cfg: &Config) {
+        self.ac_only = cfg.power.ac_only;
+        ALLOW_INJECTED.store(cfg.wake.allow_remote, Relaxed);
+        if let Ok(mut g) = BUILTIN_OFF.lock() { *g = cfg.display.builtin_off.clone(); }
+    }
 
     fn probe_monitor(&mut self, id: &str, x: f64, y: f64) -> super::MonHw {
         let did = display_at(x, y);
         let builtin = did.is_some_and(|d| unsafe { CGDisplayIsBuiltin(d) } != 0);
         let virtual_ = blankrun_core::monitors::looks_virtual(id);
-        let power = (builtin && display_services().is_some()).then_some("backlight");
+        let power = if builtin && disconnect_supported() { Some("disconnect") } else { (builtin && display_services().is_some()).then_some("backlight") };
         super::MonHw { label: None, virtual_, power, detail: did.map_or(String::new(), |d| format!("CGDisplay {d} {}px{}", unsafe { CGDisplayPixelsWide(d) }, if builtin { " built-in" } else { "" })) }
     }
 
     fn monitor_power(&mut self, _id: &str, x: f64, y: f64, off: bool) -> Result {
-        if !off { return set_builtin_off(0, false); }
+        if !off {
+            DISCONNECT_FAILED.store(false, Relaxed);
+            let r = reconnect_builtin("wake");
+            return r.and(set_builtin_off(0, false));
+        }
+        // 已经断开了（断开的屏不在活动列表里，按坐标找不到它）：被系统接回来了就再断开一次
+        let dis = DISCONNECTED.load(Relaxed);
+        if dis != 0 {
+            if unsafe { CGDisplayIsActive(dis) } == 0 { return Ok(()); }
+            DISCONNECTED.store(0, Relaxed);
+            return builtin_off(dis);
+        }
         let d = display_at(x, y).ok_or("display not found")?;
         if unsafe { CGDisplayIsBuiltin(d) } == 0 { return Err("external display: no DDC on macOS yet".into()); }
-        set_builtin_off(d, true)
+        builtin_off(d)
+    }
+
+    fn display_guard(&mut self) -> bool {
+        static RESCUE: std::sync::Mutex<blankrun_core::monitors::Rescue> = std::sync::Mutex::new(blankrun_core::monitors::Rescue::new());
+        let d = DISCONNECTED.load(Relaxed);
+        let mut r = RESCUE.lock().unwrap_or_else(|p| p.into_inner());
+        if d == 0 { r.reset(); return false; }
+        if !r.feed(other_real_displays(d), super::now_ms()) { return false; }
+        r.reset();
+        crate::nblog!("no other display left for {}s: reconnecting the built-in display", blankrun_core::monitors::RESCUE_MS / 1000);
+        let _ = reconnect_builtin("no other display");
+        true
     }
 
     /// 关掉的内建屏是不是又亮了（亮度键、自动亮度）：读 DisplayServices 亮度
     fn monitor_lit(&mut self, _id: &str, x: f64, y: f64) -> Option<bool> {
+        // 断开的内建屏：被系统接回来（休眠唤醒、开合盖）就算「又亮了」
+        let dis = DISCONNECTED.load(Relaxed);
+        if dis != 0 { return Some(unsafe { CGDisplayIsActive(dis) } != 0); }
         let d = display_at(x, y)?;
         if unsafe { CGDisplayIsBuiltin(d) } == 0 { return None; }
         let (get, _) = display_services()?;
@@ -574,6 +735,8 @@ impl Platform for Native {
         let bits = KB_SAVED.load(Relaxed);
         let mut s = if bits == u32::MAX { "kbd=".to_string() } else { format!("kbd={}", f32::from_bits(bits)) };
         if let Some((id, v)) = BL_SAVED.lock().ok().and_then(|g| *g) { s.push_str(&format!("\nbl={id}:{v}")); }
+        let d = DISCONNECTED.load(Relaxed);
+        if d != 0 { s.push_str(&format!("\ndis={d}")); }
         Some(s)
     }
 
@@ -614,6 +777,13 @@ impl Platform for Native {
             if let Some((id, v)) = line.strip_prefix("bl=").and_then(|v| v.split_once(':')).and_then(|(a, b)| Some((a.parse::<u32>().ok()?, b.trim().parse::<f32>().ok()?))) {
                 if let Some((_, set)) = display_services() { unsafe { set(id, v); } crate::nblog!("built-in display {id}: brightness restored to {v} after abnormal exit"); }
             }
+            // 上次断开了内建屏就退出了：接回来（重新登录 / 重启过的话系统已经还原，这里不会出错）
+            if let Some(id) = line.strip_prefix("dis=").and_then(|v| v.trim().parse::<u32>().ok()) {
+                match set_display_enabled(id, true) {
+                    Ok(()) => crate::nblog!("built-in display {id}: reconnected after abnormal exit"),
+                    Err(e) => { crate::nblog!("built-in display {id}: reconnect after abnormal exit failed: {e}"); r = Err(e); }
+                }
+            }
         }
         r
     }
@@ -623,12 +793,16 @@ impl Drop for Native {
     fn drop(&mut self) {
         let _ = self.input_hook(false);
         if let Some(j) = self.drain.take() { let _ = j.join(); }
+        let _ = reconnect_builtin("exit");
         let _ = self.keep_awake(false);
     }
 }
 
 /// panic 钩子里调用：不加锁
 pub fn emergency_restore() {
+    // 断开的内建屏先接回来（原子量，不加锁）
+    let d = DISCONNECTED.swap(0, Relaxed);
+    if d != 0 { let _ = set_display_enabled(d, true); }
     let bits = KB_SAVED.swap(u32::MAX, Relaxed);
     if bits != u32::MAX { kb_set(f32::from_bits(bits)); }
     if let (Ok(mut g), Some((_, set))) = (BL_SAVED.try_lock(), display_services()) {

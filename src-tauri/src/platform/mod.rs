@@ -73,6 +73,8 @@ pub trait Platform {
     fn monitor_power(&mut self, _id: &str, _x: f64, _y: f64, _off: bool) -> Result { Err("unsupported".into()) }
     /// 单独关掉的屏是不是又亮了（DDC 读 D6 / Mac 内建屏亮度）；None = 不知道
     fn monitor_lit(&mut self, _id: &str, _x: f64, _y: f64) -> Option<bool> { None }
+    /// 息屏中每个 tick 调用：断开的屏需要紧急接回来（别的屏都没了）时接回并返回 true，引擎随后唤醒
+    fn display_guard(&mut self) -> bool { false }
     /// 左上角在 (x, y) 的那块屏在输入钩子坐标系里的矩形（Mac 用 CGDisplayBounds）；默认用引擎算的
     fn display_rect(&mut self, _x: f64, _y: f64, fallback: Rect) -> Rect { fallback }
     /// 当前是远程桌面（RDP）会话：不去动显示器和输入

@@ -16,7 +16,7 @@ pub struct Monitor {
     pub primary: bool,
     /// 远程软件 / 头显装的虚拟显示器（向日葵/Oray、Parsec、Virtual Desktop、IddCx…）
     pub virtual_: bool,
-    /// 能单独断电的方式："ddc"（外接屏 DDC/CI）| "backlight"（Mac 内建屏背光调 0）；None = 只能遮罩
+    /// 能单独断电的方式："ddc"（外接屏 DDC/CI）| "disconnect"（Mac 内建屏断开，同合盖）| "backlight"（Mac 内建屏背光调 0）；None = 只能遮罩
     pub power: Option<&'static str>,
 }
 
@@ -62,6 +62,52 @@ pub fn keep_input_active(d: &DisplayConfig, monitors: &[Monitor]) -> bool {
     d.keep_input && d.mode == "selected"
         && monitors.iter().any(|m| !m.virtual_ && d.targets.contains(&m.id))
         && monitors.iter().any(|m| !m.virtual_ && !d.targets.contains(&m.id))
+}
+
+/// Mac 内建屏单独关闭用哪种方式
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BuiltinOff {
+    /// SkyLight `SLSConfigureDisplayEnabled(false)`：从桌面布局里拿掉，面板进待机（与合盖相同）
+    Disconnect,
+    /// DisplayServices 背光调 0（面板仍在工作，只是不亮）
+    Backlight,
+}
+
+/// 按设置和机器决定内建屏怎么关。`setting`：config.display.builtin_off；`chip`：machdep.cpu.brand_string；
+/// `model`：hw.model；`os_major`：macOS 主版本；`arm`：Apple 芯片原生运行。
+/// 「断开」只在 Apple 芯片 + macOS 13 起可用（Intel 上同一个接口不会真正断开）。
+/// auto 时避开 M3 系列（BetterDisplay：部分 M3 机型断开后要重启才能接回来）和 iMac（没有盖子可以开合来救回屏幕）。
+pub fn builtin_off(setting: &str, chip: &str, model: &str, os_major: u32, arm: bool) -> BuiltinOff {
+    let supported = arm && os_major >= 13;
+    let risky = chip.starts_with("Apple M3") || model.starts_with("iMac");
+    match setting {
+        "backlight" => BuiltinOff::Backlight,
+        "disconnect" if supported => BuiltinOff::Disconnect,
+        _ if supported && !risky => BuiltinOff::Disconnect,
+        _ => BuiltinOff::Backlight,
+    }
+}
+
+/// 这块屏能不能「断开」：它支持断开，而且断开后还有别的物理屏（不算虚拟屏）亮着。
+/// 绝不断开唯一的物理屏——那样用户就什么都看不见了。平台层断开前还会再按系统当前的显示器列表查一次。
+pub fn disconnect_ok(m: &Monitor, monitors: &[Monitor]) -> bool {
+    m.power == Some("disconnect") && monitors.iter().any(|o| o.id != m.id && !o.virtual_)
+}
+
+/// 断开内建屏后，如果别的屏全没了（拔了外接屏），macOS 不会自己把内建屏接回来，用户就面对一块黑屏。
+/// 「没有别的屏」连续 `RESCUE_MS` 才算数（显示器重新枚举、休眠唤醒时会短暂读到 0）。
+pub const RESCUE_MS: u64 = 3000;
+#[derive(Debug, Default, Clone)]
+pub struct Rescue { zero_since: Option<u64> }
+impl Rescue {
+    pub const fn new() -> Self { Self { zero_since: None } }
+    /// `others`：除断开的内建屏外，系统当前还亮着的真实显示器数；返回 true = 现在就把内建屏接回来
+    pub fn feed(&mut self, others: usize, now: u64) -> bool {
+        if others > 0 { self.zero_since = None; return false; }
+        let s = *self.zero_since.get_or_insert(now);
+        now.saturating_sub(s) >= RESCUE_MS
+    }
+    pub fn reset(&mut self) { self.zero_since = None; }
 }
 
 /// 屏幕矩形（Mac：全局坐标的点；Windows：物理像素），左上角原点
@@ -252,5 +298,54 @@ mod tests {
         assert_eq!(fence(30.0, 2000.0, &[builtin], &[left]), None, "不在关掉的屏里");
         assert_eq!(fence(30.0, 500.0, &[builtin], &[left]), Some((-1.0, 500.0)));
         assert!(builtin.contains(0.0, 0.0) && !builtin.contains(1512.0, 0.0));
+    }
+
+    #[test]
+    fn builtin_off_choice() {
+        use BuiltinOff::*;
+        // M1/M2/M4 MacBook，macOS 14：断开
+        assert_eq!(builtin_off("auto", "Apple M4", "Mac16,12", 26, true), Disconnect);
+        assert_eq!(builtin_off("auto", "Apple M1 Pro", "MacBookPro18,3", 14, true), Disconnect);
+        // macOS 12、Intel：只能背光
+        assert_eq!(builtin_off("auto", "Apple M1", "MacBookAir10,1", 12, true), Backlight);
+        assert_eq!(builtin_off("disconnect", "Intel(R) Core(TM) i7", "MacBookPro16,1", 14, false), Backlight);
+        // M3 系列、iMac：auto 不断开，手动选 disconnect 才断开
+        assert_eq!(builtin_off("auto", "Apple M3", "Mac15,12", 15, true), Backlight);
+        assert_eq!(builtin_off("auto", "Apple M3 Pro", "Mac15,6", 15, true), Backlight);
+        assert_eq!(builtin_off("disconnect", "Apple M3", "Mac15,12", 15, true), Disconnect);
+        assert_eq!(builtin_off("auto", "Apple M1", "iMac21,1", 14, true), Backlight);
+        // 用户选只调背光
+        assert_eq!(builtin_off("backlight", "Apple M4", "Mac16,12", 26, true), Backlight);
+    }
+
+    #[test]
+    fn never_disconnect_the_only_display() {
+        let b = Monitor { power: Some("disconnect"), ..mon("Built-in", false, None) };
+        let ext = mon("Ext", false, None);
+        let v = mon("V", true, None);
+        assert!(disconnect_ok(&b, &[b.clone(), ext.clone()]));
+        assert!(!disconnect_ok(&b, &[b.clone()]), "唯一的屏");
+        assert!(!disconnect_ok(&b, &[b.clone(), v]), "只剩远程软件的虚拟屏，本机看不见");
+        let bl = Monitor { power: Some("backlight"), ..b.clone() };
+        assert!(!disconnect_ok(&bl, &[bl.clone(), ext]));
+        // 断开的屏照样算「单独断电」，计划里是 Off、不走系统级关屏
+        let mut d = cfg("selected", &["Built-in"], DisplayMethod::Auto);
+        d.keep_input = true;
+        assert_eq!(plan(&d, &[b, mon("Ext", false, None)], true, false).per, vec![Off, Skip]);
+    }
+
+    #[test]
+    fn rescue_after_external_unplugged() {
+        let mut r = Rescue::default();
+        assert!(!r.feed(1, 0));
+        // 短暂读到 0（重新枚举）：不救
+        assert!(!r.feed(0, 100));
+        assert!(!r.feed(1, 1500));
+        assert!(!r.feed(0, 2000));
+        assert!(!r.feed(0, 2000 + RESCUE_MS - 1));
+        // 连续 3 秒没有别的屏：接回内建屏
+        assert!(r.feed(0, 2000 + RESCUE_MS));
+        r.reset();
+        assert!(!r.feed(0, 10_000));
     }
 }

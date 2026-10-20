@@ -108,9 +108,12 @@ pub struct DisplayConfig {
     /// 「键鼠照常用」（Mac Mini 模式）：只关所选、且还有屏亮着时，本机键盘鼠标照常送给前台 App，
     /// 不算误触也不唤醒；只认唤醒快捷键 / 紧急键 / 菜单栏 / 计划结束。见 DESIGN.md §3
     pub keep_input: bool,
+    /// 仅 macOS：内建屏单独关闭时怎么关。"auto"：Apple 芯片 + macOS 13 起「断开」（与合盖相同，面板进待机），
+    /// M3 系列和 iMac 用背光调 0；"disconnect"：能断开就断开（含 M3）；"backlight"：只把背光调到 0
+    pub builtin_off: String,
 }
 impl Default for DisplayConfig {
-    fn default() -> Self { Self { mode: "all".into(), targets: vec![], method: DisplayMethod::Auto, prefs: Default::default(), no_ddc: vec![], keep_input: false } }
+    fn default() -> Self { Self { mode: "all".into(), targets: vec![], method: DisplayMethod::Auto, prefs: Default::default(), no_ddc: vec![], keep_input: false, builtin_off: "auto".into() } }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -158,6 +161,7 @@ impl Config {
         for t in [&self.schedule.start, &self.schedule.end] {
             if crate::schedule::parse_hhmm(t).is_none() { return Err(format!("invalid time: {t} (use HH:MM)")); }
         }
+        if !["auto", "disconnect", "backlight"].contains(&self.display.builtin_off.as_str()) { self.display.builtin_off = "auto".into(); }
         if !valid_language(&self.general.language) { return Err(format!("invalid language: {}", self.general.language)); }
         Ok(())
     }
@@ -191,6 +195,10 @@ mod tests {
         // 0.1.5 及以前的配置没有 keep_input：默认关（照旧拦截全部输入）
         assert!(!Config::from_toml("[display]\nmode = \"selected\"\ntargets = [\"Built-in Retina Display\"]\n").unwrap().display.keep_input);
         assert!(Config::from_toml("[display]\nkeep_input = true\n").unwrap().display.keep_input);
+        // 没有 builtin_off：auto；写错的值回到 auto
+        assert_eq!(c.display.builtin_off, "auto");
+        assert_eq!(Config::from_toml("[display]\nbuiltin_off = \"backlight\"\n").unwrap().display.builtin_off, "backlight");
+        assert_eq!(Config::from_toml("[display]\nbuiltin_off = \"zap\"\n").unwrap().display.builtin_off, "auto");
         assert_eq!(c.schedule.days.len(), 7);
         assert_eq!(c.schedule.remind_before_min, 5);
         assert!(c.schedule.skip_when_fullscreen_video);

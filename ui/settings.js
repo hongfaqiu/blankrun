@@ -34,6 +34,7 @@ function render() {
   // 「键鼠照常用」只在「只关所选」时有意义
   $("#keepToggle").disabled = cfg.display.mode !== "selected";
   $("#keepRow").classList.toggle("dim", cfg.display.mode !== "selected");
+  $("#builtinRow").hidden = OS !== "mac";
   $$("button.toggle[data-k]").forEach((b) => { const v = !!getK(b.dataset.k) && !b.disabled; b.classList.toggle("on", v); b.setAttribute("aria-checked", v); });
   $$("select[data-k]").forEach((s) => (s.value = String(getK(s.dataset.k))));
   $$(".seg[data-k]").forEach((g) => $$("button", g).forEach((b) => b.classList.toggle("on", b.dataset.v === getK(g.dataset.k))));
