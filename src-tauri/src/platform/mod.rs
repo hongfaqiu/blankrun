@@ -71,10 +71,40 @@ pub trait Platform {
     fn probe_monitor(&mut self, _id: &str, _x: f64, _y: f64) -> MonHw { MonHw::default() }
     /// 单独关/开一块显示器（DDC/CI 或内建屏背光）
     fn monitor_power(&mut self, _id: &str, _x: f64, _y: f64, _off: bool) -> Result { Err("unsupported".into()) }
-    /// 单独关掉的屏是不是又亮了（DDC 读 D6）；None = 不知道
+    /// 单独关掉的屏是不是又亮了（DDC 读 D6 / Mac 内建屏亮度）；None = 不知道
     fn monitor_lit(&mut self, _id: &str, _x: f64, _y: f64) -> Option<bool> { None }
+    /// 左上角在 (x, y) 的那块屏在输入钩子坐标系里的矩形（Mac 用 CGDisplayBounds）；默认用引擎算的
+    fn display_rect(&mut self, _x: f64, _y: f64, fallback: Rect) -> Rect { fallback }
     /// 当前是远程桌面（RDP）会话：不去动显示器和输入
     fn remote_desktop(&self) -> bool { false }
+}
+
+// ---------- 「键鼠照常用」（Mac Mini 模式） ----------
+/// 开着时输入钩子只吞唤醒键 / 紧急键组合，别的键鼠原样放行（见 blankrun_core::wake::KeepFilter）
+#[cfg_attr(not(any(windows, target_os = "macos")), allow(dead_code))]
+pub static KEEP_INPUT: AtomicBool = AtomicBool::new(false);
+static KEEP_FILTER: std::sync::Mutex<Option<blankrun_core::wake::KeepFilter>> = std::sync::Mutex::new(None);
+/// (关掉的屏, 亮着的屏)：光标不进关掉的屏
+static FENCE: std::sync::Mutex<(Vec<Rect>, Vec<Rect>)> = std::sync::Mutex::new((Vec::new(), Vec::new()));
+pub use blankrun_core::monitors::Rect;
+
+/// 装钩子之前调用（filter=Some 开，None 关）。fence：光标围栏，Mac 用全局点坐标，Windows 用物理像素
+pub fn set_keep_input(filter: Option<blankrun_core::wake::KeepFilter>, fence: (Vec<Rect>, Vec<Rect>)) {
+    let on = filter.is_some();
+    *KEEP_FILTER.lock().unwrap_or_else(|p| p.into_inner()) = filter;
+    *FENCE.lock().unwrap_or_else(|p| p.into_inner()) = if on { fence } else { Default::default() };
+    KEEP_INPUT.store(on, Relaxed);
+}
+/// 钩子回调里调用：这个按键要不要吞（只有唤醒键 / 紧急键）
+#[cfg_attr(not(any(windows, target_os = "macos")), allow(dead_code))]
+pub fn keep_key(key: &'static str, mods: u8, down: bool) -> bool {
+    KEEP_FILTER.lock().unwrap_or_else(|p| p.into_inner()).as_mut().is_some_and(|f| f.key(key, mods, down))
+}
+/// 钩子回调里调用：光标要去的点落在关掉的屏上时，返回应该停在的点
+#[cfg_attr(not(any(windows, target_os = "macos")), allow(dead_code))]
+pub fn fence_point(x: f64, y: f64) -> Option<(f64, f64)> {
+    let g = FENCE.lock().unwrap_or_else(|p| p.into_inner());
+    blankrun_core::monitors::fence(x, y, &g.0, &g.1)
 }
 
 // ---------- 「立即息屏」全局快捷键 ----------

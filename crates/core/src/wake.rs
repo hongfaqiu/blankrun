@@ -28,6 +28,45 @@ pub fn route(injected: bool, allow_remote: bool) -> Route {
     if injected && allow_remote { Route::PassThrough } else { Route::Policy }
 }
 
+/// 「键鼠照常用」（Mac Mini 模式）时，输入钩子对每个按键的取舍：只吞唤醒键 / 紧急键这两个组合
+/// （按下、自动重复和对应的抬起），别的键原样送给前台 App。修饰键永远放行，
+/// 所以前台 App 看到的是一次完整的 ⌃⌥ 按下-抬起，不会以为它们卡住了。
+/// 被吞掉的组合仍然交给 WakePolicy 判断按住多久，所以快捷键照常能唤醒。
+#[derive(Debug, Clone, Default)]
+pub struct KeepFilter {
+    keys: Vec<Hotkey>,
+    /// 正被吞掉的主键（它的抬起也要吞，哪怕那时修饰键已经先松开了）
+    held: Option<&'static str>,
+}
+impl KeepFilter {
+    /// `wake`：唤醒方式需要唤醒快捷键时才传（「仅按计划」不传）；紧急键总是认
+    pub fn new(wake: Option<&str>, emergency: &str) -> Self {
+        Self { keys: wake.and_then(Hotkey::parse).into_iter().chain(Hotkey::parse(emergency)).collect(), held: None }
+    }
+    pub fn from_config(cfg: &Config) -> Self {
+        let wake = (keep_input_method(cfg.wake.method) == WakeMethod::Hotkey).then_some(cfg.wake.hotkey.as_str());
+        Self::new(wake, &cfg.safety.emergency_hotkey)
+    }
+    /// 一个键盘事件（`key` 为规范键名，纯修饰键为 "Mod"）；返回 true = 吞掉
+    pub fn key(&mut self, key: &'static str, mods: u8, down: bool) -> bool {
+        if key == "Mod" { return false; }
+        if down {
+            if self.keys.iter().any(|h| h.matches(key, mods)) { self.held = Some(key); return true; }
+            // 按住组合时先松了一个修饰键，主键的自动重复还在：继续吞，直到它抬起
+            self.held == Some(key)
+        } else if self.held == Some(key) {
+            self.held = None;
+            true
+        } else { false }
+    }
+}
+
+/// 「键鼠照常用」时实际生效的唤醒方式：任意键 / 鼠标 / 点击这些方式会被正常使用的输入立刻触发，
+/// 一律改成「按住唤醒快捷键」；「仅按计划」保持（紧急键照样能用）。
+pub fn keep_input_method(m: WakeMethod) -> WakeMethod {
+    match m { WakeMethod::ScheduleOnly => WakeMethod::ScheduleOnly, _ => WakeMethod::Hotkey }
+}
+
 #[derive(Debug, Default)]
 pub struct WakePolicy {
     acc_px: f64,
@@ -41,6 +80,8 @@ pub struct WakePolicy {
     mouse_window_ms: u64,
     /// 最近一次 Wake 是紧急键触发的（写息屏记录用）
     pub by_emergency: bool,
+    /// 本次息屏是「键鼠照常用」：唤醒方式按 keep_input_method 改写
+    keep_input: bool,
 }
 
 impl WakePolicy {
@@ -58,6 +99,9 @@ impl WakePolicy {
         self.mouse_window_ms = cfg.wake.mouse_window_ms as u64;
         self.reset();
     }
+    /// 每次息屏开始时设置（configure 不会改它，息屏中改设置也不影响本次）
+    pub fn set_keep_input(&mut self, on: bool) { self.keep_input = on; self.reset(); }
+    pub fn keep_input(&self) -> bool { self.keep_input }
     pub fn is_holding(&self) -> bool { self.hold_start_ms.is_some() }
     pub fn reset(&mut self) { self.acc_px = 0.0; self.window_start_ms = None; self.hold_start_ms = None; }
 
@@ -79,6 +123,7 @@ impl WakePolicy {
         }
         self.by_emergency = false;
         let method = self.method.unwrap_or(WakeMethod::Hotkey);
+        let method = if self.keep_input { keep_input_method(method) } else { method };
         match (method, input) {
             // Password：任意键唤醒后由平台锁屏，交给系统密码框
             (WakeMethod::AnyKey | WakeMethod::Password, Input::Key { down: true, .. }) => Wake,
@@ -168,5 +213,60 @@ mod tests {
         assert_eq!(route(true, false), Route::Policy);
         assert_eq!(route(false, true), Route::Policy);
         assert_eq!(route(false, false), Route::Policy);
+    }
+
+    #[test]
+    fn keep_input_policy_only_hotkey_wakes() {
+        // 唤醒方式是「任意键」，但「键鼠照常用」时打字、动鼠标、点击都不能唤醒，只认按住唤醒键
+        let mut p = WakePolicy::new(&cfg(WakeMethod::AnyKey));
+        p.set_keep_input(true);
+        assert_eq!(p.feed(key("Q", 0, true, 0)), Verdict::Ignored);
+        assert_eq!(p.feed(Input::Click), Verdict::Ignored);
+        assert_eq!(p.feed(Input::MouseMove { dx: 5000.0, dy: 0.0, t_ms: 10 }), Verdict::Ignored);
+        assert!(matches!(p.feed(key("W", CTRL | ALT, true, 100)), Verdict::Holding(_)));
+        assert_eq!(p.tick(1100), Some(Verdict::Wake));
+        // 改设置（configure）不会把本次息屏的 keep_input 冲掉
+        p.configure(&cfg(WakeMethod::MouseMove));
+        assert!(p.keep_input());
+        assert_eq!(p.feed(Input::MouseMove { dx: 5000.0, dy: 0.0, t_ms: 2000 }), Verdict::Ignored);
+        // 仅按计划：唤醒键不唤醒，紧急键照样
+        let mut p = WakePolicy::new(&cfg(WakeMethod::ScheduleOnly));
+        p.set_keep_input(true);
+        p.feed(key("W", CTRL | ALT, true, 0));
+        assert_eq!(p.tick(5000), None);
+        assert_eq!(p.feed(key("Esc", CTRL | ALT | SHIFT, true, 6000)), Verdict::Wake);
+        // 关掉后恢复原来的唤醒方式
+        let mut p = WakePolicy::new(&cfg(WakeMethod::AnyKey));
+        p.set_keep_input(true);
+        p.set_keep_input(false);
+        assert_eq!(p.feed(key("Q", 0, true, 0)), Verdict::Wake);
+    }
+
+    #[test]
+    fn keep_filter_swallows_only_the_combos() {
+        let mut c = Config::default(); // 唤醒 Ctrl+Alt+W，紧急 Ctrl+Alt+Shift+Esc
+        let mut f = KeepFilter::from_config(&c);
+        // 普通打字、修饰键、别的组合：全部放行
+        assert!(!f.key("A", 0, true) && !f.key("A", 0, false));
+        assert!(!f.key("Mod", CTRL | ALT, true));
+        assert!(!f.key("W", CTRL, true) && !f.key("W", CTRL, false));
+        assert!(!f.key("W", 0, true) && !f.key("W", 0, false));
+        // 唤醒组合：按下、自动重复、抬起都吞
+        assert!(f.key("W", CTRL | ALT, true));
+        assert!(f.key("W", CTRL | ALT, true));
+        // 先松了 Alt，W 还在重复、然后抬起：继续吞，不漏一个 w 给前台 App
+        assert!(!f.key("Mod", CTRL, false));
+        assert!(f.key("W", CTRL, true));
+        assert!(f.key("W", 0, false));
+        assert!(!f.key("W", 0, true), "下一次普通的 w 放行");
+        // 紧急键
+        assert!(f.key("Esc", CTRL | ALT | SHIFT, true) && f.key("Esc", CTRL | ALT | SHIFT, false));
+        assert!(!f.key("Esc", 0, true));
+        // 「仅按计划」：唤醒组合不吞（它不唤醒，吞了只会让前台 App 收不到），紧急键照吞
+        c.wake.method = WakeMethod::ScheduleOnly;
+        let mut f = KeepFilter::from_config(&c);
+        assert!(!f.key("W", CTRL | ALT, true));
+        assert!(f.key("Esc", CTRL | ALT | SHIFT, true));
+        assert_eq!(keep_input_method(WakeMethod::Password), WakeMethod::Hotkey);
     }
 }

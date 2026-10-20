@@ -49,9 +49,10 @@ days = ["mon","tue","wed","thu","fri","sat","sun"]   # 默认每天
 remind_before_min = 5      # 开始前几分钟弹通知（可推迟 30 分钟 / 跳过今晚），0 = 不提醒
 skip_when_fullscreen_video = true   # 有程序在全屏播放视频时跳过本次
 [display]
-mode = "all"               # all | list
+mode = "all"               # all | selected
 targets = []               # 显示器 ID / 名称
 method = "auto"            # auto | power_off | overlay
+keep_input = false         # 键鼠照常用（Mac mini 模式），见下文
 [lights]
 keyboard_backlight = true
 openrgb = false
@@ -61,6 +62,15 @@ emergency_hotkey = "Ctrl+Alt+Shift+Esc"   # 任何唤醒方式下都有效
 [power]
 ac_only = false            # 仅 macOS：只在接通电源时防睡眠，用电池时照常睡眠
 ```
+
+### 键鼠照常用（Mac mini 模式，`display.keep_input`）
+场景：MacBook 接外接屏当 Mac mini 用，只想关掉内建屏，外接屏亮着、本机键盘鼠标触控板照常用。
+- **生效条件**（`monitors::keep_input_active`）：`keep_input = true`、`mode = "selected"`，且所选里有物理屏、没选的物理屏至少还剩一块。全部选中 / 「全部显示器」时不生效，照旧拦截。
+- **关屏**：所选的屏照常「单独断电 + 遮罩」（Mac 内建屏背光调 0，Windows 外接屏 DDC/CI）。**绝不走系统级关屏**（`pmset displaysleepnow` / `SC_MONITORPOWER` 会把亮着的屏也关掉）。背光被亮度键 / 自动亮度调回来时，每 5 秒的巡检会再调回 0。遮罩不抢焦点、点击穿透。不关键盘背光（键盘还在用）。
+- **输入**：钩子照装，但只吞唤醒键 / 紧急键这两个组合（按下、重复和对应的抬起，`wake::KeepFilter`），其他键鼠原样放行；修饰键永远放行。放行的输入不算误触、不显示提示、不触发重新息屏。
+- **唤醒**：只认按住唤醒快捷键（任意键 / 鼠标 / 点击 / 密码这几种方式改成按住唤醒键，`wake::keep_input_method`；密码方式唤醒后仍锁屏）、紧急键、菜单栏 / 托盘、计划结束。「仅按计划」时唤醒键不生效，紧急键照样。
+- **光标**：光标要移进关掉的屏时挡在边上（`monitors::fence`；Mac 用 `CGWarpMouseCursorPosition`，Windows 用 `SetCursorPos`）。没有亮着的屏可去时不挡。
+- **Mac 没给辅助功能权限**：装不上 CGEventTap，键鼠本来就放行；唤醒键 / 紧急键改走 Carbon 系统热键，但没有光标围栏。
 
 ## 4. 技术栈
 推荐 **Tauri 2 + Rust 核心，平台相关代码按需写原生**：

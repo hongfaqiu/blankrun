@@ -56,19 +56,50 @@ pub fn unresponsive(d: &DisplayConfig, m: &Monitor) -> bool {
     d.no_ddc.contains(&m.label) && pref(d, m) != "off"
 }
 
+/// 「键鼠照常用」（Mac Mini 模式）此刻是否生效：开了 `keep_input`、范围是「只关所选」，
+/// 并且至少还有一块物理屏不关——全部关掉时放行键鼠也看不见在操作什么，照旧拦截。
+pub fn keep_input_active(d: &DisplayConfig, monitors: &[Monitor]) -> bool {
+    d.keep_input && d.mode == "selected"
+        && monitors.iter().any(|m| !m.virtual_ && d.targets.contains(&m.id))
+        && monitors.iter().any(|m| !m.virtual_ && !d.targets.contains(&m.id))
+}
+
+/// 屏幕矩形（Mac：全局坐标的点；Windows：物理像素），左上角原点
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct Rect { pub x: f64, pub y: f64, pub w: f64, pub h: f64 }
+impl Rect {
+    pub fn contains(&self, px: f64, py: f64) -> bool { px >= self.x && py >= self.y && px < self.x + self.w && py < self.y + self.h }
+    /// 矩形内离 (px, py) 最近的点（右/下边界内缩 1，保证点落在矩形里）
+    fn clamp(&self, px: f64, py: f64) -> (f64, f64) {
+        (px.clamp(self.x, self.x + (self.w - 1.0).max(0.0)), py.clamp(self.y, self.y + (self.h - 1.0).max(0.0)))
+    }
+}
+
+/// 光标围栏：「键鼠照常用」时光标别跑进已经关掉的屏（在那里看不见、也点不到东西）。
+/// 点落在 `blocked` 里时返回 `allowed` 中离它最近的点；不在 blocked 里、或没有可去的屏时返回 None（不动）。
+pub fn fence(px: f64, py: f64, blocked: &[Rect], allowed: &[Rect]) -> Option<(f64, f64)> {
+    if !blocked.iter().any(|r| r.contains(px, py)) || allowed.iter().any(|r| r.contains(px, py)) { return None; }
+    allowed.iter().map(|r| r.clamp(px, py))
+        .min_by(|a, b| {
+            let d = |p: &(f64, f64)| (p.0 - px).powi(2) + (p.1 - py).powi(2);
+            d(a).partial_cmp(&d(b)).unwrap_or(std::cmp::Ordering::Equal)
+        })
+}
+
 /// 决定每块屏怎么关。
 /// - `global_ok`：系统级关屏可用且不会让电脑进低功耗待机（Windows Modern Standby 上为 false）
 /// - `remote`：「放行远程控制」开着：不用系统级关屏（它也会关掉远程看到的画面），物理屏逐块断电
 ///
 /// 所有物理屏都要关（「全部显示器」，或「只关所选」选中了全部物理屏）、没开远程控制、也没有哪台被设成仅遮罩时，
 /// 走系统级关屏：它对不支持 DDC/CI 或不响应 D6 的显示器（比如 SAC DM73u）也能真正断电。
+/// 「键鼠照常用」生效时绝不走系统级关屏（pmset displaysleepnow / SC_MONITORPOWER 会把亮着的外接屏也关掉）。
 pub fn plan(d: &DisplayConfig, monitors: &[Monitor], global_ok: bool, remote: bool) -> Plan {
     let selected = d.mode == "selected";
     let targeted = |m: &Monitor| !m.virtual_ && (!selected || d.targets.contains(&m.id));
     let physical = || monitors.iter().filter(|m| !m.virtual_);
     let covers_all = physical().all(targeted) && physical().next().is_some();
     let any_overlay_pref = physical().any(|m| targeted(m) && pref(d, m) == "overlay");
-    let global_off = covers_all && !remote && !any_overlay_pref && match d.method {
+    let global_off = covers_all && !remote && !any_overlay_pref && !keep_input_active(d, monitors) && match d.method {
         DisplayMethod::PowerOff => true,
         DisplayMethod::Overlay => false,
         DisplayMethod::Auto => global_ok,
@@ -165,5 +196,61 @@ mod tests {
         let p = plan(&d, &ms, true, false);
         assert!(!p.global_off);
         assert_eq!(p.per, vec![Overlay, Off]);
+    }
+
+    #[test]
+    fn keep_input_only_with_a_display_left_on() {
+        // MacBook 内屏 + 一块外接屏：只关内屏、键鼠照常用
+        let ms = [mon("Built-in", false, Some("backlight")), mon("Ext", false, None), mon("V", true, None)];
+        let mut d = cfg("selected", &["Built-in"], DisplayMethod::Auto);
+        assert!(!keep_input_active(&d, &ms), "off by default");
+        d.keep_input = true;
+        assert!(keep_input_active(&d, &ms));
+        let p = plan(&d, &ms, true, false);
+        assert!(!p.global_off);
+        assert_eq!(p.per, vec![Off, Skip, Skip]);
+        // 两块物理屏都选了：没有亮着的屏可用，照旧（可以系统级关屏）
+        let mut all = cfg("selected", &["Built-in", "Ext"], DisplayMethod::Auto);
+        all.keep_input = true;
+        assert!(!keep_input_active(&all, &ms));
+        assert!(plan(&all, &ms, true, false).global_off);
+        // 「全部显示器」模式下不生效
+        let mut a = cfg("all", &[], DisplayMethod::Auto);
+        a.keep_input = true;
+        assert!(!keep_input_active(&a, &ms));
+        // 什么都没选（或只选了虚拟屏）：不生效
+        let mut none = cfg("selected", &["V"], DisplayMethod::Auto);
+        none.keep_input = true;
+        assert!(!keep_input_active(&none, &ms));
+        // 拔掉外接屏后只剩内屏：不生效
+        assert!(!keep_input_active(&d, &ms[..1]));
+    }
+
+    #[test]
+    fn keep_input_never_global_even_with_power_off_method() {
+        let ms = [mon("Built-in", false, Some("backlight")), mon("Ext", false, Some("ddc"))];
+        let mut d = cfg("selected", &["Built-in"], DisplayMethod::PowerOff);
+        d.keep_input = true;
+        let p = plan(&d, &ms, true, false);
+        assert!(!p.global_off);
+        assert_eq!(p.per, vec![Off, Skip]);
+    }
+
+    #[test]
+    fn cursor_fence() {
+        // 外接屏在上方 (0,-1080) 1920×1080，内屏在下方 (0,0) 1512×982
+        let ext = Rect { x: 0.0, y: -1080.0, w: 1920.0, h: 1080.0 };
+        let builtin = Rect { x: 0.0, y: 0.0, w: 1512.0, h: 982.0 };
+        // 在外接屏里：不动
+        assert_eq!(fence(100.0, -10.0, &[builtin], &[ext]), None);
+        // 跑进内屏：推回外接屏底边
+        assert_eq!(fence(700.0, 5.0, &[builtin], &[ext]), Some((700.0, -1.0)));
+        // 没有可去的屏（外接屏拔了）：不动，免得光标卡死
+        assert_eq!(fence(700.0, 5.0, &[builtin], &[]), None);
+        // 两块屏左右并排、内屏在右
+        let left = Rect { x: -2560.0, y: 0.0, w: 2560.0, h: 1440.0 };
+        assert_eq!(fence(30.0, 2000.0, &[builtin], &[left]), None, "不在关掉的屏里");
+        assert_eq!(fence(30.0, 500.0, &[builtin], &[left]), Some((-1.0, 500.0)));
+        assert!(builtin.contains(0.0, 0.0) && !builtin.contains(1512.0, 0.0));
     }
 }

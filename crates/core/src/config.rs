@@ -105,9 +105,12 @@ pub struct DisplayConfig {
     pub prefs: std::collections::BTreeMap<String, String>,
     /// 自动发现「接受 DDC/CI 断电指令但其实不关」的显示器（按显示名），以后只用遮罩
     pub no_ddc: Vec<String>,
+    /// 「键鼠照常用」（Mac Mini 模式）：只关所选、且还有屏亮着时，本机键盘鼠标照常送给前台 App，
+    /// 不算误触也不唤醒；只认唤醒快捷键 / 紧急键 / 菜单栏 / 计划结束。见 DESIGN.md §3
+    pub keep_input: bool,
 }
 impl Default for DisplayConfig {
-    fn default() -> Self { Self { mode: "all".into(), targets: vec![], method: DisplayMethod::Auto, prefs: Default::default(), no_ddc: vec![] } }
+    fn default() -> Self { Self { mode: "all".into(), targets: vec![], method: DisplayMethod::Auto, prefs: Default::default(), no_ddc: vec![], keep_input: false } }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -185,6 +188,9 @@ mod tests {
         assert!(Config::from_toml("[power]\nac_only = true\n").unwrap().power.keep_awake);
         assert!(!Config::from_toml("[power]\nkeep_awake = false\n").unwrap().power.keep_awake);
         assert_eq!(c.wake.hold_ms, 1000);
+        // 0.1.5 及以前的配置没有 keep_input：默认关（照旧拦截全部输入）
+        assert!(!Config::from_toml("[display]\nmode = \"selected\"\ntargets = [\"Built-in Retina Display\"]\n").unwrap().display.keep_input);
+        assert!(Config::from_toml("[display]\nkeep_input = true\n").unwrap().display.keep_input);
         assert_eq!(c.schedule.days.len(), 7);
         assert_eq!(c.schedule.remind_before_min, 5);
         assert!(c.schedule.skip_when_fullscreen_video);

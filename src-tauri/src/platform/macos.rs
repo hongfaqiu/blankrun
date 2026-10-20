@@ -5,6 +5,7 @@
 //! - 恢复：IOPMAssertionDeclareUserActivity 点亮屏幕。
 //! - 键盘背光：运行时 dlopen 私有的 CoreBrightness.framework，KeyboardBrightnessClient，每个方法先 respondsToSelector，缺任何一个就降级为"只关屏幕"。
 //! - 输入：CGEventTap（会话级、主动过滤），需要「辅助功能」权限；回调吞掉所有事件并翻译后送进引擎。
+//!   「键鼠照常用」（Mac Mini 模式）时只吞唤醒键 / 紧急键，别的事件原样返回（= 放行），光标被挡在关掉的屏外面。
 //! - 崩溃：断言随进程释放；背光原值写进磁盘标记文件，下次启动还原；panic 钩子里用全局原子量立即还原。
 #![allow(non_upper_case_globals, clippy::missing_safety_doc)]
 use std::ffi::{c_char, c_void, CString};
@@ -41,6 +42,9 @@ extern "C" {
 #[repr(C)]
 #[derive(Clone, Copy, PartialEq, Default)]
 struct CGRect { x: f64, y: f64, w: f64, h: f64 }
+#[repr(C)]
+#[derive(Clone, Copy, PartialEq, Default)]
+struct CGPoint { x: f64, y: f64 }
 
 #[link(name = "Carbon", kind = "framework")]
 extern "C" {
@@ -88,6 +92,10 @@ extern "C" {
     static kCGWindowBounds: CFStringRef;
     static kCGWindowOwnerPID: CFStringRef;
     fn CGRequestListenEventAccess() -> bool;
+    fn CGEventGetLocation(event: *mut c_void) -> CGPoint;
+    fn CGEventSetLocation(event: *mut c_void, p: CGPoint);
+    fn CGWarpMouseCursorPosition(p: CGPoint) -> i32;
+    fn CGAssociateMouseAndMouseCursorPosition(connected: u32) -> i32;
 }
 
 #[link(name = "ApplicationServices", kind = "framework")]
@@ -278,6 +286,8 @@ extern "C" fn tap_cb(_proxy: *mut c_void, ty: u32, ev: *mut c_void, _user: *mut 
             return if swallow { std::ptr::null_mut() } else { ev };
         }
         let t = now_ms();
+        // 「键鼠照常用」：键鼠照常送给前台 App；按键仍然上报，用来认唤醒键 / 紧急键（只吞这两个组合）
+        if super::KEEP_INPUT.load(Relaxed) { return keep_input_event(ty, ev, t); }
         // 装 tap 之前就按着的键（比如刚按的 ⌃⌥B），抬起要放行，否则别的 App 会以为修饰键一直按着
         match ty {
             10 | 11 => {
@@ -308,6 +318,43 @@ extern "C" fn tap_cb(_proxy: *mut c_void, ty: u32, ev: *mut c_void, _user: *mut 
         }
     }
     std::ptr::null_mut() // 吞掉
+}
+
+/// 「键鼠照常用」时的 tap 回调：返回 ev = 放行，null = 吞掉
+unsafe fn keep_input_event(ty: u32, ev: *mut c_void, t: u64) -> *mut c_void {
+    match ty {
+        10 | 11 => {
+            let code = CGEventGetIntegerValueField(ev, 9);
+            let (key, mods, down) = (keycode_name(code), flags_mods(CGEventGetFlags(ev)), ty == 10);
+            let swallow = super::keep_key(key, mods, down);
+            // 只记下被吞掉的键：唤醒时它还按着的话，排空会把它的重复和抬起也吞掉；放行的键不用管
+            let c = code as usize & 127;
+            let (w, bit) = (&KEY_SEEN[c >> 6], 1u64 << (c & 63));
+            if swallow && down { w.fetch_or(bit, Relaxed); } else if !down { w.fetch_and(!bit, Relaxed); }
+            emit_input(Input::Key { key, mods, down, t_ms: t });
+            if swallow { std::ptr::null_mut() } else { ev }
+        }
+        12 => {
+            // 修饰键永远放行（不记进 MOD_SEEN，唤醒后也不排空它们）
+            let mods = flags_mods(CGEventGetFlags(ev));
+            MOD_PREV.store(mods, Relaxed);
+            emit_input(Input::Key { key: "Mod", mods, down: mods != 0, t_ms: t });
+            ev
+        }
+        // 鼠标移动 / 拖动：要进关掉的屏就挡在边上
+        5 | 6 | 7 | 27 => {
+            let p = CGEventGetLocation(ev);
+            if let Some((x, y)) = super::fence_point(p.x, p.y) {
+                let q = CGPoint { x, y };
+                CGEventSetLocation(ev, q);
+                CGWarpMouseCursorPosition(q);
+                // warp 后系统默认会冻结本地鼠标约 0.25 秒；马上重新关联，光标不卡顿
+                CGAssociateMouseAndMouseCursorPosition(1);
+            }
+            ev
+        }
+        _ => ev,
+    }
 }
 
 static KEY_SEEN: [AtomicU64; 2] = [AtomicU64::new(0), AtomicU64::new(0)];
@@ -381,6 +428,22 @@ impl Platform for Native {
         let d = display_at(x, y).ok_or("display not found")?;
         if unsafe { CGDisplayIsBuiltin(d) } == 0 { return Err("external display: no DDC on macOS yet".into()); }
         set_builtin_off(d, true)
+    }
+
+    /// 关掉的内建屏是不是又亮了（亮度键、自动亮度）：读 DisplayServices 亮度
+    fn monitor_lit(&mut self, _id: &str, x: f64, y: f64) -> Option<bool> {
+        let d = display_at(x, y)?;
+        if unsafe { CGDisplayIsBuiltin(d) } == 0 { return None; }
+        let (get, _) = display_services()?;
+        let mut v = 0f32;
+        (unsafe { get(d, &mut v) } == 0).then_some(v > 0.001)
+    }
+
+    fn display_rect(&mut self, x: f64, y: f64, fallback: super::Rect) -> super::Rect {
+        match display_at(x, y) {
+            Some(d) => { let r = unsafe { CGDisplayBounds(d) }; super::Rect { x: r.x, y: r.y, w: r.w, h: r.h } }
+            None => fallback,
+        }
     }
 
     fn keep_awake(&mut self, on: bool) -> Result {

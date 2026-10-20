@@ -6,7 +6,7 @@
     general: { launch_at_login: false, language: "auto", blank_now_hotkey: "Ctrl+Alt+B", check_updates: true },
     wake: { allow_remote: false, method: "hotkey", hotkey: "Ctrl+Alt+W", mouse_threshold_px: 150, mouse_window_ms: 800, lock_on_wake: false, reblank_after_s: 3, hold_ms: 1000 },
     schedule: { enabled: true, start: "23:30", end: "07:30", days: ["mon", "tue", "wed", "thu", "fri"], remind_before_min: 5, skip_when_fullscreen_video: true },
-    display: { mode: q.get("mode") || "all", targets: ["DISPLAY1"], method: "auto", prefs: { "LG HDR 4K": "overlay" }, no_ddc: ["DM73u pro"] },
+    display: { mode: q.get("mode") || "all", targets: q.get("keep") ? ["Built-in Retina Display"] : ["DISPLAY1"], method: "auto", prefs: { "LG HDR 4K": "overlay" }, no_ddc: ["DM73u pro"], keep_input: !!q.get("keep") },
     lights: { keyboard_backlight: true, openrgb: false, openrgb_host: "127.0.0.1:6742" },
     safety: { emergency_hotkey: "Ctrl+Alt+Shift+Esc" }, power: { keep_awake: q.get("awake") !== "off", ac_only: false },
   };

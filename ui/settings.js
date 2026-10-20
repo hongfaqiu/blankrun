@@ -31,6 +31,9 @@ addEventListener("hashchange", () => show());
 // ---------- 渲染 ----------
 function render() {
   if (!cfg) return;
+  // 「键鼠照常用」只在「只关所选」时有意义
+  $("#keepToggle").disabled = cfg.display.mode !== "selected";
+  $("#keepRow").classList.toggle("dim", cfg.display.mode !== "selected");
   $$("button.toggle[data-k]").forEach((b) => { const v = !!getK(b.dataset.k) && !b.disabled; b.classList.toggle("on", v); b.setAttribute("aria-checked", v); });
   $$("select[data-k]").forEach((s) => (s.value = String(getK(s.dataset.k))));
   $$(".seg[data-k]").forEach((g) => $$("button", g).forEach((b) => b.classList.toggle("on", b.dataset.v === getK(g.dataset.k))));
@@ -175,6 +178,11 @@ function renderMonitors() {
     if (m.virtual) r.dataset.virtual = "1";
     return r;
   }));
+  // 「键鼠照常用」的说明：没选「只关所选」/ 所选包含全部物理屏时说明为什么不生效
+  const phys = mons.filter((m) => !m.virtual), tg = cfg.display.targets;
+  $("#keepNote").textContent = !sel ? t("b.keep_need_sel")
+    : phys.length && phys.every((m) => tg.includes(m.id)) ? t("b.keep_all_sel")
+    : t("b.keep_note");
   // 有物理屏只能用遮罩时，提示去显示器菜单里打开 DDC/CI
   $("#ddcHint").hidden = !mons.some((m) => !m.virtual && (!m.power || m.unresponsive));
 }
