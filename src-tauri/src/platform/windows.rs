@@ -3,6 +3,7 @@
 //! - 关屏：SC_MONITORPOWER=2（只发给自己的隐藏窗口，不广播）；Modern Standby（AoAc）机器上关屏会进 S0 低功耗待机，自动模式下改用遮罩（上层 webview）。
 //! - 屏幕状态：PowerSettingRegisterNotification(GUID_CONSOLE_DISPLAY_STATE) 回调，不需要窗口。
 //! - 输入：WH_KEYBOARD_LL / WH_MOUSE_LL，跑在独立的消息循环线程里，吞掉所有非注入事件。
+//!   「键鼠照常用」时只吞唤醒键 / 紧急键，别的照常放行；光标用 SetCursorPos 挡在关掉的屏外面。
 //! - 崩溃：执行状态、钩子、遮罩都随进程消失，系统会自己恢复；启动时再补发一次"开屏"。
 use std::sync::atomic::{AtomicU8, Ordering::Relaxed};
 use std::thread::JoinHandle;
@@ -394,6 +395,23 @@ unsafe extern "system" fn kb_proc(code: i32, wp: WPARAM, lp: LPARAM) -> LRESULT 
     }
     let down = wp == WM_KEYDOWN as WPARAM || wp == WM_SYSKEYDOWN as WPARAM;
     let (w, bit) = (&SEEN_DOWN[(k.vkCode as usize >> 6) & 3], 1u64 << (k.vkCode & 63));
+    // 「键鼠照常用」：只吞唤醒键 / 紧急键组合，别的键（含修饰键）照常送给前台程序；按键仍上报给唤醒策略
+    if super::KEEP_INPUT.load(Relaxed) {
+        let m = vk_mod(k.vkCode);
+        let swallow = if m != 0 {
+            if down { MODS.fetch_or(m, Relaxed); } else { MODS.fetch_and(!m, Relaxed); }
+            emit_input(Input::Key { key: "Mod", mods: MODS.load(Relaxed), down, t_ms: now_ms() });
+            false
+        } else {
+            let (key, mods) = (vk_name(k.vkCode), MODS.load(Relaxed));
+            let swallow = super::keep_key(key, mods, down);
+            // 只记被吞掉的键：唤醒时还按着它，排空会继续吞它的重复和抬起
+            if swallow && down { w.fetch_or(bit, Relaxed); } else if !down { w.fetch_and(!bit, Relaxed); }
+            emit_input(Input::Key { key, mods, down, t_ms: now_ms() });
+            swallow
+        };
+        return if swallow { 1 } else { CallNextHookEx(std::ptr::null_mut(), code, wp, lp) };
+    }
     if down { w.fetch_or(bit, Relaxed); }
     else if w.fetch_and(!bit, Relaxed) & bit == 0 { return CallNextHookEx(std::ptr::null_mut(), code, wp, lp); }
     // 远程控制软件、屏幕键盘发来的是「注入」事件：一样拦下，也一样能用来唤醒
@@ -411,6 +429,16 @@ unsafe extern "system" fn ms_proc(code: i32, wp: WPARAM, lp: LPARAM) -> LRESULT 
     let m = &*(lp as *const MSLLHOOKSTRUCT);
     if super::DRAINING.load(Relaxed) { return CallNextHookEx(std::ptr::null_mut(), code, wp, lp); }
     if blankrun_core::wake::route(m.flags & LLMHF_INJECTED != 0, ALLOW_INJECTED.load(Relaxed)) == blankrun_core::wake::Route::PassThrough {
+        return CallNextHookEx(std::ptr::null_mut(), code, wp, lp);
+    }
+    // 「键鼠照常用」：鼠标照常用；光标要进关掉的屏时挡在边上
+    if super::KEEP_INPUT.load(Relaxed) {
+        if wp as u32 == WM_MOUSEMOVE {
+            if let Some((x, y)) = super::fence_point(m.pt.x as f64, m.pt.y as f64) {
+                SetCursorPos(x.round() as i32, y.round() as i32);
+                return 1;
+            }
+        }
         return CallNextHookEx(std::ptr::null_mut(), code, wp, lp);
     }
     // 注入的（远程控制等）也拦下；只有装钩子之前按下的鼠标键，抬起时放行

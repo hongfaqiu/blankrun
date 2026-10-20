@@ -128,6 +128,14 @@ pub struct Engine {
     mon_idx: std::collections::HashMap<String, usize>,
     /// 远程模式下已确认断电、撤掉了遮罩的屏
     uncovered: std::collections::HashSet<String>,
+    /// 本次息屏 id → 单独断电方式（"ddc" | "backlight"）
+    mon_power: std::collections::HashMap<String, &'static str>,
+    /// 本次要「断开」的内建屏（Mac）：不盖遮罩（断开后遮罩窗口会被系统挪到别的屏上）；断开失败才补遮罩
+    disconnecting: std::collections::HashSet<String>,
+    /// 本次息屏要关的屏（plan 里不是 Skip 的）id：断开内建屏后屏幕坐标会变，光标围栏按 id 重算
+    blank_ids: std::collections::HashSet<String>,
+    /// 本次息屏是「键鼠照常用」（Mac Mini 模式）：键鼠放行、不算误触，只认唤醒键 / 紧急键 / 菜单 / 计划结束
+    keep_input: bool,
     rdp_logged: bool,
 }
 
@@ -147,7 +155,7 @@ impl Engine {
             last_sched_check: None, last_cfg_check: None, last_status: None, kbd_available,
             displays: 1, last_mon_check: None, keep_display: false, last_asleep: None, settle_until: None,
             trigger: "manual", history: History::default(), last_heartbeat: None,
-            overlay_idx: vec![], mon_off_plan: vec![], mon_off: vec![], last_mon_reassert: None, mon_relit: Default::default(), mon_labels: Default::default(), mon_idx: Default::default(), uncovered: Default::default(), rdp_logged: false,
+            overlay_idx: vec![], mon_off_plan: vec![], mon_off: vec![], last_mon_reassert: None, mon_relit: Default::default(), mon_labels: Default::default(), mon_idx: Default::default(), uncovered: Default::default(), mon_power: Default::default(), disconnecting: Default::default(), blank_ids: Default::default(), keep_input: false, rdp_logged: false,
         };
         // 息屏记录；上次息屏中途崩溃/强退的那一条记为 crash
         e.history = History::from_json(&std::fs::read_to_string(e.history_path()).unwrap_or_default());
@@ -236,14 +244,18 @@ impl Engine {
                 Action::DisplayOff => {
                     if !self.overlay_on {
                         self.overlay_on = true;
-                        show_overlays(app, &self.overlay_idx);
+                        show_overlays(app, &self.overlay_idx, self.keep_input);
                         // 等遮罩窗口出来再断电，免得新窗口把屏幕又点亮
-                        if self.power_off || !self.mon_off_plan.is_empty() { self.power_off_at = Some(Instant::now() + Duration::from_millis(600)); }
+                        if self.power_off || !self.mon_off_plan.is_empty() {
+                            // 只有要断开的屏、没有遮罩要等：马上断开
+                            let ms = if self.overlay_idx.is_empty() && !self.power_off { 50 } else { 600 };
+                            self.power_off_at = Some(Instant::now() + Duration::from_millis(ms));
+                        }
                         Ok(())
                     } else if self.power_off {
                         self.settle_until = Some(Instant::now() + Duration::from_secs(3));
                         self.plat.display_off(true)
-                    } else { self.monitors_off(); Ok(()) }
+                    } else { self.monitors_off(app); Ok(()) }
                 }
                 Action::DisplayRestore => {
                     self.overlay_on = false;
@@ -255,14 +267,17 @@ impl Engine {
                     }
                     self.plat.display_off(false)
                 }
-                Action::BacklightOff if self.cfg.lights.keyboard_backlight => self.plat.keyboard_backlight(true),
+                // 「键鼠照常用」时键盘还在用，不关键盘背光
+                Action::BacklightOff if self.cfg.lights.keyboard_backlight && !self.keep_input => self.plat.keyboard_backlight(true),
                 Action::BacklightOff => Ok(()),
                 Action::BacklightRestore => self.plat.keyboard_backlight(false),
                 Action::InputHookOn => {
                     let r = self.plat.input_hook(true);
                     self.hook_ok = r.is_ok();
-                    // 钩子装不上（Mac 没给辅助功能权限）：唤醒键改用系统热键注册，误触点亮后仍能重新息屏
-                    if r.is_err() && self.cfg.wake.method == WakeMethod::Hotkey {
+                    // 钩子装不上（Mac 没给辅助功能权限）：唤醒键改用系统热键注册，误触点亮后仍能重新息屏。
+                    // 「键鼠照常用」时没有钩子键鼠本来就放行，一样用系统热键认唤醒键（光标围栏则没有）
+                    let method = if self.keep_input { blankrun_core::wake::keep_input_method(self.cfg.wake.method) } else { self.cfg.wake.method };
+                    if r.is_err() && method == WakeMethod::Hotkey {
                         let keys = (self.cfg.wake.hotkey.clone(), self.cfg.safety.emergency_hotkey.clone());
                         let _ = app.run_on_main_thread(move || platform::apply_wake_keys(Some(keys)));
                         self.wake_keys = true;
@@ -271,7 +286,10 @@ impl Engine {
                 }
                 Action::InputHookOff => {
                     if std::mem::take(&mut self.wake_keys) { let _ = app.run_on_main_thread(|| platform::apply_wake_keys(None)); }
-                    self.plat.input_hook(false)
+                    let r = self.plat.input_hook(false);
+                    // 排空（如果需要）已经开始，它在 KEEP_INPUT 之前判断，可以放心关掉
+                    platform::set_keep_input(None, Default::default());
+                    r
                 }
                 Action::LockScreen => self.plat.lock_screen(),
             };
@@ -302,18 +320,30 @@ impl Engine {
         let mons = self.monitor_list(app);
         let list: Vec<_> = mons.iter().map(|(m, _, _)| m.clone()).collect();
         let plan = monitors::plan(&self.cfg.display, &list, !self.plat.power_off_unsafe(), self.cfg.wake.allow_remote);
-        self.power_off = plan.global_off;
+        // 「键鼠照常用」：只关所选、还有屏亮着。绝不用系统级关屏（会把亮着的外接屏也关掉）
+        self.keep_input = monitors::keep_input_active(&self.cfg.display, &list);
+        self.power_off = plan.global_off && !self.keep_input;
+        self.mon_power = list.iter().filter_map(|m| Some((m.id.clone(), m.power?))).collect();
         self.mon_relit.clear();
         self.mon_labels = mons.iter().map(|(m, _, _)| (m.id.clone(), m.label.clone())).collect();
         self.mon_idx = mons.iter().enumerate().map(|(i, (m, _, _))| (m.id.clone(), i)).collect();
         self.uncovered.clear();
-        self.overlay_idx = plan.per.iter().enumerate().filter(|(_, m)| **m != Method::Skip).map(|(i, _)| i).collect();
+        self.disconnecting = list.iter().zip(&plan.per).filter(|(m, how)| **how == Method::Off && monitors::disconnect_ok(m, &list)).map(|(m, _)| m.id.clone()).collect();
+        self.blank_ids = list.iter().zip(&plan.per).filter(|(_, how)| **how != Method::Skip).map(|(m, _)| m.id.clone()).collect();
+        self.overlay_idx = plan.per.iter().zip(&list).enumerate().filter(|(_, (how, m))| **how != Method::Skip && !self.disconnecting.contains(&m.id)).map(|(i, _)| i).collect();
         self.mon_off_plan = plan.per.iter().zip(&mons).filter(|(m, _)| **m == Method::Off).map(|(_, (m, x, y))| (m.id.clone(), *x, *y)).collect();
         for ((m, _, _), how) in mons.iter().zip(&plan.per) { nblog!("plan: {} ({}) virtual={} power={:?} -> {how:?}", m.id, m.label, m.virtual_, m.power); }
+        self.sm.lock_on_wake = self.cfg.wake.lock_on_wake || self.cfg.wake.method == WakeMethod::Password;
+        self.policy.set_keep_input(self.keep_input);
+        if self.keep_input {
+            let fence = self.fence_rects(app);
+            nblog!("keep input: local keyboard/mouse pass through; only wake / emergency keys are caught; cursor fence {} blocked / {} allowed", fence.0.len(), fence.1.len());
+            platform::set_keep_input(Some(blankrun_core::wake::KeepFilter::from_config(&self.cfg)), fence);
+        } else {
+            platform::set_keep_input(None, Default::default());
+        }
         let c = &self.cfg;
-        self.sm.lock_on_wake = c.wake.lock_on_wake || c.wake.method == WakeMethod::Password;
-        self.policy.reset();
-        nblog!("blank: power_off={} per_monitor_off={} method={:?} mode={} wake={:?} lock={} remote={}", self.power_off, self.mon_off_plan.len(), c.display.method, c.display.mode, c.wake.method, self.sm.lock_on_wake, c.wake.allow_remote);
+        nblog!("blank: power_off={} per_monitor_off={} method={:?} mode={} wake={:?} lock={} remote={} keep_input={}", self.power_off, self.mon_off_plan.len(), c.display.method, c.display.mode, c.wake.method, self.sm.lock_on_wake, c.wake.allow_remote, self.keep_input);
         self.apply(app, Event::Blank);
         // Modern Standby 上只用遮罩时，屏幕要保持点亮（黑遮罩），否则系统空闲关屏后会进入 S0 低功耗待机
         self.keep_display = !self.power_off && self.plat.power_off_unsafe();
@@ -325,6 +355,23 @@ impl Engine {
         self.history.begin(now, trigger);
         self.last_heartbeat = Some(Instant::now());
         self.save_history();
+    }
+
+    /// 光标围栏：(关掉的屏, 不关的屏) 在输入钩子坐标系里的矩形（Mac 全局点坐标，Windows 物理像素）
+    /// 按 id 匹配当前的显示器（断开内建屏后编号和坐标都会变）；断开了的屏不在列表里，光标本来也去不了
+    fn fence_rects(&mut self, app: &AppHandle) -> (Vec<platform::Rect>, Vec<platform::Rect>) {
+        let mons = app.available_monitors().unwrap_or_default();
+        let (mut blocked, mut allowed) = (vec![], vec![]);
+        for (i, m) in mons.iter().enumerate() {
+            let skip = !self.blank_ids.contains(&monitor_name(i, m));
+            let (p, sz, sc) = (m.position(), m.size(), m.scale_factor().max(0.1));
+            // Windows 的低级鼠标钩子和 SetCursorPos 用物理像素；Mac 换算成点，再让平台层按 CGDisplayBounds 校正
+            let k = if cfg!(windows) { 1.0 } else { sc };
+            let r = platform::Rect { x: p.x as f64 / k, y: p.y as f64 / k, w: sz.width as f64 / k, h: sz.height as f64 / k };
+            let r = self.plat.display_rect(p.x as f64 / sc, p.y as f64 / sc, r);
+            if skip { allowed.push(r) } else { blocked.push(r) }
+        }
+        (blocked, allowed)
     }
 
     /// 当前所有显示器 + 平台探测结果；(x, y) 是逻辑坐标
@@ -348,7 +395,10 @@ impl Engine {
         let list: Vec<_> = mons.iter().map(|(m, _, _)| m.clone()).collect();
         let plan = monitors::plan(&self.cfg.display, &list, !self.plat.power_off_unsafe(), self.cfg.wake.allow_remote);
         list.iter().zip(&plan.per).map(|(m, how)| {
-            let how = match how { Method::Off => m.power.unwrap_or("overlay"), Method::Overlay if plan.global_off => "power", Method::Overlay => "overlay", Method::Skip => "skip" };
+            let how = match how {
+                // 只剩这一块物理屏时不会断开，退回背光
+                Method::Off if m.power == Some("disconnect") && !monitors::disconnect_ok(m, &list) => "backlight",
+                Method::Off => m.power.unwrap_or("overlay"), Method::Overlay if plan.global_off => "power", Method::Overlay => "overlay", Method::Skip => "skip" };
             serde_json::json!({ "id": m.id, "label": m.label, "width": m.width, "height": m.height, "primary": m.primary, "virtual": m.virtual_, "power": m.power, "how": how,
                 "pref": monitors::pref(&self.cfg.display, m), "unresponsive": monitors::unresponsive(&self.cfg.display, m) })
         }).collect()
@@ -366,16 +416,31 @@ impl Engine {
     }
 
     /// 单独断电计划里的屏（重复调用安全：已关的再关一次）
-    fn monitors_off(&mut self) {
+    fn monitors_off(&mut self, app: &AppHandle) {
         self.last_mon_reassert = Some(Instant::now());
         for (id, x, y) in self.mon_off_plan.clone() {
             match self.plat.monitor_power(&id, x, y, true) {
                 Ok(()) => { nblog!("monitor {id}: power off ok"); if !self.mon_off.iter().any(|(i, _, _)| *i == id) { self.mon_off.push((id, x, y)); } }
+                // 断开失败（平台层已退回背光 0）：这块屏没盖遮罩，现在补上。没有断开过，编号还是息屏时的
+                Err(e) if self.disconnecting.remove(&id) => {
+                    nblog!("monitor {id}: disconnect failed: {e} (adding overlay)");
+                    self.mon_power.insert(id.clone(), "backlight");
+                    if !self.mon_off.iter().any(|(i, _, _)| *i == id) { self.mon_off.push((id.clone(), x, y)); }
+                    if self.overlay_on { if let Some(&i) = self.mon_idx.get(&id) { self.overlay_idx.push(i); show_overlays(app, &[i], self.keep_input); } }
+                }
                 Err(e) => nblog!("monitor {id}: power off failed: {e} (overlay stays)"),
             }
         }
+        self.refence(app);
         // 内建屏原亮度要进崩溃恢复标记
         if !self.mon_off.is_empty() && self.sm.state == State::ScreenOff { let _ = std::fs::write(self.marker_path(), self.plat.persist().unwrap_or_default()); }
+    }
+
+    /// 「键鼠照常用」：按当前显示器重算光标围栏（断开内建屏后坐标会变）
+    fn refence(&mut self, app: &AppHandle) {
+        if !self.keep_input || self.sm.state != State::ScreenOff { return; }
+        let fence = self.fence_rects(app);
+        platform::set_keep_input(Some(blankrun_core::wake::KeepFilter::from_config(&self.cfg)), fence);
     }
 
     fn cancel(&mut self, app: &AppHandle) {
@@ -396,6 +461,8 @@ impl Engine {
         if self.sm.state != State::ScreenOff { return; }
         nblog!("wake: {why}");
         self.apply(app, Event::WakeRequested);
+        self.keep_input = false;
+        self.policy.set_keep_input(false);
         if self.keep_display { self.keep_display = false; let _ = self.plat.keep_display_on(false); }
         self.apply(app, Event::RestoreDone);
         let _ = std::fs::remove_file(self.marker_path());
@@ -439,10 +506,13 @@ impl Engine {
                     self.reblank_at = None;
                     self.hint(app, serde_json::json!({ "kind": "hold", "progress": p }), false)
                 }
+                // 「键鼠照常用」：正常使用的输入，不是误触
+                Verdict::Ignored if self.keep_input => {}
                 Verdict::Ignored => self.touched(app),
             },
             Msg::Input(_) => {}
-            Msg::OverlayInput if !self.hook_ok && !platform::wake_keys_ok() => self.wake(app, "overlay input (no hook)"),
+            // 「键鼠照常用」时别的屏照常能用（菜单栏 / 托盘可以唤醒），点到遮罩不算唤醒
+            Msg::OverlayInput if !self.hook_ok && !platform::wake_keys_ok() && !self.keep_input => self.wake(app, "overlay input (no hook)"),
             Msg::OverlayInput => {}
             Msg::Blank { delay_s } => self.arm(app, delay_s, "manual"),
             Msg::Cancel => self.cancel(app),
@@ -489,11 +559,14 @@ impl Engine {
                 if self.power_off {
                     match self.plat.display_off(true) { Ok(()) => nblog!("display power off ok"), Err(e) => nblog!("display power off failed: {e}") }
                 }
-                self.monitors_off();
+                self.monitors_off(app);
             }
         }
+        // 断开了内建屏、外接屏又被拔掉：macOS 不会自己把内建屏接回来，我们接回并唤醒
+        if self.sm.state == State::ScreenOff && self.plat.display_guard() { self.wake(app, "no other display left"); return; }
         if self.sm.state == State::ScreenOff && self.last_mon_reassert.is_none_or(|t| now - t >= Duration::from_secs(5)) {
             self.last_mon_reassert = Some(now);
+            self.refence(app);
             if self.plat.remote_desktop() { self.wake(app, "remote desktop session started"); return; }
             // 单独断电的屏被远程会话 / 信号变化重新点亮：再关一次
             if !self.policy.is_holding() {
@@ -501,8 +574,30 @@ impl Engine {
                     if self.mon_relit.get(&id).copied().unwrap_or(0) >= 2 { continue; }
                     let lit = self.plat.monitor_lit(&id, x, y);
                     let idx = self.mon_idx.get(&id).copied();
+                    // 断开的内建屏被系统接了回来（休眠唤醒、开合盖）：再断开一次，不计入「不响应断电」。
+                    // 显示器编号这时已经变过，不碰遮罩
+                    if self.disconnecting.contains(&id) {
+                        if lit == Some(true) {
+                            nblog!("monitor {id}: display came back, disconnecting it again");
+                            if let Err(e) = self.plat.monitor_power(&id, x, y, true) {
+                                // 平台层已退回背光 0；屏又回来了，编号也就回到了息屏时的样子，补上遮罩
+                                nblog!("monitor {id}: disconnect again failed: {e} (adding overlay)");
+                                self.disconnecting.remove(&id);
+                                self.mon_power.insert(id.clone(), "backlight");
+                                if let Some(i) = idx { show_overlays(app, &[i], self.keep_input); }
+                            }
+                        }
+                        continue;
+                    }
+                    // 内建屏背光被亮度键 / 自动亮度调了上来：直接再调回 0，不计入「不响应断电」
+                    if lit == Some(true) && self.mon_power.get(&id) == Some(&"backlight") {
+                        nblog!("monitor {id}: backlight came back, turning it off again");
+                        let _ = self.plat.monitor_power(&id, x, y, true);
+                        continue;
+                    }
                     // 远程模式：确认这块屏真的断电了，就撤掉它的遮罩——远程软件抓的是显卡画面，遮罩在它眼里也是黑的
-                    if lit == Some(false) && self.cfg.wake.allow_remote && !self.uncovered.contains(&id) {
+                    // （「键鼠照常用」时留着遮罩：背光万一漏光也还是黑的）
+                    if lit == Some(false) && self.cfg.wake.allow_remote && !self.keep_input && !self.uncovered.contains(&id) {
                         if let Some(i) = idx {
                             if let Some(w) = app.get_webview_window(&format!("overlay-{i}")) { let _ = w.destroy(); }
                             self.uncovered.insert(id.clone());
@@ -511,7 +606,7 @@ impl Engine {
                     }
                     if lit == Some(true) {
                         // 被点亮了：先把遮罩盖回去
-                        if self.uncovered.remove(&id) { if let Some(i) = idx { show_overlays(app, &[i]); } }
+                        if self.uncovered.remove(&id) { if let Some(i) = idx { show_overlays(app, &[i], self.keep_input); } }
                         let n = self.mon_relit.entry(id.clone()).or_insert(0);
                         *n += 1;
                         if *n >= 2 {
@@ -712,7 +807,8 @@ fn cursor_overlay(app: &AppHandle) -> Option<String> {
     Some(format!("overlay-{i}"))
 }
 
-fn show_overlays(app: &AppHandle, only: &[usize]) {
+/// `passive`：「键鼠照常用」时遮罩不能抢键盘焦点、也不接鼠标（点击穿透），免得打字落到遮罩上
+fn show_overlays(app: &AppHandle, only: &[usize], passive: bool) {
     let Ok(monitors) = app.available_monitors() else { return };
     for (i, m) in monitors.into_iter().enumerate() {
         if !only.contains(&i) { continue; }
@@ -727,6 +823,7 @@ fn show_overlays(app: &AppHandle, only: &[usize]) {
                 .always_on_top(true)
                 .skip_taskbar(true)
                 .focused(false)
+                .focusable(!passive)
                 .shadow(false)
                 .visible_on_all_workspaces(true)
                 .background_color(tauri::window::Color(0, 0, 0, 255))
@@ -737,6 +834,7 @@ fn show_overlays(app: &AppHandle, only: &[usize]) {
             #[cfg(target_os = "macos")]
             if let Ok(ns) = w.ns_window() { platform::raise_overlay(ns); }
             let _ = w.set_cursor_visible(false);
+            if passive { let _ = w.set_ignore_cursor_events(true); }
             let _ = w.show();
         });
     }
