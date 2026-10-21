@@ -104,6 +104,40 @@ async fn get_diagnostics(e: State<'_, Eng>, app: AppHandle) -> R<Value> {
 async fn get_monitors(e: State<'_, Eng>, app: AppHandle) -> R<Vec<Value>> { Ok(lock(&e).monitor_report(&app)) }
 #[tauri::command]
 async fn request_permission(e: State<'_, Eng>, which: String) -> R<()> { lock(&e).plat.request_permission(&which); Ok(()) }
+/// 设置页定时刷新权限状态用（比 get_diagnostics 轻）
+#[tauri::command]
+async fn get_permissions(e: State<'_, Eng>) -> R<Option<(bool, bool)>> { Ok(lock(&e).plat.permissions()) }
+/// 清掉失效的旧授权记录（Mac：tccutil reset）并重新请求
+#[tauri::command]
+async fn reset_permissions(e: State<'_, Eng>) -> R<()> { lock(&e).plat.reset_permissions() }
+/// 重启黑着跑（有的权限要重启后才生效）
+#[tauri::command]
+async fn restart_app(app: AppHandle) -> R<()> {
+    platform::relaunch_later()?;
+    app.exit(0);
+    Ok(())
+}
+/// 内建屏断开检测：断开约 3 秒再接回，结果连同机型、芯片、系统版本存进配置
+#[tauri::command]
+async fn test_builtin(e: State<'_, Eng>, app: AppHandle) -> R<platform::BuiltinTestOutcome> {
+    let marker = {
+        let g = lock(&e);
+        if g.status().state != "idle" { return Err("busy".into()); }
+        g.marker_path()
+    };
+    let out = tauri::async_runtime::spawn_blocking(move || platform::builtin_test(&marker)).await.map_err(|e| e.to_string())?;
+    if blankrun_core::config::BUILTIN_TEST_RESULTS.contains(&out.result.as_str()) {
+        let mut g = lock(&e);
+        let mut cfg = g.cfg.clone();
+        let at = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+        cfg.display.builtin_test = Some(blankrun_core::config::BuiltinTest {
+            result: out.result.clone(), model: out.model.clone(), chip: out.chip.clone(), os: out.os.clone(), at });
+        g.save_config(cfg)?;
+        drop(g);
+        let _ = app.emit("nb://config", ());
+    }
+    Ok(out)
+}
 #[tauri::command]
 async fn reveal_config(e: State<'_, Eng>) -> R<()> {
     let g = lock(&e);
@@ -328,6 +362,16 @@ fn main() {
             app.manage(eng.clone());
             app.manage(Tx(Mutex::new(tx.clone())));
             let handle = app.handle().clone();
+            // Mac：缺权限就在启动时（包括静默启动）发起一次系统授权请求，每次启动最多一次
+            #[cfg(target_os = "macos")]
+            {
+                // 和 request_permission 命令一样在后台线程里调（AXIsProcessTrustedWithOptions / CGRequestListenEventAccess 不要求主线程）
+                let eng2 = eng.clone();
+                let _ = std::thread::Builder::new().name("nb-perm".into()).spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_secs(2));
+                    eng2.lock().unwrap_or_else(|p| p.into_inner()).plat.prompt_permissions();
+                });
+            }
             std::thread::Builder::new().name("nb-engine".into()).spawn(move || engine::run(handle, eng, rx))?;
 
             cli(tx.clone());
@@ -398,7 +442,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             get_info, get_config, popover_hold, get_history, clear_history, open_link, check_update, install_update, save_config, get_status, blank_now, cancel, skip_tonight, unskip, postpone, overlay_input, wake_now, quit,
-            get_diagnostics, get_monitors, request_permission, reveal_config, export_diagnostics, open_settings, hide_window,
+            get_diagnostics, get_monitors, request_permission, get_permissions, reset_permissions, restart_app, test_builtin, reveal_config, export_diagnostics, open_settings, hide_window,
             finish_onboarding, apply_locale
         ])
         .build(tauri::generate_context!())

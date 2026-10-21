@@ -33,6 +33,18 @@ pub struct MonHw {
     pub detail: String,
 }
 
+/// 内建屏断开检测的结果。result："ok" | "unsupported" | "stuck"（这三种会存进配置）；
+/// "need_external" | "no_builtin" | "busy"（前提不满足，没有执行）
+#[derive(Debug, Clone, Serialize)]
+pub struct BuiltinTestOutcome { pub result: String, pub detail: String, pub model: String, pub chip: String, pub os: String }
+
+#[cfg(not(target_os = "macos"))]
+pub fn builtin_test(_marker: &std::path::Path) -> BuiltinTestOutcome {
+    BuiltinTestOutcome { result: "unsupported".into(), detail: "macOS only".into(), model: String::new(), chip: String::new(), os: String::new() }
+}
+#[cfg(not(target_os = "macos"))]
+pub fn relaunch_later() -> Result { Err("unsupported".into()) }
+
 pub trait Platform {
     /// 配置变化时调用（例如 Mac 的 ac_only）
     fn configure(&mut self, _cfg: &Config) {}
@@ -57,6 +69,10 @@ pub trait Platform {
     /// 权限状态 (辅助功能, 输入监控)；不需要权限的平台返回 None
     fn permissions(&self) -> Option<(bool, bool)> { None }
     fn request_permission(&self, _which: &str) {}
+    /// 启动时调用：缺哪个权限就发起一次系统授权请求（每次启动最多一次）
+    fn prompt_permissions(&self) {}
+    /// 清掉本 App 失效的授权记录（Mac：tccutil reset）并重新发起请求
+    fn reset_permissions(&self) -> Result { Err("unsupported".into()) }
     /// 息屏前要保存到磁盘的状态（崩溃后下次启动还原），例如键盘背光原值
     fn persist(&self) -> Option<String> { None }
     /// 启动时调用：上次异常退出留下的状态（RESEARCH.md §5 风险 4）
@@ -171,7 +187,7 @@ pub fn now_ms() -> u64 { T0.get_or_init(Instant::now).elapsed().as_millis() as u
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(target_os = "macos")]
-pub use macos::{set_blank_hotkey, set_wake_hotkeys, emergency_restore, instance_lock, local_time, notch_span, prefer_tray_position, raise_overlay, reveal, system_locale, Native};
+pub use macos::{set_blank_hotkey, set_wake_hotkeys, emergency_restore, instance_lock, local_time, notch_span, prefer_tray_position, raise_overlay, reveal, system_locale, builtin_test, relaunch_later, Native};
 
 #[cfg(windows)]
 mod windows;

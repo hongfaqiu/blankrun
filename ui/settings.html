@@ -55,7 +55,9 @@
       <div id="monitors"></div>
       <div class="r note" id="ddcHint" hidden><small data-i18n="b.ddc_hint"></small></div>
       <div class="r" id="keepRow"><div class="t"><span data-i18n="b.keep"></span><small id="keepNote"></small></div><div class="c"><button class="toggle" role="switch" data-k="display.keep_input" id="keepToggle" data-i18n-aria="b.keep"></button></div></div>
-      <div class="r" id="builtinRow" hidden><div class="t"><span data-i18n="b.builtin"></span><small data-i18n="b.builtin_note"></small></div><div class="c"><span class="select"><select data-k="display.builtin_off"><option value="auto" data-i18n="b.builtin_auto"></option><option value="disconnect" data-i18n="b.builtin_disconnect"></option><option value="backlight" data-i18n="b.builtin_backlight"></option></select></span></div></div>
+      <div class="r" id="builtinRow" hidden><div class="t"><span data-i18n="b.builtin"></span><small data-i18n="b.builtin_note"></small></div><div class="c"><span class="select"><select data-k="display.builtin_off"><option value="auto" data-i18n="b.builtin_auto"></option><option value="disconnect" data-i18n="b.builtin_disconnect"></option><option value="backlight" data-i18n="b.builtin_backlight"></option></select></span><button class="btn" id="btTest" data-i18n="b.bt_btn"></button></div></div>
+      <div class="r note" id="btConfirm" hidden><div class="t"><small data-i18n="b.bt_confirm"></small></div><div class="c"><button class="btn ghost" id="btCancel" data-i18n="b.bt_cancel"></button><button class="btn primary" id="btStart" data-i18n="b.bt_start"></button></div></div>
+      <div class="r note" id="btResult" hidden><div class="t"><small id="btText"></small><small class="faint" id="btMeta"></small></div></div>
       <div class="r"><div class="t"><span data-i18n="b.method"></span><small id="methodNote"></small></div><div class="c"><span class="select"><select data-k="display.method"><option value="auto" data-i18n="b.method_auto"></option><option value="power_off" data-i18n="b.method_power"></option><option value="overlay" data-i18n="b.method_overlay"></option></select></span></div></div>
     </div>
     <div class="group-label"><span data-i18n="b.lit_label"></span></div>
@@ -138,6 +140,7 @@
       <div class="group">
         <div class="r"><div class="t"><span data-i18n="a.ax"></span><small data-i18n="a.ax_note"></small></div><div class="c" id="permAx"></div></div>
         <div class="r"><div class="t"><span data-i18n="a.in"></span><small data-i18n="a.in_note"></small></div><div class="c" id="permIn"></div></div>
+        <div class="r note" id="permHint" hidden><div class="t"><small data-i18n="a.perm_stale"></small></div><div class="c"><button class="btn" id="permReset" data-i18n="btn.reset_perm"></button><button class="btn ghost" id="permRestart" data-i18n="btn.restart"></button></div></div>
       </div>
     </div>
     <div class="group-label"><span data-i18n="a.caps_label"></span></div>

@@ -35,6 +35,7 @@ function render() {
   $("#keepToggle").disabled = cfg.display.mode !== "selected";
   $("#keepRow").classList.toggle("dim", cfg.display.mode !== "selected");
   $("#builtinRow").hidden = OS !== "mac";
+  renderBuiltinTest();
   $$("button.toggle[data-k]").forEach((b) => { const v = !!getK(b.dataset.k) && !b.disabled; b.classList.toggle("on", v); b.setAttribute("aria-checked", v); });
   $$("select[data-k]").forEach((s) => (s.value = String(getK(s.dataset.k))));
   $$(".seg[data-k]").forEach((g) => $$("button", g).forEach((b) => b.classList.toggle("on", b.dataset.v === getK(g.dataset.k))));
@@ -201,19 +202,75 @@ async function loadDiag() {
   const kbd = diag.caps.find((c) => c.id === "kbd");
   if (kbd && kbd.status !== "ok") { $("#kbdToggle").disabled = true; render(); }
   // 权限（仅 Mac）
-  if (diag.perms) {
-    $("#permBlock").hidden = false;
-    const perm = (el, ok, which) => {
-      const st = h("span", "status" + (ok ? "" : " bad")); st.append(h("span", "dot " + (ok ? "ok" : "bad")), t(ok ? "st.granted" : "st.denied"));
-      el.replaceChildren(st);
-      if (!ok) { const b = h("button", "btn primary", t("btn.open_settings")); b.onclick = () => invoke("request_permission", { which }); el.append(b); }
-    };
-    perm($("#permAx"), diag.perms[0], "accessibility");
-    perm($("#permIn"), diag.perms[1], "input");
-  }
+  renderPerms();
   // 上次息屏
   loadHistory();
 }
+
+/** 权限状态（仅 Mac）。授权后不用重启也会自动变绿：设置窗口开着时每 1.5 秒查一次 */
+function renderPerms() {
+  if (!diag || !diag.perms) return;
+  $("#permBlock").hidden = false;
+  const perm = (el, ok, which) => {
+    const st = h("span", "status" + (ok ? "" : " bad")); st.append(h("span", "dot " + (ok ? "ok" : "bad")), t(ok ? "st.granted" : "st.denied"));
+    el.replaceChildren(st);
+    if (!ok) { const b = h("button", "btn primary", t("btn.open_settings")); b.onclick = () => invoke("request_permission", { which }); el.append(b); }
+  };
+  perm($("#permAx"), diag.perms[0], "accessibility");
+  perm($("#permIn"), diag.perms[1], "input");
+  // 没授权：提示可能是旧版本留下的失效条目（开关开着但不生效），给「重置并重新授权」和「重启」
+  $("#permHint").hidden = diag.perms[0] && diag.perms[1];
+}
+async function pollPerms() {
+  if (document.hidden || !diag || !diag.perms) return;
+  let p;
+  try { p = await invoke("get_permissions"); } catch (e) { return; }
+  if (!p || (p[0] === diag.perms[0] && p[1] === diag.perms[1])) return;
+  diag.perms = p;
+  renderPerms();
+  // 能力列表里的「输入拦截」也跟着权限变
+  try { diag.caps = (await invoke("get_diagnostics")).caps; renderCaps(); } catch (e) {}
+}
+setInterval(pollPerms, 1500);
+$("#permReset").addEventListener("click", async () => {
+  try { await invoke("reset_permissions"); toast(t("toast.perm_reset")); } catch (e) { toast(t("toast.perm_reset_fail", { e })); }
+  pollPerms();
+});
+$("#permRestart").addEventListener("click", () => invoke("restart_app").catch((e) => toast(String(e))));
+
+// ---------- 内建屏断开检测（仅 Mac） ----------
+let btLast = null, btRunning = false;
+function renderBuiltinTest() {
+  if (OS !== "mac" || !cfg) return;
+  $("#btTest").disabled = btRunning;
+  const saved = cfg.display.builtin_test;
+  // 刚测完的结果（含没执行的前提提示）优先；否则显示配置里存的结果
+  const r = btRunning ? { result: "running" } : btLast || saved;
+  $("#btResult").hidden = !r;
+  if (!r) return;
+  $("#btText").textContent = r.result === "running" ? t("b.bt_running") : r.error ? t("b.bt_error", { e: r.error }) : t("b.bt_" + r.result);
+  const m = r.model ? [r.model, r.chip, r.os && "macOS " + r.os].filter(Boolean).join(" · ") : "";
+  const at = saved && saved.at && (!btLast || ["ok", "unsupported", "stuck"].includes(btLast.result)) ? new Date(saved.at * 1000).toLocaleString(LANG) : "";
+  $("#btMeta").textContent = m ? " " + (at ? t("b.bt_on", { m, d: at }) : m) : "";
+}
+$("#btTest").addEventListener("click", async () => {
+  // 前提：还有另一块物理屏亮着（后端会再查一次）
+  if (!diag) { try { diag = await invoke("get_diagnostics"); } catch (e) {} }
+  const phys = ((diag && diag.monitors) || []).filter((m) => !m.virtual);
+  if (phys.length < 2) { btLast = { result: "need_external" }; $("#btConfirm").hidden = true; return renderBuiltinTest(); }
+  $("#btConfirm").hidden = false;
+});
+$("#btCancel").addEventListener("click", () => { $("#btConfirm").hidden = true; });
+$("#btStart").addEventListener("click", async () => {
+  $("#btConfirm").hidden = true;
+  btRunning = true; btLast = null; renderBuiltinTest();
+  try { btLast = await invoke("test_builtin"); }
+  catch (e) { btLast = String(e) === "busy" ? { result: "busy" } : { result: "error", error: String(e) }; }
+  btRunning = false;
+  try { cfg = await invoke("get_config"); } catch (e) {}
+  render(); refreshMonitors();
+  if (diag) { try { diag.caps = (await invoke("get_diagnostics")).caps; renderCaps(); } catch (e) {} }
+});
 
 /** 能力列表：名称 / 状态 / 说明来自词条 cap.<key>.*，tech 是接口名和原始错误，不翻译 */
 function renderCaps() {

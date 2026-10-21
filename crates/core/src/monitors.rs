@@ -77,13 +77,15 @@ pub enum BuiltinOff {
 /// `model`：hw.model；`os_major`：macOS 主版本；`arm`：Apple 芯片原生运行。
 /// 「断开」只在 Apple 芯片 + macOS 13 起可用（Intel 上同一个接口不会真正断开）。
 /// auto 时避开 M3 系列（BetterDisplay：部分 M3 机型断开后要重启才能接回来）和 iMac（没有盖子可以开合来救回屏幕）。
-pub fn builtin_off(setting: &str, chip: &str, model: &str, os_major: u32, arm: bool) -> BuiltinOff {
+/// `tested`：这台机器（同机型、芯片、系统主版本）上「检测」的结果，Some(true) = 断开和接回都成功。
+/// auto 时测过的结果优先：成功就断开（包括 M3 / iMac），失败就不断开；没测过按上面的规则。
+pub fn builtin_off(setting: &str, chip: &str, model: &str, os_major: u32, arm: bool, tested: Option<bool>) -> BuiltinOff {
     let supported = arm && os_major >= 13;
     let risky = chip.starts_with("Apple M3") || model.starts_with("iMac");
     match setting {
         "backlight" => BuiltinOff::Backlight,
         "disconnect" if supported => BuiltinOff::Disconnect,
-        _ if supported && !risky => BuiltinOff::Disconnect,
+        _ if supported && tested.unwrap_or(!risky) => BuiltinOff::Disconnect,
         _ => BuiltinOff::Backlight,
     }
 }
@@ -304,18 +306,26 @@ mod tests {
     fn builtin_off_choice() {
         use BuiltinOff::*;
         // M1/M2/M4 MacBook，macOS 14：断开
-        assert_eq!(builtin_off("auto", "Apple M4", "Mac16,12", 26, true), Disconnect);
-        assert_eq!(builtin_off("auto", "Apple M1 Pro", "MacBookPro18,3", 14, true), Disconnect);
+        assert_eq!(builtin_off("auto", "Apple M4", "Mac16,12", 26, true, None), Disconnect);
+        assert_eq!(builtin_off("auto", "Apple M1 Pro", "MacBookPro18,3", 14, true, None), Disconnect);
         // macOS 12、Intel：只能背光
-        assert_eq!(builtin_off("auto", "Apple M1", "MacBookAir10,1", 12, true), Backlight);
-        assert_eq!(builtin_off("disconnect", "Intel(R) Core(TM) i7", "MacBookPro16,1", 14, false), Backlight);
+        assert_eq!(builtin_off("auto", "Apple M1", "MacBookAir10,1", 12, true, None), Backlight);
+        assert_eq!(builtin_off("disconnect", "Intel(R) Core(TM) i7", "MacBookPro16,1", 14, false, None), Backlight);
         // M3 系列、iMac：auto 不断开，手动选 disconnect 才断开
-        assert_eq!(builtin_off("auto", "Apple M3", "Mac15,12", 15, true), Backlight);
-        assert_eq!(builtin_off("auto", "Apple M3 Pro", "Mac15,6", 15, true), Backlight);
-        assert_eq!(builtin_off("disconnect", "Apple M3", "Mac15,12", 15, true), Disconnect);
-        assert_eq!(builtin_off("auto", "Apple M1", "iMac21,1", 14, true), Backlight);
+        assert_eq!(builtin_off("auto", "Apple M3", "Mac15,12", 15, true, None), Backlight);
+        assert_eq!(builtin_off("auto", "Apple M3 Pro", "Mac15,6", 15, true, None), Backlight);
+        assert_eq!(builtin_off("disconnect", "Apple M3", "Mac15,12", 15, true, None), Disconnect);
+        assert_eq!(builtin_off("auto", "Apple M1", "iMac21,1", 14, true, None), Backlight);
         // 用户选只调背光
-        assert_eq!(builtin_off("backlight", "Apple M4", "Mac16,12", 26, true), Backlight);
+        assert_eq!(builtin_off("backlight", "Apple M4", "Mac16,12", 26, true, None), Backlight);
+        // 检测过：auto 按检测结果（M3 测过成功就断开；测过失败就不断开）；不支持的系统测成功也不断开
+        assert_eq!(builtin_off("auto", "Apple M3", "Mac15,12", 15, true, Some(true)), Disconnect);
+        assert_eq!(builtin_off("auto", "Apple M1", "iMac21,1", 14, true, Some(true)), Disconnect);
+        assert_eq!(builtin_off("auto", "Apple M4", "Mac16,12", 26, true, Some(false)), Backlight);
+        assert_eq!(builtin_off("auto", "Apple M1", "MacBookAir10,1", 12, true, Some(true)), Backlight);
+        // 手动选择不受检测结果影响
+        assert_eq!(builtin_off("disconnect", "Apple M4", "Mac16,12", 26, true, Some(false)), Disconnect);
+        assert_eq!(builtin_off("backlight", "Apple M3", "Mac15,12", 15, true, Some(true)), Backlight);
     }
 
     #[test]

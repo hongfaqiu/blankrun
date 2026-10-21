@@ -65,6 +65,7 @@
         case "unskip": status.schedule.skipped = false; window.__emit("nb://status", status); return null;
         case "get_monitors": return monReport();
         case "get_diagnostics": return { caps, perms: os === "mac" ? [true, q.get("perm") !== "no"] : null, monitors: monReport(), modern_standby: os === "win", last_session: { start_unix: 1792596600, end_unix: 1792625400, lit: 2, by_schedule: true, power_off: true } };
+        case "get_permissions": return os === "mac" ? [true, q.get("perm") !== "no"] : null;
         default: return null;
       }
     } },
