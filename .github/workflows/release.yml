@@ -159,9 +159,26 @@ jobs:
           else
             auth=(--apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID")
           fi
-          xcrun notarytool submit "$dmg" "${auth[@]}" --wait --timeout 30m
-          xcrun stapler staple "$dmg"
-          xcrun stapler validate "$dmg"
+          # 先提交拿到 id，再轮询等待：runner 偶尔会短暂断网（NSURLErrorDomain -1009），断网时重试而不是整步失败
+          out=$(xcrun notarytool submit "$dmg" "${auth[@]}" --output-format json)
+          echo "$out"
+          id=$(printf '%s' "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+          status=""
+          for i in 1 2 3 4 5 6; do
+            if res=$(xcrun notarytool wait "$id" "${auth[@]}" --timeout 60m --output-format json); then
+              echo "$res"
+              status=$(printf '%s' "$res" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("status",""))')
+              break
+            fi
+            echo "notarytool wait failed (attempt $i), retrying in 30s"; sleep 30
+          done
+          echo "DMG notarization status: $status"
+          if [ "$status" != "Accepted" ]; then
+            xcrun notarytool log "$id" "${auth[@]}" || true
+            exit 1
+          fi
+          for i in 1 2 3 4 5; do xcrun stapler staple "$dmg" && break; echo "staple failed (attempt $i), retrying in 20s"; sleep 20; done
+          for i in 1 2 3 4 5; do xcrun stapler validate "$dmg" && break; echo "validate failed (attempt $i), retrying in 20s"; sleep 20; done
 
       - name: Check macOS app (signature, notarization, architectures)
         if: runner.os == 'macOS'
@@ -171,7 +188,13 @@ jobs:
           codesign -dv --verbose=4 "$app" 2>&1 | grep -E "Signature|Identifier|Authority|TeamIdentifier|flags|Runtime"
           lipo -info "$app/Contents/MacOS/blankrun"
           if [ -n "${BLANKRUN_NOTARIZE:-}" ]; then
-            xcrun stapler validate "$app"
+            # stapler validate 会联网（CloudKit）核对票据，runner 断网时重试几次
+            ok=""
+            for i in 1 2 3 4 5; do
+              if xcrun stapler validate "$app"; then ok=1; break; fi
+              echo "stapler validate failed (attempt $i), retrying in 20s"; sleep 20
+            done
+            [ -n "$ok" ] || exit 1
             spctl --assess --type execute --verbose=4 "$app" || echo "::warning title=spctl::Gatekeeper assessment failed on runner, check the app manually"
           elif [ -n "${BLANKRUN_SIGNED:-}" ]; then
             echo "Developer ID signed, not notarized"
