@@ -4,6 +4,16 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      notarize_dmg:
+        description: "Also notarize + staple the DMG (the app inside is always notarized + stapled)"
+        type: boolean
+        default: false
+
+# DMG 默认不单独公证（苹果公证一次要 ~1 小时，runner 等太久容易断网）；里面的 .app 始终公证 + staple，DMG 仍用 Developer ID 签名。
+# 要公证 DMG：手动运行时勾选 notarize_dmg，或把仓库变量 NOTARIZE_DMG 设为 true
+env:
+  NOTARIZE_DMG: ${{ inputs.notarize_dmg && 'true' || vars.NOTARIZE_DMG || 'false' }}
 
 permissions:
   contents: write
@@ -53,6 +63,88 @@ jobs:
       - name: Core tests
         run: cargo test -p blankrun-core
 
+      # macOS 签名 + 公证（Developer ID）。所有 Apple 相关 secrets 都是可选的：
+      # - 没有证书：保持 tauri.conf.json 里的 ad-hoc 签名（"-"），和以前一样出未签名包，发布不失败
+      # - 有证书、没有公证凭据：Developer ID 签名，但跳过公证（tauri 只给 warning）
+      # - 有证书 + 公证凭据：签名 + 公证 + staple。优先 App Store Connect API key，其次 Apple ID + App 专用密码
+      # 注意：只把非空的值写进 $GITHUB_ENV。直接在 env: 里写 ${{ secrets.X }} 时，缺失的 secret 会变成空字符串，
+      # tauri 会把空的 APPLE_SIGNING_IDENTITY / APPLE_ID 当成"已提供"而报错。
+      - name: Prepare macOS signing & notarization
+        if: runner.os == 'macOS'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          if [ -z "${APPLE_CERTIFICATE:-}" ] || [ -z "${APPLE_CERTIFICATE_PASSWORD:-}" ]; then
+            echo "::warning title=macOS unsigned::APPLE_CERTIFICATE / APPLE_CERTIFICATE_PASSWORD not set, building with ad-hoc signature (not notarized)"
+            exit 0
+          fi
+
+          # 证书导入临时 keychain（job 结束时删除）
+          keychain="$RUNNER_TEMP/blankrun-signing.keychain-db"
+          kc_pass="${KEYCHAIN_PASSWORD:-$(openssl rand -base64 32)}"
+          echo "::add-mask::$kc_pass"
+          cert="$RUNNER_TEMP/certificate.p12"
+          printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$cert"
+          security create-keychain -p "$kc_pass" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$kc_pass" "$keychain"
+          security import "$cert" -k "$keychain" -P "$APPLE_CERTIFICATE_PASSWORD" -f pkcs12 \
+            -T /usr/bin/codesign -T /usr/bin/security -T /usr/bin/productbuild
+          rm -f "$cert"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$kc_pass" "$keychain" > /dev/null
+          # 放进搜索列表，codesign 按名字就能找到证书
+          existing=()
+          while IFS= read -r k; do existing+=("$k"); done < <(security list-keychains -d user | tr -d '"' | sed 's/^ *//')
+          security list-keychains -d user -s "$keychain" "${existing[@]}"
+          security find-identity -v -p codesigning "$keychain"
+
+          identity=$(security find-identity -v -p codesigning "$keychain" | grep -o '"Developer ID Application: [^"]*"' | head -n1 | tr -d '"' || true)
+          if [ -z "$identity" ]; then
+            echo "::error title=macOS signing::No 'Developer ID Application' identity found in APPLE_CERTIFICATE (need the Developer ID Application cert + private key exported as .p12)"
+            exit 1
+          fi
+          echo "Signing identity: $identity"
+          {
+            echo "APPLE_SIGNING_IDENTITY=$identity"
+            echo "BLANKRUN_KEYCHAIN=$keychain"
+            echo "BLANKRUN_SIGNED=1"
+          } >> "$GITHUB_ENV"
+
+          # 公证凭据：优先 App Store Connect API key
+          if [ -n "${APPLE_API_ISSUER:-}" ] && [ -n "${APPLE_API_KEY:-}" ] && [ -n "${APPLE_API_PRIVATE_KEY:-}" ]; then
+            key_dir="$RUNNER_TEMP/private_keys"
+            mkdir -p "$key_dir"
+            key_path="$key_dir/AuthKey_${APPLE_API_KEY}.p8"
+            printf '%s\n' "$APPLE_API_PRIVATE_KEY" > "$key_path"
+            chmod 600 "$key_path"
+            {
+              echo "APPLE_API_ISSUER=$APPLE_API_ISSUER"
+              echo "APPLE_API_KEY=$APPLE_API_KEY"
+              echo "APPLE_API_KEY_PATH=$key_path"
+              echo "BLANKRUN_NOTARIZE=api-key"
+            } >> "$GITHUB_ENV"
+            echo "Notarization: App Store Connect API key"
+          elif [ -n "${APPLE_ID:-}" ] && [ -n "${APPLE_PASSWORD:-}" ] && [ -n "${APPLE_TEAM_ID:-}" ]; then
+            {
+              echo "APPLE_ID=$APPLE_ID"
+              echo "APPLE_PASSWORD=$APPLE_PASSWORD"
+              echo "APPLE_TEAM_ID=$APPLE_TEAM_ID"
+              echo "BLANKRUN_NOTARIZE=apple-id"
+            } >> "$GITHUB_ENV"
+            echo "Notarization: Apple ID + app-specific password"
+          else
+            echo "::warning title=macOS not notarized::Signed with Developer ID but no notarization credentials (APPLE_API_* or APPLE_ID/APPLE_PASSWORD/APPLE_TEAM_ID); Gatekeeper will still warn"
+          fi
+
       # 不传 tagName：tauri-action 只负责构建，发布由下面的 release job 统一处理
       # 自动更新包的 minisign 签名（私钥只在仓库 secrets 里）
       - uses: tauri-apps/tauri-action@v0
@@ -64,13 +156,100 @@ jobs:
           tauriScript: npx --yes @tauri-apps/cli@^2
           args: ${{ matrix.args }}
 
-      - name: Check macOS app (ad-hoc signature, architectures)
+      # tauri 只公证并 staple .app；DMG 只签名不公证。这里再把 DMG 也公证 + staple，
+      # 这样离线首次打开 DMG 也不会被 Gatekeeper 拦（失败不阻断发布：里面的 .app 已经 staple 过了）
+      # tauri 只公证并 staple .app；DMG 只签名不公证。这里再把 DMG 也公证 + staple，
+      # 这样离线首次打开 DMG 也不会被 Gatekeeper 拦。
+      # 公证被拒（Invalid/Rejected）→ 失败；runner 断网（NSURLErrorDomain -1009 等）重试后仍不行 → 只给 warning
+      #（里面的 .app 已经由 tauri 公证 + staple，用户打开不受影响）
+      - name: Notarize & staple DMG
+        if: runner.os == 'macOS' && env.BLANKRUN_NOTARIZE != '' && env.NOTARIZE_DMG == 'true'
+        run: |
+          # GitHub 默认用 bash -e 跑脚本：这里关掉 -e，自己判断每条命令的结果（网络错误要重试/降级成 warning，不能直接退出）
+          set +e -uo pipefail
+          dmg=$(find target/universal-apple-darwin/release/bundle/dmg -name '*.dmg' | head -n1)
+          if [ "$BLANKRUN_NOTARIZE" = "api-key" ]; then
+            auth=(--key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER")
+          else
+            auth=(--apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID")
+          fi
+          json() { python3 -c 'import json,sys
+          try: print(json.load(sys.stdin).get(sys.argv[1],""))
+          except Exception: print("")' "$1"; }
+          id=""
+          for i in 1 2 3; do
+            out=$(xcrun notarytool submit "$dmg" "${auth[@]}" --output-format json) && id=$(printf '%s' "$out" | json id)
+            [ -n "$id" ] && break
+            echo "notarytool submit failed (attempt $i): $out"; sleep 30
+          done
+          if [ -z "$id" ]; then echo "::warning title=DMG not notarized::could not submit DMG (network?); the app inside is notarized and stapled"; exit 0; fi
+          echo "DMG submission id: $id"
+          status=""
+          for i in 1 2 3 4 5 6; do
+            res=$(xcrun notarytool wait "$id" "${auth[@]}" --timeout 90m --output-format json)
+            status=$(printf '%s' "$res" | json status)
+            case "$status" in Accepted|Invalid|Rejected) break;; esac
+            echo "notarytool wait returned '$status' (attempt $i): $res"; sleep 30
+          done
+          echo "DMG notarization status: $status"
+          case "$status" in
+            Accepted) ;;
+            Invalid|Rejected)
+              xcrun notarytool log "$id" "${auth[@]}" || true
+              echo "::error title=DMG notarization::Apple rejected the DMG ($status)"; exit 1;;
+            *) echo "::warning title=DMG notarization::status unknown after retries (network?), DMG not stapled; the app inside is notarized and stapled"; exit 0;;
+          esac
+          stapled=""
+          for i in 1 2 3; do xcrun stapler staple "$dmg" && { stapled=1; break; }; echo "staple failed (attempt $i), retrying in 30s"; sleep 30; done
+          if [ -z "$stapled" ]; then echo "::warning title=DMG staple::stapler staple failed after retries (network?)"; exit 0; fi
+          for i in 1 2 3; do xcrun stapler validate "$dmg" && exit 0; echo "validate failed (attempt $i), retrying in 30s"; sleep 30; done
+          echo "::warning title=DMG validate::stapler validate failed after retries (network?)"
+
+      # 签名身份不对 / 没有 hardened runtime / 不是 universal → 失败；
+      # stapler validate、spctl 要联网，runner 断网时重试 3 次（间隔 30s），网络类错误最终只给 warning
+      - name: Check macOS app (signature, notarization, architectures)
         if: runner.os == 'macOS'
         run: |
+          # GitHub 默认用 bash -e 跑脚本：这里关掉 -e，自己判断每条命令的结果（网络错误要重试/降级成 warning，不能直接退出）
+          set +e -uo pipefail
           app=target/universal-apple-darwin/release/bundle/macos/BlankRun.app
-          codesign --verify --deep --strict --verbose=2 "$app"
-          codesign -dv "$app" 2>&1 | grep -E "Signature|Identifier"
+          codesign --verify --deep --strict --verbose=2 "$app" || exit 1
+          info=$(codesign -dv --verbose=4 "$app" 2>&1)
+          printf '%s\n' "$info" | grep -E "Signature|Identifier|Authority|TeamIdentifier|flags|Runtime"
           lipo -info "$app/Contents/MacOS/blankrun"
+          lipo "$app/Contents/MacOS/blankrun" -verify_arch arm64 x86_64 || { echo "::error::not a universal binary"; exit 1; }
+          if [ -n "${BLANKRUN_SIGNED:-}" ]; then
+            printf '%s\n' "$info" | grep -qxF "Authority=$APPLE_SIGNING_IDENTITY" || { echo "::error title=macOS signing::app is not signed with $APPLE_SIGNING_IDENTITY"; exit 1; }
+            printf '%s\n' "$info" | grep -q 'flags=.*runtime' || { echo "::error title=macOS signing::hardened runtime missing"; exit 1; }
+            dmg=$(find target/universal-apple-darwin/release/bundle/dmg -name '*.dmg' | head -n1)
+            codesign -dv --verbose=4 "$dmg" 2>&1 | grep -qxF "Authority=$APPLE_SIGNING_IDENTITY" || { echo "::error title=macOS signing::DMG is not signed with $APPLE_SIGNING_IDENTITY"; exit 1; }
+            echo "Signed with: $APPLE_SIGNING_IDENTITY (app + DMG)"
+          fi
+          if [ -n "${BLANKRUN_NOTARIZE:-}" ]; then
+            netre='NSURLErrorDomain|-1009|offline|timed out|network|CloudKit|Could not connect'
+            run_check() {  # $1 = 名字，其余 = 命令；网络错误重试 3 次后只 warning，其他错误失败
+              local name=$1; shift; local out
+              for i in 1 2 3; do
+                if out=$("$@" 2>&1); then printf '%s\n' "$out"; return 0; fi
+                printf '%s\n' "$out"
+                if ! printf '%s' "$out" | grep -qiE "$netre"; then echo "::error title=$name::$name failed"; return 1; fi
+                echo "$name: network error (attempt $i), retrying in 30s"; sleep 30
+              done
+              echo "::warning title=$name::$name could not reach Apple after 3 attempts (runner network), not failing the build"
+            }
+            run_check "stapler validate" xcrun stapler validate "$app" || exit 1
+            run_check "spctl" spctl --assess --type execute --verbose=4 "$app" || exit 1
+          elif [ -n "${BLANKRUN_SIGNED:-}" ]; then
+            echo "Developer ID signed, not notarized"
+          else
+            echo "Ad-hoc signed (no APPLE_CERTIFICATE secret)"
+          fi
+
+      - name: Clean up signing keychain
+        if: always() && runner.os == 'macOS'
+        run: |
+          if [ -n "${BLANKRUN_KEYCHAIN:-}" ]; then security delete-keychain "$BLANKRUN_KEYCHAIN" || true; fi
+          rm -rf "$RUNNER_TEMP/private_keys" "$RUNNER_TEMP/certificate.p12"
 
       - name: Show bundle sizes
         shell: bash
