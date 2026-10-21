@@ -155,7 +155,8 @@ jobs:
       - name: Notarize & staple DMG
         if: runner.os == 'macOS' && env.BLANKRUN_NOTARIZE != ''
         run: |
-          set -uo pipefail
+          # GitHub 默认用 bash -e 跑脚本：这里关掉 -e，自己判断每条命令的结果（网络错误要重试/降级成 warning，不能直接退出）
+          set +e -uo pipefail
           dmg=$(find target/universal-apple-darwin/release/bundle/dmg -name '*.dmg' | head -n1)
           if [ "$BLANKRUN_NOTARIZE" = "api-key" ]; then
             auth=(--key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER")
@@ -199,7 +200,8 @@ jobs:
       - name: Check macOS app (signature, notarization, architectures)
         if: runner.os == 'macOS'
         run: |
-          set -uo pipefail
+          # GitHub 默认用 bash -e 跑脚本：这里关掉 -e，自己判断每条命令的结果（网络错误要重试/降级成 warning，不能直接退出）
+          set +e -uo pipefail
           app=target/universal-apple-darwin/release/bundle/macos/BlankRun.app
           codesign --verify --deep --strict --verbose=2 "$app" || exit 1
           info=$(codesign -dv --verbose=4 "$app" 2>&1)
