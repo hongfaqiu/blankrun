@@ -1,5 +1,11 @@
 name: Release
 
+# 只编译一次：
+# 1. 在 main 上改好版本号（Cargo.toml / Cargo.lock / tauri.conf.json）后，手动运行本工作流（workflow_dispatch）。
+#    build job 编译、签名、公证，把 DMG / NSIS / 自动更新包和它们的 .sig 上传成 artifact。
+# 2. 构建成功后，在同一个 commit 上推 v* 标签。release job 不再编译：它找到这个 commit 上最近一次成功的
+#    workflow_dispatch 运行，下载它的 artifact，核对版本号，生成 latest.json 并发布 GitHub Release。
+#    找不到就失败，提示先跑验证构建。
 on:
   push:
     tags: ["v*"]
@@ -17,6 +23,7 @@ env:
 
 permissions:
   contents: write
+  actions: read
 
 concurrency:
   group: release-${{ github.ref }}
@@ -24,6 +31,7 @@ concurrency:
 
 jobs:
   build:
+    if: github.event_name == 'workflow_dispatch'
     strategy:
       fail-fast: false
       matrix:
@@ -59,6 +67,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+
+      - name: Check version numbers
+        shell: bash
+        run: |
+          cargo_ver=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+          tauri_ver=$(python3 -c 'import json; print(json.load(open("src-tauri/tauri.conf.json"))["version"])')
+          echo "Cargo.toml: $cargo_ver, tauri.conf.json: $tauri_ver, commit: $GITHUB_SHA"
+          [ "$cargo_ver" = "$tauri_ver" ] || { echo "::error::version mismatch: Cargo.toml $cargo_ver vs tauri.conf.json $tauri_ver"; exit 1; }
 
       - name: Core tests
         run: cargo test -p blankrun-core
@@ -262,15 +278,41 @@ jobs:
           if-no-files-found: error
 
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: build
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          path: dist
-          merge-multiple: true
+
+      # 不编译：用同一 commit 上已经验证过的构建产物
+      - name: Download artifacts from the verified build of this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          sha=$(git rev-parse HEAD)
+          ver="${TAG#v}"
+          cargo_ver=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+          tauri_ver=$(python3 -c 'import json; print(json.load(open("src-tauri/tauri.conf.json"))["version"])')
+          if [ "$ver" != "$cargo_ver" ] || [ "$ver" != "$tauri_ver" ]; then
+            echo "::error title=Version mismatch::tag $TAG but Cargo.toml=$cargo_ver tauri.conf.json=$tauri_ver at $sha"; exit 1
+          fi
+          run_id=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/release.yml/runs?head_sha=$sha&event=workflow_dispatch&status=success&per_page=20" \
+            -q '[.workflow_runs[] | select(.head_sha == "'"$sha"'" and .conclusion == "success")] | sort_by(.created_at) | last | .id // empty')
+          if [ -z "$run_id" ]; then
+            echo "::error title=No verified build::No successful workflow_dispatch run of release.yml for commit $sha. Run the Release workflow on this commit (Actions › Release › Run workflow) first, wait for it to succeed, then push the tag again."
+            exit 1
+          fi
+          run_sha=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id" -q .head_sha)
+          [ "$run_sha" = "$sha" ] || { echo "::error::run $run_id head_sha $run_sha != $sha"; exit 1; }
+          echo "Using build run $run_id ($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$run_id) for $sha"
+          gh run download "$run_id" -R "$GITHUB_REPOSITORY" -D dist -n macos-universal -n windows-x64
+          find dist -type f | sort
+          # 版本号核对：产物文件名里的版本必须等于标签
+          for f in "BlankRun_${ver}_universal.dmg" "BlankRun_${ver}_x64-setup.exe" "BlankRun_${ver}_x64-setup.exe.sig" BlankRun.app.tar.gz BlankRun.app.tar.gz.sig; do
+            [ -n "$(find dist -type f -name "$f")" ] || { echo "::error title=Missing artifact::$f not found in run $run_id (artifacts must be version $ver)"; exit 1; }
+          done
+
       - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}

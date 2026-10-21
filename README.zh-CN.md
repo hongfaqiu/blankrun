@@ -125,7 +125,7 @@ CC_aarch64_apple_darwin=$PWD/tools/fake-cc.sh AR_aarch64_apple_darwin=ar cargo c
 
 日志：`config.toml` 旁边的 `blankrun.log`。脚本测试可以用 `blankrun --blank-now[=延迟秒] --wake-after=秒 --quit-after=秒`（macOS 上用 `open -n -a BlankRun --args …`）。
 
-发布：推送 `v*` 标签会运行 `.github/workflows/release.yml`，打出 macOS 通用版 DMG 和 Windows NSIS 安装包并发布到 GitHub Release（带 `-` 的标签发成预发布）。手动运行这个工作流只构建、不发布。配置了 `APPLE_CERTIFICATE*` 和 `APPLE_API_*` secrets 时，macOS 的 App 会用 Developer ID 签名、公证并 staple，DMG 也会签名（DMG 单独公证是可选的：手动运行时勾选 `notarize_dmg`，或设仓库变量 `NOTARIZE_DMG`）；没有这些 secrets 就退回 ad-hoc 签名。
+发布（`.github/workflows/release.yml`，只编译一次）：① 在 `main` 上改好版本号（`Cargo.toml`、`Cargo.lock`、`src-tauri/tauri.conf.json`），在这个 commit 上手动运行 Release 工作流（Actions › Release › Run workflow）。它会编译、签名、公证，产出 macOS 通用版 DMG、Windows NSIS 安装包和自动更新包，存成 artifact。② 跑成功后，在同一个 commit 上推 `v*` 标签。标签触发的运行不再编译：取这个 commit 上最近一次成功的手动运行的产物，核对版本号，生成 `latest.json`，发布 GitHub Release（带 `-` 的标签发成预发布）。这个 commit 没有成功的手动运行就直接失败，提示先跑验证构建。配置了 `APPLE_CERTIFICATE*` 和 `APPLE_API_*` secrets 时，macOS 的 App 会用 Developer ID 签名、公证并 staple，DMG 也会签名（DMG 单独公证是可选的：手动运行时勾选 `notarize_dmg`，或设仓库变量 `NOTARIZE_DMG`）；没有这些 secrets 就退回 ad-hoc 签名。
 
 ## 添加一种界面语言
 
