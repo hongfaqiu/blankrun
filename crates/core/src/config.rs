@@ -111,9 +111,37 @@ pub struct DisplayConfig {
     /// 仅 macOS：内建屏单独关闭时怎么关。"auto"：Apple 芯片 + macOS 13 起「断开」（与合盖相同，面板进待机），
     /// M3 系列和 iMac 用背光调 0；"disconnect"：能断开就断开（含 M3）；"backlight"：只把背光调到 0
     pub builtin_off: String,
+    /// 仅 macOS：「设置 › 息屏 › 内建屏 › 检测」的结果。只在同一机型、芯片、系统主版本上算数，
+    /// builtin_off = "auto" 时测过成功就断开（包括 M3），测过失败就不断开，没测过按默认规则
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub builtin_test: Option<BuiltinTest>,
 }
 impl Default for DisplayConfig {
-    fn default() -> Self { Self { mode: "all".into(), targets: vec![], method: DisplayMethod::Auto, prefs: Default::default(), no_ddc: vec![], keep_input: false, builtin_off: "auto".into() } }
+    fn default() -> Self { Self { mode: "all".into(), targets: vec![], method: DisplayMethod::Auto, prefs: Default::default(), no_ddc: vec![], keep_input: false, builtin_off: "auto".into(), builtin_test: None } }
+}
+
+/// 内建屏断开检测的结果
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct BuiltinTest {
+    /// "ok"：断开和接回都成功；"unsupported"：这台机器 / 系统不能断开（只能背光 + 遮罩）；"stuck"：断开后接不回
+    pub result: String,
+    /// hw.model，例如 "Mac15,12"
+    pub model: String,
+    /// machdep.cpu.brand_string，例如 "Apple M3"
+    pub chip: String,
+    /// kern.osproductversion，例如 "15.1"
+    pub os: String,
+    /// 检测时间（unix 秒）
+    pub at: u64,
+}
+pub const BUILTIN_TEST_RESULTS: [&str; 3] = ["ok", "unsupported", "stuck"];
+impl BuiltinTest {
+    /// 这次检测对当前机器还算不算数：机型、芯片、系统主版本都一样才算。Some(true) = 可以断开
+    pub fn verdict(&self, chip: &str, model: &str, os_major: u32) -> Option<bool> {
+        let major = self.os.split('.').next().and_then(|v| v.parse::<u32>().ok())?;
+        (self.model == model && self.chip == chip && major == os_major).then_some(self.result == "ok")
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -162,6 +190,7 @@ impl Config {
             if crate::schedule::parse_hhmm(t).is_none() { return Err(format!("invalid time: {t} (use HH:MM)")); }
         }
         if !["auto", "disconnect", "backlight"].contains(&self.display.builtin_off.as_str()) { self.display.builtin_off = "auto".into(); }
+        if self.display.builtin_test.as_ref().is_some_and(|t| !BUILTIN_TEST_RESULTS.contains(&t.result.as_str())) { self.display.builtin_test = None; }
         if !valid_language(&self.general.language) { return Err(format!("invalid language: {}", self.general.language)); }
         Ok(())
     }
@@ -230,6 +259,24 @@ mod tests {
         c.display.no_ddc = vec!["DM73u pro".into()];
         let back = Config::from_toml(&c.to_toml()).unwrap();
         assert_eq!(back.display, c.display);
+    }
+
+    #[test]
+    fn builtin_test_roundtrip_and_verdict() {
+        let mut c = Config::default();
+        assert!(!c.to_toml().contains("builtin_test"));
+        c.display.builtin_test = Some(BuiltinTest { result: "ok".into(), model: "Mac15,12".into(), chip: "Apple M3".into(), os: "15.1".into(), at: 1 });
+        let back = Config::from_toml(&c.to_toml()).unwrap();
+        assert_eq!(back, c);
+        let t = back.display.builtin_test.unwrap();
+        assert_eq!(t.verdict("Apple M3", "Mac15,12", 15), Some(true));
+        // 换了系统主版本 / 机型：不算数
+        assert_eq!(t.verdict("Apple M3", "Mac15,12", 26), None);
+        assert_eq!(t.verdict("Apple M3", "Mac15,13", 15), None);
+        let stuck = BuiltinTest { result: "stuck".into(), ..t.clone() };
+        assert_eq!(stuck.verdict("Apple M3", "Mac15,12", 15), Some(false));
+        // 写错的结果丢掉
+        assert_eq!(Config::from_toml("[display.builtin_test]\nresult = \"zap\"\n").unwrap().display.builtin_test, None);
     }
 
     #[test]

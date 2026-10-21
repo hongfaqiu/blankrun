@@ -40,6 +40,10 @@ extern "C" {
     fn CFDictionaryGetCount(d: *const c_void) -> isize;
     fn CFDictionaryGetKeysAndValues(d: *const c_void, keys: *mut *const c_void, values: *mut *const c_void);
     fn CFNumberGetValue(n: *const c_void, ty: isize, out: *mut c_void) -> u8;
+    fn CFDictionaryCreate(alloc: *const c_void, keys: *const *const c_void, values: *const *const c_void, n: isize, kcb: *const c_void, vcb: *const c_void) -> *const c_void;
+    static kCFTypeDictionaryKeyCallBacks: [usize; 6];
+    static kCFTypeDictionaryValueCallBacks: [usize; 5];
+    static kCFBooleanTrue: *const c_void;
 }
 
 #[repr(C)]
@@ -89,6 +93,7 @@ extern "C" {
     fn CGRectMakeWithDictionaryRepresentation(d: *const c_void, r: *mut CGRect) -> bool;
     fn CGDisplayBounds(display: u32) -> CGRect;
     fn CGGetActiveDisplayList(max: u32, displays: *mut u32, count: *mut u32) -> i32;
+    fn CGGetOnlineDisplayList(max: u32, displays: *mut u32, count: *mut u32) -> i32;
     fn CGDisplayIsBuiltin(display: u32) -> u32;
     fn CGDisplayPixelsWide(display: u32) -> usize;
     static kCGWindowLayer: CFStringRef;
@@ -109,6 +114,8 @@ extern "C" {
 #[link(name = "ApplicationServices", kind = "framework")]
 extern "C" {
     fn AXIsProcessTrusted() -> bool;
+    fn AXIsProcessTrustedWithOptions(options: *const c_void) -> bool;
+    static kAXTrustedCheckOptionPrompt: CFStringRef;
 }
 
 #[link(name = "objc")]
@@ -236,6 +243,10 @@ static DISCONNECTED: AtomicU32 = AtomicU32::new(0);
 static DISCONNECT_FAILED: AtomicBool = AtomicBool::new(false);
 /// 设置里的 display.builtin_off
 static BUILTIN_OFF: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
+/// 设置里的 display.builtin_test（内建屏断开检测的结果）
+static BUILTIN_TEST: std::sync::Mutex<Option<blankrun_core::config::BuiltinTest>> = std::sync::Mutex::new(None);
+/// 正在检测、被检测断开的内建屏（0 = 没在检测）；panic 时也要接回
+static TESTING: AtomicU32 = AtomicU32::new(0);
 
 fn sysctl_str(name: &std::ffi::CStr) -> String {
     let mut buf = [0u8; 128];
@@ -262,13 +273,110 @@ fn display_enable_fn() -> Option<CfgEnabled> {
     (p != 0).then(|| unsafe { std::mem::transmute::<usize, CfgEnabled>(p) })
 }
 
+/// (hw.model, 芯片, 系统版本, 系统主版本)
+fn machine() -> (String, String, String, u32) {
+    let os = sysctl_str(c"kern.osproductversion");
+    let major = os.split('.').next().and_then(|v| v.parse().ok()).unwrap_or(0);
+    (sysctl_str(c"hw.model"), sysctl_str(c"machdep.cpu.brand_string"), os, major)
+}
+
+/// 这台机器上测过的结果（换了机型 / 芯片 / 系统主版本就不算数）
+fn tested_verdict() -> Option<bool> {
+    let (model, chip, _, major) = machine();
+    BUILTIN_TEST.lock().ok()?.as_ref()?.verdict(&chip, &model, major)
+}
+
 /// 按设置和机器决定内建屏能不能用「断开」
 fn disconnect_supported() -> bool {
     let setting = BUILTIN_OFF.lock().map(|g| g.clone()).unwrap_or_default();
-    let os_major = sysctl_str(c"kern.osproductversion").split('.').next().and_then(|v| v.parse().ok()).unwrap_or(0);
+    let (model, chip, _, os_major) = machine();
     let how = blankrun_core::monitors::builtin_off(if setting.is_empty() { "auto" } else { &setting },
-        &sysctl_str(c"machdep.cpu.brand_string"), &sysctl_str(c"hw.model"), os_major, cfg!(target_arch = "aarch64"));
+        &chip, &model, os_major, cfg!(target_arch = "aarch64"), tested_verdict());
     how == blankrun_core::monitors::BuiltinOff::Disconnect && display_enable_fn().is_some()
+}
+
+// ---------- 内建屏断开检测（设置 › 息屏 › 内建屏 › 检测） ----------
+fn display_list(online: bool) -> Vec<u32> {
+    let mut ids = [0u32; 16];
+    let mut n = 0u32;
+    let e = unsafe { if online { CGGetOnlineDisplayList(16, ids.as_mut_ptr(), &mut n) } else { CGGetActiveDisplayList(16, ids.as_mut_ptr(), &mut n) } };
+    if e != 0 { return vec![]; }
+    ids[..(n as usize).min(16)].to_vec()
+}
+/// 内建屏在不在系统当前使用的显示器里（活动列表里有、而且 active）
+fn builtin_present(id: u32) -> bool {
+    display_list(false).contains(&id) && unsafe { CGDisplayIsActive(id) } != 0
+}
+fn wait_until(ms: u64, f: impl Fn() -> bool) -> bool {
+    let t = std::time::Instant::now();
+    loop {
+        if f() { return true; }
+        if t.elapsed() >= std::time::Duration::from_millis(ms) { return false; }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+}
+
+/// 检测内建屏能不能真正断开再接回：断开 → 确认消失 → 等约 3 秒 → 接回 → 确认回来。
+/// `marker`：崩溃标记文件，断开前写入 dis=<id>，下次启动据此接回；接回成功后删掉。
+/// 调用前上层要确认没在息屏。这里会阻塞几秒到十几秒，别在主线程 / 持着引擎锁时调用。
+pub fn builtin_test(marker: &std::path::Path) -> super::BuiltinTestOutcome {
+    let (model, chip, os, major) = machine();
+    let out = |result: &str, detail: String| {
+        crate::nblog!("built-in display test: {result} ({detail}) on {model} / {chip} / macOS {os}");
+        super::BuiltinTestOutcome { result: result.into(), detail, model: model.clone(), chip: chip.clone(), os: os.clone() }
+    };
+    // 前提：有内建屏、有别的物理屏亮着
+    let Some(id) = display_list(true).into_iter().find(|&d| unsafe { CGDisplayIsBuiltin(d) } != 0) else {
+        return out("no_builtin", "no built-in display online (lid closed?)".into());
+    };
+    if !builtin_present(id) { return out("no_builtin", format!("built-in display {id} is not active (lid closed?)")); }
+    if other_real_displays(id) == 0 { return out("need_external", "no other physical display".into()); }
+    if DISCONNECTED.load(Relaxed) != 0 { return out("busy", "built-in display is already disconnected by BlankRun".into()); }
+    if !cfg!(target_arch = "aarch64") { return out("unsupported", "Intel Mac: SLSConfigureDisplayEnabled does not power the panel down".into()); }
+    if major < 13 { return out("unsupported", format!("macOS {os}: needs macOS 13 or later")); }
+    if display_enable_fn().is_none() { return out("unsupported", "SLSConfigureDisplayEnabled unavailable".into()); }
+
+    // 断开前写崩溃标记：检测中途崩溃 / 被强退，下次启动会接回
+    let _ = std::fs::write(marker, format!("dis={id}"));
+    TESTING.store(id, Relaxed);
+    let finish = |ok: bool| { TESTING.store(0, Relaxed); if ok { let _ = std::fs::remove_file(marker); } };
+
+    if let Err(e) = set_display_enabled(id, false) {
+        // set_display_enabled 失败时已经尝试接回
+        let back = wait_until(3000, || builtin_present(id));
+        finish(back);
+        return if back { out("unsupported", format!("disconnect had no effect: {e}")) } else { out("stuck", format!("disconnect failed and the display did not come back: {e}")) };
+    }
+    // 确认真的消失了
+    let gone = wait_until(3000, || !builtin_present(id));
+    if gone { std::thread::sleep(std::time::Duration::from_secs(3)); }
+    // 接回：最多 3 次，每次等 4 秒
+    let mut back = false;
+    let mut err = String::new();
+    for i in 0..3 {
+        if let Err(e) = set_display_enabled(id, true) { err = e; }
+        if wait_until(4000, || builtin_present(id)) { back = true; break; }
+        crate::nblog!("built-in display test: display {id} not back yet (attempt {})", i + 1);
+    }
+    finish(back);
+    match (gone, back) {
+        (true, true) => out("ok", format!("display {id} disconnected and reconnected")),
+        (false, true) => out("unsupported", format!("display {id} stayed active after SLSConfigureDisplayEnabled")),
+        (_, false) => out("stuck", format!("display {id} did not come back {err}").trim().to_string()),
+    }
+}
+
+/// 诊断页里的一行：内建屏断开检测
+fn builtin_cap() -> Cap {
+    let (model, chip, os, _) = machine();
+    let tech = format!("SLSConfigureDisplayEnabled · {model} · {chip} · macOS {os}");
+    let t = BUILTIN_TEST.lock().ok().and_then(|g| g.clone());
+    match (t.as_ref().map(|t| t.result.as_str()), tested_verdict()) {
+        (Some("ok"), Some(_)) => Cap::new("builtin", "builtin_ok", "ok", tech),
+        (Some("stuck"), Some(_)) => Cap::new("builtin", "builtin_stuck", "bad", tech),
+        (Some(_), Some(_)) => Cap::new("builtin", "builtin_unsupported", "off", tech),
+        _ => Cap::new("builtin", "builtin_untested", "off", tech),
+    }
 }
 
 /// 开/关一块屏。关：先用 kCGConfigureForSession（就算我们没机会接回，注销或重启后系统也会还原），
@@ -332,7 +440,8 @@ fn reconnect_builtin(why: &str) -> Result {
 
 /// 关内建屏：能断开就断开，不行退回背光 0（返回 Err 让引擎补上遮罩）
 fn builtin_off(d: u32) -> Result {
-    if DISCONNECT_FAILED.load(Relaxed) || !disconnect_supported() { return set_builtin_off(d, true); }
+    // 正在「检测」时别同时去断开（检测会自己接回）
+    if DISCONNECT_FAILED.load(Relaxed) || TESTING.load(Relaxed) != 0 || !disconnect_supported() { return set_builtin_off(d, true); }
     if other_real_displays(d) == 0 {
         set_builtin_off(d, true)?;
         return Err("built-in is the only display: not disconnecting it, backlight 0 instead".into());
@@ -548,6 +657,7 @@ impl Platform for Native {
         self.ac_only = cfg.power.ac_only;
         ALLOW_INJECTED.store(cfg.wake.allow_remote, Relaxed);
         if let Ok(mut g) = BUILTIN_OFF.lock() { *g = cfg.display.builtin_off.clone(); }
+        if let Ok(mut g) = BUILTIN_TEST.lock() { *g = cfg.display.builtin_test.clone(); }
     }
 
     fn probe_monitor(&mut self, id: &str, x: f64, y: f64) -> super::MonHw {
@@ -714,6 +824,7 @@ impl Platform for Native {
                 None => Cap::new("hook", "hook_mac_ok", "ok", "CGEventTap"),
             },
             Cap::new("ddc", "ddc_mac", if display_services().is_some() { "ok" } else { "off" }, "DisplayServices"),
+            builtin_cap(),
             Cap::new("rgb", "rgb_todo", "off", "OpenRGB SDK"),
         ]
     }
@@ -723,12 +834,43 @@ impl Platform for Native {
     }
 
     fn request_permission(&self, which: &str) {
+        // 先发起系统授权请求（没有记录时弹系统授权框），再打开对应的设置页（已有记录时系统不会再弹框）
         let pane = if which == "input" {
             unsafe { CGRequestListenEventAccess(); }
             "Privacy_ListenEvent"
-        } else { "Privacy_Accessibility" };
+        } else {
+            prompt_accessibility();
+            "Privacy_Accessibility"
+        };
         let _ = std::process::Command::new("/usr/bin/open")
             .arg(format!("x-apple.systempreferences:com.apple.preference.security?{pane}")).spawn();
+    }
+
+    fn prompt_permissions(&self) {
+        static DONE: AtomicBool = AtomicBool::new(false);
+        if DONE.swap(true, Relaxed) { return; } // 每次启动最多一次
+        let (ax, input) = unsafe { (AXIsProcessTrusted(), CGPreflightListenEventAccess()) };
+        crate::nblog!("permissions at launch: accessibility={ax} input_monitoring={input}");
+        if !ax { prompt_accessibility(); }
+        if !input { unsafe { CGRequestListenEventAccess(); } }
+    }
+
+    fn reset_permissions(&self) -> Result {
+        // 清掉旧的（签名不匹配的）授权记录：旧版用临时签名，0.1.7 起换成 Developer ID，
+        // 系统设置里的开关可能是开着的，但对新签名无效
+        let id = bundle_id();
+        let mut errs = vec![];
+        for service in ["Accessibility", "ListenEvent"] {
+            match std::process::Command::new("/usr/bin/tccutil").args(["reset", service, &id]).output() {
+                Ok(o) if o.status.success() => crate::nblog!("tccutil reset {service} {id}: ok"),
+                Ok(o) => { let e = format!("tccutil reset {service} {id}: {} {}", o.status, String::from_utf8_lossy(&o.stderr).trim()); crate::nblog!("{e}"); errs.push(e); }
+                Err(e) => { crate::nblog!("tccutil: {e}"); errs.push(e.to_string()); }
+            }
+        }
+        // 重新发起请求
+        prompt_accessibility();
+        unsafe { CGRequestListenEventAccess(); }
+        if errs.is_empty() { Ok(()) } else { Err(errs.join("; ")) }
     }
 
     fn persist(&self) -> Option<String> {
@@ -802,6 +944,8 @@ impl Drop for Native {
 pub fn emergency_restore() {
     // 断开的内建屏先接回来（原子量，不加锁）
     let d = DISCONNECTED.swap(0, Relaxed);
+    if d != 0 { let _ = set_display_enabled(d, true); }
+    let d = TESTING.swap(0, Relaxed);
     if d != 0 { let _ = set_display_enabled(d, true); }
     let bits = KB_SAVED.swap(u32::MAX, Relaxed);
     if bits != u32::MAX { kb_set(f32::from_bits(bits)); }
@@ -902,6 +1046,44 @@ pub fn prefer_tray_position() {
         }
         CFRelease(key);
     }
+}
+
+/// 辅助功能：AXIsProcessTrustedWithOptions(kAXTrustedCheckOptionPrompt = true)，没有授权记录时弹系统授权框
+fn prompt_accessibility() -> bool {
+    unsafe {
+        let keys = [kAXTrustedCheckOptionPrompt];
+        let vals = [kCFBooleanTrue];
+        let opts = CFDictionaryCreate(std::ptr::null(), keys.as_ptr(), vals.as_ptr(), 1,
+            &kCFTypeDictionaryKeyCallBacks as *const _ as *const c_void, &kCFTypeDictionaryValueCallBacks as *const _ as *const c_void);
+        let ok = AXIsProcessTrustedWithOptions(opts);
+        if !opts.is_null() { CFRelease(opts); }
+        ok
+    }
+}
+
+/// 本 App 的 bundle id（tauri.conf.json 的 identifier）。从 .app 里的 Info.plist 读，读不到用默认值
+fn bundle_id() -> String {
+    let id = std::env::current_exe().ok()
+        .and_then(|e| e.ancestors().nth(2).map(|c| c.join("Info.plist")))
+        .and_then(|p| std::fs::read(p).ok())
+        .and_then(|b| {
+            let s = String::from_utf8_lossy(&b).into_owned();
+            let i = s.find("<key>CFBundleIdentifier</key>")?;
+            let rest = &s[i..];
+            let a = rest.find("<string>")? + 8;
+            let z = rest[a..].find("</string>")?;
+            Some(rest[a..a + z].trim().to_string())
+        });
+    id.filter(|s| !s.is_empty()).unwrap_or_else(|| "com.cosfoc.blankrun".into())
+}
+
+/// 重启 App：先在后台排一个「1.5 秒后重新打开」，再由调用方退出（单实例锁要等本进程退出才释放）
+pub fn relaunch_later() -> Result {
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let target = exe.ancestors().nth(3).filter(|a| a.extension().is_some_and(|x| x == "app")).map(|a| a.to_path_buf()).unwrap_or(exe);
+    std::process::Command::new("/bin/sh").arg("-c").arg("sleep 1.5; /usr/bin/open \"$0\"").arg(&target).spawn().map_err(|e| e.to_string())?;
+    crate::nblog!("relaunch scheduled: {}", target.display());
+    Ok(())
 }
 
 fn launch_agent() -> Option<std::path::PathBuf> {
