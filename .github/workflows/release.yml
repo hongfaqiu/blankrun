@@ -4,6 +4,16 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      notarize_dmg:
+        description: "Also notarize + staple the DMG (the app inside is always notarized + stapled)"
+        type: boolean
+        default: false
+
+# DMG 默认不单独公证（苹果公证一次要 ~1 小时，runner 等太久容易断网）；里面的 .app 始终公证 + staple，DMG 仍用 Developer ID 签名。
+# 要公证 DMG：手动运行时勾选 notarize_dmg，或把仓库变量 NOTARIZE_DMG 设为 true
+env:
+  NOTARIZE_DMG: ${{ inputs.notarize_dmg && 'true' || vars.NOTARIZE_DMG || 'false' }}
 
 permissions:
   contents: write
@@ -153,7 +163,7 @@ jobs:
       # 公证被拒（Invalid/Rejected）→ 失败；runner 断网（NSURLErrorDomain -1009 等）重试后仍不行 → 只给 warning
       #（里面的 .app 已经由 tauri 公证 + staple，用户打开不受影响）
       - name: Notarize & staple DMG
-        if: runner.os == 'macOS' && env.BLANKRUN_NOTARIZE != ''
+        if: runner.os == 'macOS' && env.BLANKRUN_NOTARIZE != '' && env.NOTARIZE_DMG == 'true'
         run: |
           # GitHub 默认用 bash -e 跑脚本：这里关掉 -e，自己判断每条命令的结果（网络错误要重试/降级成 warning，不能直接退出）
           set +e -uo pipefail
