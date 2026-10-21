@@ -331,14 +331,13 @@ fn main() {
             std::thread::Builder::new().name("nb-engine".into()).spawn(move || engine::run(handle, eng, rx))?;
 
             cli(tx.clone());
-            // 第一次运行：欢迎页（Mac 缺权限时顺带引导授权）。之后手动打开（开始菜单、启动台、安装完成页）就显示设置；
-            // 只有登录时自动启动（--autostart）和测试参数才静默待在托盘里。
-            let quiet = std::env::args().skip(1).any(|a| a == "--autostart" || a.starts_with("--blank-now") || a.starts_with("--quit-after"));
+            // 第一次运行：欢迎页（Mac 缺权限时顺带引导授权）。之后每次启动都静默待在菜单栏/托盘里，不弹设置页；
+            // 想打开设置：点托盘图标菜单，或在已运行时再次打开应用（第二次启动 / Dock 重新打开会显示设置）。
             if first_run {
                 nblog!("first run: showing welcome");
                 if let Some(w) = app.get_webview_window("onboarding") { let _ = w.show(); let _ = w.set_focus(); }
-            } else if !quiet {
-                show_settings(app.handle(), None);
+            } else {
+                nblog!("launch: staying in tray");
             }
 
             let blank = MenuItem::with_id(app, "blank", tt[0], true, None::<&str>)?;
