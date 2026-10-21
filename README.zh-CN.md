@@ -8,7 +8,7 @@
 
 <p align="center"><a href="https://blankrun.cosfoc.com">官网</a> · <a href="https://github.com/hongfaqiu/blankrun/releases">下载</a> · macOS + Windows · MIT</p>
 
-> **最新版本：v0.1.6** · macOS 11+（Apple 芯片与 Intel）· Windows 10/11 x64 · [下载](https://github.com/hongfaqiu/blankrun/releases/latest)。安装包未做代码签名，首次打开的步骤见[官网](https://blankrun.cosfoc.com/#download)。
+> **最新版本：v0.1.7** · macOS 11+（Apple 芯片与 Intel）· Windows 10/11 x64 · [下载](https://github.com/hongfaqiu/blankrun/releases/latest)。macOS 版已用 Developer ID 签名并通过 Apple 公证，双击即可打开；首次打开的步骤见[官网](https://blankrun.cosfoc.com/#download)。
 
 <p align="center"><img src="docs/screenshots/popover-mac.png" width="380" alt="菜单栏面板"> <img src="docs/screenshots/popover-mac-dark.png" width="380" alt="菜单栏面板（深色）"></p>
 
@@ -123,7 +123,7 @@ CC_aarch64_apple_darwin=$PWD/tools/fake-cc.sh AR_aarch64_apple_darwin=ar cargo c
 
 日志：`config.toml` 旁边的 `blankrun.log`。脚本测试可以用 `blankrun --blank-now[=延迟秒] --wake-after=秒 --quit-after=秒`（macOS 上用 `open -n -a BlankRun --args …`）。
 
-发布：推送 `v*` 标签会运行 `.github/workflows/release.yml`，打出 macOS 通用版 DMG 和 Windows NSIS 安装包并发布到 GitHub Release（带 `-` 的标签发成预发布）。手动运行这个工作流只构建、不发布。
+发布：推送 `v*` 标签会运行 `.github/workflows/release.yml`，打出 macOS 通用版 DMG 和 Windows NSIS 安装包并发布到 GitHub Release（带 `-` 的标签发成预发布）。手动运行这个工作流只构建、不发布。配置了 `APPLE_CERTIFICATE*` 和 `APPLE_API_*` secrets 时，macOS 的 App 会用 Developer ID 签名、公证并 staple，DMG 也会签名（DMG 单独公证是可选的：手动运行时勾选 `notarize_dmg`，或设仓库变量 `NOTARIZE_DMG`）；没有这些 secrets 就退回 ad-hoc 签名。
 
 ## 添加一种界面语言
 

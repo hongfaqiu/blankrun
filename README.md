@@ -8,7 +8,7 @@
 
 <p align="center"><a href="https://blankrun.cosfoc.com">Website</a> · <a href="https://github.com/hongfaqiu/blankrun/releases">Download</a> · macOS + Windows · MIT</p>
 
-> **Latest version: v0.1.6** · macOS 11+ (Apple silicon and Intel) · Windows 10/11 x64 · [Download](https://github.com/hongfaqiu/blankrun/releases/latest). The installers are not code-signed; see the [website](https://blankrun.cosfoc.com/#download) for first-launch steps.
+> **Latest version: v0.1.7** · macOS 11+ (Apple silicon and Intel) · Windows 10/11 x64 · [Download](https://github.com/hongfaqiu/blankrun/releases/latest). The macOS app is signed with a Developer ID and notarized by Apple, so it opens with a double-click; see the [website](https://blankrun.cosfoc.com/#download) for first-launch steps.
 
 <p align="center"><img src="docs/screenshots/popover-mac-en.png" width="380" alt="Menu bar panel"> <img src="docs/screenshots/popover-mac-en-dark.png" width="380" alt="Menu bar panel (dark)"></p>
 
@@ -123,7 +123,7 @@ UI preview: `NODE_PATH=<node_modules with playwright-core> node design/preview/r
 
 Logs: `blankrun.log` next to `config.toml`. For scripted tests: `blankrun --blank-now[=delay_s] --wake-after=s --quit-after=s` (on macOS: `open -n -a BlankRun --args …`).
 
-Releases: pushing a `v*` tag runs `.github/workflows/release.yml`, which builds a universal macOS DMG and a Windows NSIS installer and publishes a GitHub Release (tags with `-` become pre-releases). Running the workflow manually builds without publishing.
+Releases: pushing a `v*` tag runs `.github/workflows/release.yml`, which builds a universal macOS DMG and a Windows NSIS installer and publishes a GitHub Release (tags with `-` become pre-releases). Running the workflow manually builds without publishing. When the `APPLE_CERTIFICATE*` and `APPLE_API_*` secrets are set, the macOS app is signed with a Developer ID, notarized and stapled, and the DMG is signed (notarizing the DMG too is optional: the `notarize_dmg` input or the `NOTARIZE_DMG` repo variable); without the secrets the build falls back to an ad-hoc signature.
 
 ## Adding a UI language
 

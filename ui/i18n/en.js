@@ -305,7 +305,7 @@ NB_LOCALE("en", {
   "a.upd_error": "Update check or download failed",
   "a.upd_idle": "Current version {v}",
   "a.upd_blank": "Updates don't run while the screen is blank. Wake first, then click",
-  "a.upd_mac": "After updating, re-enable Accessibility and Input Monitoring in System Settings › Privacy & Security",
+  "a.upd_mac": "BlankRun reopens after installing; Accessibility and Input Monitoring stay allowed",
   "a.upd_win": "A short progress window appears, then BlankRun reopens",
   "a.upd_done": "Updated from v{v}",
   "a.upd_done_mac": "Updated from v{v}. If input blocking stops working, grant Accessibility and Input Monitoring again",

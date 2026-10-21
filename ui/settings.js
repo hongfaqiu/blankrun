@@ -109,7 +109,8 @@ function renderUpdate() {
   const notes = [];
   if (ph === "error" && u.error) notes.push(u.error);
   if (ph === "available") notes.push(t(blank ? "a.upd_blank" : OS === "mac" ? "a.upd_mac" : "a.upd_win"));
-  if (u.updated_from) notes.push(t(OS === "mac" ? "a.upd_done_mac" : "a.upd_done", { v: u.updated_from }));
+  // 0.1.7 起 Mac 版用 Developer ID 签名：从未签名的旧版（≤0.1.6）升上来要重新授权一次，之后更新权限会保留
+  if (u.updated_from) notes.push(t(OS === "mac" && /^0\.(0|1\.[0-6])(\D|$)/.test(u.updated_from) ? "a.upd_done_mac" : "a.upd_done", { v: u.updated_from }));
   $("#updNote").textContent = notes.join(" · ");
   $("#updNotes").hidden = ph !== "available";
   $("#updInstall").hidden = ph !== "available" && ph !== "downloading" && ph !== "installing";
