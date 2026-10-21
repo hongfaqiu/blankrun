@@ -8,7 +8,7 @@
 
 <p align="center"><a href="https://blankrun.cosfoc.com">Website</a> · <a href="https://github.com/hongfaqiu/blankrun/releases">Download</a> · macOS + Windows · MIT</p>
 
-> **Latest version: v0.1.7** · macOS 11+ (Apple silicon and Intel) · Windows 10/11 x64 · [Download](https://github.com/hongfaqiu/blankrun/releases/latest). The macOS app is signed with a Developer ID and notarized by Apple, so it opens with a double-click; see the [website](https://blankrun.cosfoc.com/#download) for first-launch steps.
+> **Latest version: v0.1.8** · macOS 11+ (Apple silicon and Intel) · Windows 10/11 x64 · [Download](https://github.com/hongfaqiu/blankrun/releases/latest). The macOS app is signed with a Developer ID and notarized by Apple, so it opens with a double-click; see the [website](https://blankrun.cosfoc.com/#download) for first-launch steps.
 
 <p align="center"><img src="docs/screenshots/popover-mac-en.png" width="380" alt="Menu bar panel"> <img src="docs/screenshots/popover-mac-en-dark.png" width="380" alt="Menu bar panel (dark)"></p>
 

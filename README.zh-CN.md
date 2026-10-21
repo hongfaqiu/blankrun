@@ -8,7 +8,7 @@
 
 <p align="center"><a href="https://blankrun.cosfoc.com">官网</a> · <a href="https://github.com/hongfaqiu/blankrun/releases">下载</a> · macOS + Windows · MIT</p>
 
-> **最新版本：v0.1.7** · macOS 11+（Apple 芯片与 Intel）· Windows 10/11 x64 · [下载](https://github.com/hongfaqiu/blankrun/releases/latest)。macOS 版已用 Developer ID 签名并通过 Apple 公证，双击即可打开；首次打开的步骤见[官网](https://blankrun.cosfoc.com/#download)。
+> **最新版本：v0.1.8** · macOS 11+（Apple 芯片与 Intel）· Windows 10/11 x64 · [下载](https://github.com/hongfaqiu/blankrun/releases/latest)。macOS 版已用 Developer ID 签名并通过 Apple 公证，双击即可打开；首次打开的步骤见[官网](https://blankrun.cosfoc.com/#download)。
 
 <p align="center"><img src="docs/screenshots/popover-mac.png" width="380" alt="菜单栏面板"> <img src="docs/screenshots/popover-mac-dark.png" width="380" alt="菜单栏面板（深色）"></p>
 
