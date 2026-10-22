@@ -66,13 +66,13 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22.23.4
 
       - name: Check version numbers
         shell: bash
         run: |
           cargo_ver=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
-          tauri_ver=$(python3 -c 'import json; print(json.load(open("src-tauri/tauri.conf.json"))["version"])')
+          tauri_ver=$(python3 -c 'import json; print(json.load(open("src-tauri/tauri.conf.json", encoding="utf-8"))["version"])')
           echo "Cargo.toml: $cargo_ver, tauri.conf.json: $tauri_ver, commit: $GITHUB_SHA"
           [ "$cargo_ver" = "$tauri_ver" ] || { echo "::error::version mismatch: Cargo.toml $cargo_ver vs tauri.conf.json $tauri_ver"; exit 1; }
 
@@ -293,7 +293,7 @@ jobs:
           sha=$(git rev-parse HEAD)
           ver="${TAG#v}"
           cargo_ver=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
-          tauri_ver=$(python3 -c 'import json; print(json.load(open("src-tauri/tauri.conf.json"))["version"])')
+          tauri_ver=$(python3 -c 'import json; print(json.load(open("src-tauri/tauri.conf.json", encoding="utf-8"))["version"])')
           if [ "$ver" != "$cargo_ver" ] || [ "$ver" != "$tauri_ver" ]; then
             echo "::error title=Version mismatch::tag $TAG but Cargo.toml=$cargo_ver tauri.conf.json=$tauri_ver at $sha"; exit 1
           fi
