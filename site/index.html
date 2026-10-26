@@ -29,15 +29,25 @@
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="icon" href="/favicon.png" type="image/png" sizes="32x32">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-<link rel="stylesheet" href="/style.css">
+<script src="/theme.js?v=0.1.8"></script>
+<link rel="stylesheet" href="/style.css?v=0.1.8">
+<script src="/lang.js?v=0.1.8" defer></script>
+<script src="/dl.js?v=0.1.8" defer></script>
+<script src="/demo.js?v=0.1.8" defer></script>
 </head>
 <body>
-<header class="top">
+<header class="top" id="top">
   <a class="brand" href="/"><img src="/img/icon.png" width="22" height="22" alt=""><span>黑着跑</span><span class="muted">BlankRun</span></a>
   <nav>
+    <a href="#demo"><span lang="zh">演示</span><span lang="en">Demo</span></a>
     <a href="#features"><span lang="zh">功能</span><span lang="en">Features</span></a>
-    <a href="#screens"><span lang="zh">截图</span><span lang="en">Screens</span></a>
+    <a href="#download"><span lang="zh">下载</span><span lang="en">Download</span></a>
     <a href="https://github.com/hongfaqiu/blankrun">GitHub</a>
+    <div class="theme" id="themeSeg" role="radiogroup" aria-label="外观 Appearance">
+      <button type="button" role="radio" data-theme-pref="system" aria-checked="true" title="跟随系统 · System"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><path d="M8 2.5v11a5.5 5.5 0 0 0 0-11z" class="fill"/></svg></button>
+      <button type="button" role="radio" data-theme-pref="light" aria-checked="false" title="浅色 · Light"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="3"/><path d="M8 1.5v1.6M8 12.9v1.6M1.5 8h1.6M12.9 8h1.6M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1"/></svg></button>
+      <button type="button" role="radio" data-theme-pref="dark" aria-checked="false" title="深色 · Dark"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13.2 10.1A5.6 5.6 0 0 1 5.9 2.8a5.6 5.6 0 1 0 7.3 7.3z"/></svg></button>
+    </div>
     <button class="lang" id="langBtn" type="button" aria-label="Switch language"><span lang="zh">EN</span><span lang="en">中文</span></button>
   </nav>
 </header>
@@ -51,65 +61,172 @@
       <span lang="en">Queue a night of work for Claude Code, Codex or a local model. BlankRun really turns the displays and keyboard backlight off while keeping the computer awake. A cat on the keyboard won't light it up. It wakes only the way you choose.</span>
     </p>
     <div class="cta">
-      <a class="panel" id="dlMain" href="#download">
-        <b><span class="os-mac"><span lang="zh">下载 Mac 版</span><span lang="en">Download for Mac</span></span><span class="os-win"><span lang="zh">下载 Windows 版</span><span lang="en">Download for Windows</span></span><span class="os-any"><span lang="zh">免费下载</span><span lang="en">Download free</span></span></b>
-        <small><span class="os-mac"><span lang="zh">macOS 11+ · Apple 芯片与 Intel · 3.7 MB</span><span lang="en">macOS 11+ · Apple silicon and Intel · 3.7 MB</span></span><span class="os-win"><span lang="zh">Windows 10/11 · 1.4 MB</span><span lang="en">Windows 10/11 · 1.4 MB</span></span><span class="os-any"><span lang="zh">macOS 与 Windows</span><span lang="en">macOS and Windows</span></span></small>
+      <a class="panel" id="dlMain" href="#download" data-dl="main">
+        <b id="dlLabel"><span lang="zh">免费下载</span><span lang="en">Download free</span></b>
+        <small id="dlMeta"><span lang="zh">macOS 与 Windows</span><span lang="en">macOS and Windows</span></small>
         <i class="led" aria-hidden="true"></i>
       </a>
       <div class="alt">
-        <a class="os-mac" href="https://github.com/hongfaqiu/blankrun/releases/latest/download/BlankRun_x64-setup.exe"><span lang="zh">Windows 版</span><span lang="en">Windows version</span></a>
-        <a class="os-win" href="https://github.com/hongfaqiu/blankrun/releases/latest/download/BlankRun_universal.dmg"><span lang="zh">Mac 版</span><span lang="en">Mac version</span></a>
-        <span class="os-any"><a href="https://github.com/hongfaqiu/blankrun/releases/latest/download/BlankRun_universal.dmg">macOS</a> · <a href="https://github.com/hongfaqiu/blankrun/releases/latest/download/BlankRun_x64-setup.exe">Windows</a></span>
+        <a href="#download" id="dlOther"><span lang="zh">其他平台</span><span lang="en">Other platforms</span></a>
         <span class="sep">·</span>
         <a href="https://github.com/hongfaqiu/blankrun"><span lang="zh">源码</span><span lang="en">Source</span></a>
       </div>
+      <p class="dl-note" id="dlNote" hidden></p>
     </div>
   </div>
-  <figure class="hero-shot">
-    <picture>
-      <source srcset="/img/popover-mac-dark.webp?v=0.1.5" media="(prefers-color-scheme: dark)">
-      <img src="/img/popover-mac.webp?v=0.1.5" width="640" height="856" alt="黑着跑菜单栏面板：立即息屏、今晚 23:30 → 07:30 的计划、唤醒方式">
-    </picture>
-  </figure>
+</section>
+
+<section class="demo" id="demo" aria-labelledby="demoTitle">
+  <div class="demo-head">
+    <h2 id="demoTitle"><span lang="zh">点一下试试</span><span lang="en">Try it</span></h2>
+    <div class="demo-tools">
+      <div class="seg plat" role="radiogroup" aria-label="平台 Platform">
+        <button type="button" role="radio" data-plat="mac" aria-checked="true">macOS</button>
+        <button type="button" role="radio" data-plat="win" aria-checked="false">Windows</button>
+      </div>
+      <button class="demo-toggle" id="demoToggle" type="button" aria-pressed="false" hidden><i aria-hidden="true"></i><span data-t="pause"></span></button>
+    </div>
+  </div>
+  <div class="tabs" role="tablist" aria-label="演示 Demos">
+    <button class="tab" role="tab" type="button" id="tab-blank" data-tab="blank" aria-selected="true" aria-controls="stage"><span class="n num">01</span><span lang="zh">立即息屏</span><span lang="en">Blank now</span></button>
+    <button class="tab" role="tab" type="button" id="tab-select" data-tab="select" aria-selected="false" aria-controls="stage" tabindex="-1"><span class="n num">02</span><span lang="zh">只关所选</span><span lang="en">Selected only</span></button>
+    <button class="tab" role="tab" type="button" id="tab-wake" data-tab="wake" aria-selected="false" aria-controls="stage" tabindex="-1"><span class="n num">03</span><span lang="zh">唤醒方式</span><span lang="en">Wake</span></button>
+    <button class="tab" role="tab" type="button" id="tab-sched" data-tab="sched" aria-selected="false" aria-controls="stage" tabindex="-1"><span class="n num">04</span><span lang="zh">定时计划</span><span lang="en">Schedules</span></button>
+  </div>
+  <p class="tab-desc" id="tabDesc" aria-live="polite"></p>
+
+  <div class="stage" id="stage" role="tabpanel" aria-labelledby="tab-blank" data-tab="blank" data-plat="mac">
+    <div class="scene-fit" id="sceneFit">
+      <div class="scene" id="scene">
+        <div class="mon" id="dispExt" data-disp="ext">
+          <div class="scr">
+            <div class="desk">
+              <div class="bar mac-only"><b></b><span class="bar-r"><span class="tray"><svg viewBox="0 0 18 14" aria-hidden="true"><rect x="1" y="1" width="16" height="10.5" rx="1.8"/><circle cx="13.6" cy="8.4" r="1.3" class="fill"/></svg></span><span class="clk num" data-clock></span></span></div>
+              <div class="term" data-log="ext"><div class="term-h"><i></i><i></i><i></i><span>claude — ~/app</span></div><div class="term-b"></div></div>
+              <div class="cursor" aria-hidden="true"><svg viewBox="0 0 16 20"><path d="M1 1v15.5l4-3.8 2.6 5.8 2.6-1.1-2.5-5.7H13z"/></svg></div>
+              <div class="task win-only"><span class="tray"><svg viewBox="0 0 18 14" aria-hidden="true"><rect x="1" y="1" width="16" height="10.5" rx="1.8"/><circle cx="13.6" cy="8.4" r="1.3" class="fill"/></svg></span><span class="clk num" data-clock></span></div>
+            </div>
+            <div class="off" aria-hidden="true"><span class="hint"></span></div>
+            <span class="pick" aria-hidden="true"></span>
+          </div>
+          <div class="chin"><i class="sled" aria-hidden="true"></i></div>
+          <div class="neck"></div><div class="foot"></div>
+          <span class="dname"><span lang="zh">外接显示器</span><span lang="en">External display</span></span>
+        </div>
+        <div class="lap" id="dispIn" data-disp="in">
+          <div class="scr">
+            <div class="desk">
+              <div class="term small" data-log="in"><div class="term-h"><i></i><i></i><i></i><span>codex</span></div><div class="term-b"></div></div>
+            </div>
+            <div class="off" aria-hidden="true"><span class="hint"></span><span class="disc"></span></div>
+            <span class="pick" aria-hidden="true"></span>
+          </div>
+          <div class="base"><i class="kb" aria-hidden="true"></i></div>
+          <span class="dname"><span lang="zh">内建屏</span><span lang="en">Built-in display</span></span>
+        </div>
+        <div class="strip" id="strip">
+          <span class="st"><i class="dot" id="awakeDot"></i><span id="awakeTxt"></span></span>
+          <span class="job"><span class="job-n num" id="jobName">agent · refactor auth</span><span class="prog"><i id="jobBar"></i></span><span class="num" id="jobPct">0%</span></span>
+          <span class="num clock" data-clock></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="pop" id="pop">
+      <div class="pop-h"><b><span lang="zh">黑着跑</span><span lang="en">BlankRun</span></b><span class="state" id="popState"></span></div>
+
+      <div class="pane" data-pane="blank select wake">
+        <button class="blank-btn" type="button" id="blankBtn" data-act="blank"><span class="bb-t" id="bbTitle"></span><span class="bb-s" id="bbSub"></span><i class="led" aria-hidden="true"></i></button>
+        <div class="delay" data-pane="blank">
+          <span class="lbl" data-t="delay"></span>
+          <div class="seg" id="delaySeg" role="radiogroup">
+            <button type="button" role="radio" data-delay="0" aria-checked="true" data-t="now"></button>
+            <button type="button" role="radio" data-delay="5" aria-checked="false" data-t="m1"></button>
+            <button type="button" role="radio" data-delay="10" aria-checked="false" data-t="m5"></button>
+            <button type="button" role="radio" data-delay="15" aria-checked="false" data-t="m15"></button>
+          </div>
+        </div>
+      </div>
+
+      <div class="pane" data-pane="select">
+        <div class="row"><span data-t="scope"></span><span class="seg sm" id="scopeSeg" role="radiogroup"><button type="button" role="radio" data-scope="all" aria-checked="false" data-t="all"></button><button type="button" role="radio" data-scope="sel" aria-checked="true" data-t="sel"></button></span></div>
+        <label class="chk"><input type="checkbox" data-sel="in" checked><span data-t="d_in"></span><em class="num mac-only" data-t="disc_tag"></em></label>
+        <label class="chk"><input type="checkbox" data-sel="ext"><span data-t="d_ext"></span><em class="num win-only">DDC/CI</em></label>
+        <div class="row"><span><span data-t="keep"></span><small data-t="keep_n"></small></span><button class="tog on" type="button" role="switch" aria-checked="true" id="keepTog"></button></div>
+      </div>
+
+      <div class="pane" data-pane="wake">
+        <div class="lbl" data-t="wake_by"></div>
+        <div class="wake-list" id="wakeList" role="radiogroup">
+          <button type="button" role="radio" data-wake="hold" aria-checked="true"></button>
+          <button type="button" role="radio" data-wake="key" aria-checked="false"></button>
+          <button type="button" role="radio" data-wake="move" aria-checked="false"></button>
+          <button type="button" role="radio" data-wake="click" aria-checked="false"></button>
+          <button type="button" role="radio" data-wake="sched" aria-checked="false"></button>
+        </div>
+      </div>
+
+      <div class="pane" data-pane="sched">
+        <div class="plans" id="plans"></div>
+        <div class="when">
+          <div class="days" id="daySeg" role="radiogroup"></div>
+          <input type="range" id="timeRange" min="0" max="1439" step="5" value="1350">
+          <div class="ticks num"><span>0</span><span>6</span><span>12</span><span>18</span><span>24</span></div>
+        </div>
+      </div>
+
+      <div class="wakebar" data-pane="blank select wake">
+        <span class="lbl" data-t="wake"></span>
+        <button class="hold" type="button" id="holdBtn"><span class="keys" id="holdKeys"></span><i class="fillbar" aria-hidden="true"></i></button>
+        <span class="em" id="emKeys"></span>
+      </div>
+    </div>
+    <div class="pointer" id="pointer" aria-hidden="true"><svg viewBox="0 0 16 20"><path d="M1 1v15.5l4-3.8 2.6 5.8 2.6-1.1-2.5-5.7H13z"/></svg></div>
+  </div>
+  <p class="demo-foot"><span lang="zh">网页演示，界面按实际软件简化。真实效果：屏幕断电、键盘背光熄灭，电脑不睡。</span><span lang="en">A simplified web demo of the app. For real: the displays power off, the keyboard backlight goes out, and the computer stays awake.</span></p>
 </section>
 
 <section class="night" aria-label="一晚上">
   <h2><span lang="zh">一晚上是这样的</span><span lang="en">A night with BlankRun</span></h2>
   <ol class="timeline">
-    <li><span class="t num">23:30</span><div><b><span lang="zh">屏幕和背光熄灭</span><span lang="en">Displays and backlight go dark</span></b><small><span lang="zh">按「立即息屏」，或者交给定时计划。也可以延迟 1、5、15 分钟。</span><span lang="en">Click “Blank now” or let the schedule do it. Delay by 1, 5 or 15 minutes if you like.</span></small></div></li>
-    <li class="on"><span class="t num">00:00 – 07:00</span><div><b><span lang="zh">电脑醒着，任务照跑</span><span lang="en">The computer stays awake, jobs keep running</span></b><small><span lang="zh">防睡眠一直生效。屏幕被碰亮了，几秒内会自动再关。</span><span lang="en">Sleep stays blocked the whole time. If something lights the screen, it goes dark again within seconds.</span></small></div></li>
-    <li><span class="t num">07:30</span><div><b><span lang="zh">按你定的方式醒来</span><span lang="en">Wakes the way you chose</span></b><small><span lang="zh">按住 ⌃⌥W 一秒、任意键、移动鼠标，或者等计划结束。醒来后可以锁屏；按住的快捷键不会漏进前台程序。</span><span lang="en">Hold ⌃⌥W for a second, press any key, move the mouse, or wait for the schedule to end. Optionally lock on wake. The held shortcut never leaks into the app in front.</span></small></div></li>
+    <li class="reveal"><span class="t num">23:30</span><div><b><span lang="zh">屏幕和背光熄灭</span><span lang="en">Displays and backlight go dark</span></b><small><span lang="zh">按「立即息屏」，或者交给定时计划。也可以延迟 1、5、15 分钟。</span><span lang="en">Click “Blank now” or let a schedule do it. Delay by 1, 5 or 15 minutes if you like.</span></small></div></li>
+    <li class="reveal on"><span class="t num">00:00 – 07:00</span><div><b><span lang="zh">电脑醒着，任务照跑</span><span lang="en">The computer stays awake, jobs keep running</span></b><small><span lang="zh">防睡眠一直生效。屏幕被碰亮了，几秒内会自动再关。</span><span lang="en">Sleep stays blocked the whole time. If something lights the screen, it goes dark again within seconds.</span></small></div></li>
+    <li class="reveal"><span class="t num">07:30</span><div><b><span lang="zh">按你定的方式醒来</span><span lang="en">Wakes the way you chose</span></b><small><span lang="zh">按住 ⌃⌥W 一秒、任意键、移动鼠标，或者等计划结束。醒来后可以锁屏；按住的快捷键不会漏进前台程序。</span><span lang="en">Hold ⌃⌥W for a second, press any key, move the mouse, or wait for the schedule to end. Optionally lock on wake. The held shortcut never leaks into the app in front.</span></small></div></li>
   </ol>
 </section>
 
 <section id="features" class="features">
   <h2><span lang="zh">功能</span><span lang="en">Features</span></h2>
   <dl>
-    <div><dt><span lang="zh">真关屏，不睡眠</span><span lang="en">Real display off, no sleep</span></dt><dd><span lang="zh">macOS 用 IOPMAssertion 阻止睡眠，Windows 用 SetThreadExecutionState；关的是显示器电源，不是盖一层黑图。MacBook 内建屏像合盖一样断开（面板断电），唤醒后接回。</span><span lang="en">IOPMAssertion on macOS and SetThreadExecutionState on Windows block sleep. The display is actually powered down, not covered with a black image. On a MacBook, the built-in display is disconnected the way closing the lid does it (panel powered down) and reconnected on wake.</span></dd></div>
-    <div><dt><span lang="zh">逐台断电</span><span lang="en">Per-display power-off</span></dt><dd><span lang="zh">Windows 上支持 DDC/CI 的显示器可以单独断电，其余盖黑色遮罩；每台可选「自动 / 仅遮罩 / 断电」。不响应断电指令的显示器会被自动识别，改用遮罩。远程软件的虚拟显示器不遮、不断电。</span><span lang="en">On Windows, displays with DDC/CI can be powered off one by one; the rest get a black overlay. Each display can be set to Automatic, Overlay only or Power off. Displays that ignore power-off commands are detected and switched to the overlay. Virtual displays from remote tools are left alone.</span></dd></div>
-    <div><dt><span lang="zh">键鼠照常用（Mac mini 模式）</span><span lang="en">Keep using keyboard &amp; mouse (Mac mini mode)</span></dt><dd><span lang="zh">配合「只关所选」，只关 MacBook 内建屏，外接屏照常亮着，本机键盘、鼠标、触控板照常用，光标不会跑进关掉的屏。按住唤醒快捷键、紧急键、菜单栏或计划结束才恢复。内建屏能像合盖一样真正断电；在「设置 › 息屏 › 内建屏」点「检测」可实测这台 Mac 能否断开再接回，测过的 M3 机型也会用断开。Windows 上同样可用。</span><span lang="en">With “Selected only”, turn off just the MacBook’s built-in screen and keep working on the external display with the local keyboard, mouse and trackpad; the cursor stays off the dark screen. Holding the wake shortcut, the emergency key, the menu bar or the schedule end bring it back. The built-in display is powered down the way closing the lid does it; click Test in Settings › Screen Off › Built-in display to check that this Mac can disconnect and reconnect it, and Automatic then uses it on tested M3 Macs too. Works on Windows too.</span></dd></div>
-    <div><dt><span lang="zh">放行远程控制</span><span lang="en">Allow remote control</span></dt><dd><span lang="zh">开启后，向日葵、ToDesk、Parsec 等远程软件的键鼠操作直接放行，不会唤醒本机屏幕；已断电的显示器撤下遮罩，远程画面照常可见。远程桌面（RDP）会话中不息屏。</span><span lang="en">When on, input from Sunlogin, ToDesk, Parsec and similar tools passes through without waking the local screens. Displays that are powered off drop their overlay so the remote view still shows the desktop. BlankRun doesn't blank inside a Remote Desktop (RDP) session.</span></dd></div>
-    <div><dt><span lang="zh">防误触唤醒</span><span lang="en">No accidental wake</span></dt><dd><span lang="zh">息屏期间拦截键鼠输入。唤醒方式可选：任意键、按住快捷键、移动鼠标、点击、输入密码、只在定时结束时。另有一个随时可用的紧急恢复键。</span><span lang="en">Input is swallowed while blank. Wake by any key, holding a hotkey, mouse move, click, password, or only when the schedule ends. An emergency restore hotkey always works.</span></dd></div>
-    <div><dt><span lang="zh">定时计划</span><span lang="en">Schedule</span></dt><dd><span lang="zh">比如每天 23:30 → 07:30，支持跨午夜，可以只跳过今晚。</span><span lang="en">For example 23:30 → 07:30 daily. Works across midnight, and you can skip just tonight.</span></dd></div>
-    <div><dt><span lang="zh">键盘背光</span><span lang="en">Keyboard backlight</span></dt><dd><span lang="zh">macOS 上和屏幕一起关掉。用的是系统私有接口，启动时先探测，不可用就跳过，不影响其他功能。</span><span lang="en">Turned off together with the screen on macOS. It uses a private API that is probed at runtime and skipped when unavailable.</span></dd></div>
-    <div><dt><span lang="zh">Windows 待机兜底</span><span lang="en">Modern Standby fallback</span></dt><dd><span lang="zh">有些新款 Windows 笔记本一关屏就进低功耗待机，后台任务会被挂起。检测到这类机器时，改用全黑遮罩。</span><span lang="en">Some Windows laptops drop into Modern Standby when the display turns off, which suspends background jobs. BlankRun detects this and uses a black overlay instead.</span></dd></div>
-    <div><dt><span lang="zh">小，而且只在本地</span><span lang="en">Small and local</span></dt><dd><span lang="zh">基于 Tauri 2，用系统自带 WebView，前端零依赖。安装包只有几 MB。除了每天一次检查更新（可关），不联网、不上传；更新包有签名校验，下载失败会自动重试。开源（MIT）。</span><span lang="en">Built on Tauri 2 with the system WebView and a zero-dependency UI. Installers are a few MB. No telemetry; the only network use is a daily update check you can turn off. Updates are signed and downloads retry on failure. MIT licensed.</span></dd></div>
+    <div class="reveal"><dt><span lang="zh">真关屏，不睡眠</span><span lang="en">Real display off, no sleep</span></dt><dd><span lang="zh">macOS 用 IOPMAssertion 阻止睡眠，Windows 用 SetThreadExecutionState；关的是显示器电源，不是盖一层黑图。MacBook 内建屏像合盖一样断开（面板断电），唤醒后接回。</span><span lang="en">IOPMAssertion on macOS and SetThreadExecutionState on Windows block sleep. The display is actually powered down, not covered with a black image. On a MacBook, the built-in display is disconnected the way closing the lid does it (panel powered down) and reconnected on wake.</span></dd></div>
+    <div class="reveal"><dt><span lang="zh">逐台断电</span><span lang="en">Per-display power-off</span></dt><dd><span lang="zh">Windows 上支持 DDC/CI 的显示器可以单独断电，其余盖黑色遮罩；每台可选「自动 / 仅遮罩 / 断电」。不响应断电指令的显示器会被自动识别，改用遮罩。远程软件的虚拟显示器不遮、不断电。</span><span lang="en">On Windows, displays with DDC/CI can be powered off one by one; the rest get a black overlay. Each display can be set to Automatic, Overlay only or Power off. Displays that ignore power-off commands are detected and switched to the overlay. Virtual displays from remote tools are left alone.</span></dd></div>
+    <div class="reveal"><dt><span lang="zh">键鼠照常用（Mac mini 模式）</span><span lang="en">Keep using keyboard &amp; mouse (Mac mini mode)</span></dt><dd><span lang="zh">配合「只关所选」，只关 MacBook 内建屏，外接屏照常亮着，本机键盘、鼠标、触控板照常用，光标不会跑进关掉的屏。按住唤醒快捷键、紧急键、菜单栏或计划结束才恢复。在「设置 › 息屏 › 内建屏」点「检测」可实测这台 Mac 能否断开再接回。Windows 上同样可用。</span><span lang="en">With “Selected only”, turn off just the MacBook’s built-in screen and keep working on the external display with the local keyboard, mouse and trackpad; the cursor stays off the dark screen. The wake shortcut, the emergency key, the menu bar or the schedule end bring it back. Click Test in Settings › Screen Off › Built-in display to check that this Mac can disconnect and reconnect it. Works on Windows too.</span></dd></div>
+    <div class="reveal"><dt><span lang="zh">放行远程控制</span><span lang="en">Allow remote control</span></dt><dd><span lang="zh">开启后，向日葵、ToDesk、Parsec 等远程软件的键鼠操作直接放行，不会唤醒本机屏幕；已断电的显示器撤下遮罩，远程画面照常可见。远程桌面（RDP）会话中不息屏。</span><span lang="en">When on, input from Sunlogin, ToDesk, Parsec and similar tools passes through without waking the local screens. Displays that are powered off drop their overlay so the remote view still shows the desktop. BlankRun doesn't blank inside a Remote Desktop (RDP) session.</span></dd></div>
+    <div class="reveal"><dt><span lang="zh">防误触唤醒</span><span lang="en">No accidental wake</span></dt><dd><span lang="zh">息屏期间拦截键鼠输入。唤醒方式可选：任意键、按住快捷键、移动鼠标、点击、输入密码、只在定时结束时。另有一个随时可用的紧急恢复键。</span><span lang="en">Input is swallowed while blank. Wake by any key, holding a hotkey, mouse move, click, password, or only when the schedule ends. An emergency restore hotkey always works.</span></dd></div>
+    <div class="reveal"><dt><span lang="zh">多组定时计划</span><span lang="en">Multiple schedules</span></dt><dd><span lang="zh">可以设好几组，每组单独定开始、结束时间和星期几，也能单独开关。比如工作日 23:30 → 07:30、周末 01:00 → 10:00。支持跨午夜，可以只跳过今晚。</span><span lang="en">Add several schedules, each with its own start, end and weekdays, and switch each on or off. For example 23:30 → 07:30 on weekdays and 01:00 → 10:00 at weekends. Works across midnight, and you can skip just tonight.</span></dd></div>
+    <div class="reveal"><dt><span lang="zh">外观</span><span lang="en">Appearance</span></dt><dd><span lang="zh">跟随系统、浅色、深色三选一，切换后所有窗口马上生效。</span><span lang="en">Follow the system, or pick light or dark. Every window switches right away.</span></dd></div>
+    <div class="reveal"><dt><span lang="zh">键盘背光</span><span lang="en">Keyboard backlight</span></dt><dd><span lang="zh">macOS 上和屏幕一起关掉。用的是系统私有接口，启动时先探测，不可用就跳过，不影响其他功能。</span><span lang="en">Turned off together with the screen on macOS. It uses a private API that is probed at runtime and skipped when unavailable.</span></dd></div>
+    <div class="reveal"><dt><span lang="zh">Windows 待机兜底</span><span lang="en">Modern Standby fallback</span></dt><dd><span lang="zh">有些新款 Windows 笔记本一关屏就进低功耗待机，后台任务会被挂起。检测到这类机器时，改用全黑遮罩。</span><span lang="en">Some Windows laptops drop into Modern Standby when the display turns off, which suspends background jobs. BlankRun detects this and uses a black overlay instead.</span></dd></div>
+    <div class="reveal"><dt><span lang="zh">小，而且只在本地</span><span lang="en">Small and local</span></dt><dd><span lang="zh">基于 Tauri 2，用系统自带 WebView，前端零依赖。安装包只有几 MB。除了每天一次检查更新（可关），不联网、不上传；更新包有签名校验，下载失败会自动重试。开源（MIT）。</span><span lang="en">Built on Tauri 2 with the system WebView and a zero-dependency UI. Installers are a few MB. No telemetry; the only network use is a daily update check you can turn off. Updates are signed and downloads retry on failure. MIT licensed.</span></dd></div>
   </dl>
 </section>
 
 <section id="screens" class="screens">
-  <h2><span lang="zh">界面</span><span lang="en">Screens</span></h2>
-  <figure class="wide">
-    <img src="/img/blank-mac-hint.webp?v=0.1.5" width="1600" height="1000" loading="lazy" alt="息屏中被碰到时，屏幕中央只出现一行唤醒提示">
-    <figcaption><span lang="zh">息屏中被碰到，只亮一行提示，3 秒后再黑。</span><span lang="en">Touched while blank: one quiet hint, dark again after 3 seconds.</span></figcaption>
-  </figure>
-  <div class="pair">
-    <figure>
-      <picture><source srcset="/img/settings-mac-wake-dark.webp?v=0.1.5" media="(prefers-color-scheme: dark)"><img src="/img/settings-mac-wake.webp?v=0.1.5" width="1600" height="1483" loading="lazy" alt="设置 · 唤醒方式"></picture>
+  <h2><span lang="zh">实际界面</span><span lang="en">The real app</span></h2>
+  <div class="shots">
+    <figure class="reveal">
+      <img class="th-light" src="/img/popover-mac.webp?v=0.1.5" width="640" height="856" loading="lazy" alt="黑着跑菜单栏面板">
+      <img class="th-dark" src="/img/popover-mac-dark.webp?v=0.1.5" width="640" height="856" loading="lazy" alt="黑着跑菜单栏面板（深色）">
+      <figcaption><span lang="zh">菜单栏面板</span><span lang="en">Menu bar panel</span></figcaption>
+    </figure>
+    <figure class="reveal">
+      <img class="th-light" src="/img/settings-mac-wake.webp?v=0.1.5" width="1600" height="1483" loading="lazy" alt="设置 · 唤醒方式">
+      <img class="th-dark" src="/img/settings-mac-wake-dark.webp?v=0.1.5" width="1600" height="1483" loading="lazy" alt="设置 · 唤醒方式（深色）">
       <figcaption><span lang="zh">设置 · 唤醒</span><span lang="en">Settings · Wake</span></figcaption>
     </figure>
-    <figure>
-      <picture><source srcset="/img/settings-win-displays-dark.webp?v=0.1.5" media="(prefers-color-scheme: dark)"><img src="/img/settings-win-displays.webp?v=0.1.5" width="1120" height="1050" loading="lazy" alt="Windows 设置 · 显示器：逐台选择自动、仅遮罩或断电"></picture>
+    <figure class="reveal">
+      <img class="th-light" src="/img/settings-win-displays.webp?v=0.1.5" width="1120" height="1050" loading="lazy" alt="Windows 设置 · 显示器">
+      <img class="th-dark" src="/img/settings-win-displays-dark.webp?v=0.1.5" width="1120" height="1050" loading="lazy" alt="Windows 设置 · 显示器（深色）">
       <figcaption><span lang="zh">Windows · 逐台显示器</span><span lang="en">Windows · Per-display settings</span></figcaption>
     </figure>
   </div>
@@ -117,10 +234,11 @@
 
 <section class="download" id="download">
   <h2><span lang="zh">下载</span><span lang="en">Download</span></h2>
-  <p class="sub"><span lang="zh">v0.1.8 · 免费开源（MIT）· <a href="https://github.com/hongfaqiu/blankrun/releases/latest">更新说明</a></span><span lang="en">v0.1.8 · Free and open source (MIT) · <a href="https://github.com/hongfaqiu/blankrun/releases/latest">Release notes</a></span></p>
+  <p class="sub"><span class="num" data-ver>v0.1.8</span> · <span lang="zh">免费开源（MIT）· <a href="https://github.com/hongfaqiu/blankrun/releases/latest">更新说明</a></span><span lang="en">Free and open source (MIT) · <a href="https://github.com/hongfaqiu/blankrun/releases/latest">Release notes</a></span></p>
+  <p class="mobile-hint"><span lang="zh">黑着跑是电脑软件，请在 Mac 或 Windows 电脑上打开本页下载。</span><span lang="en">BlankRun is a desktop app. Open this page on a Mac or Windows PC to download it.</span></p>
   <ul class="files">
-    <li><a href="https://github.com/hongfaqiu/blankrun/releases/latest/download/BlankRun_universal.dmg"><span lang="zh">macOS 版</span><span lang="en">macOS</span></a><span class="num muted">3.7 MB</span><span class="muted"><span lang="zh">macOS 11+ · Apple 芯片与 Intel</span><span lang="en">macOS 11+ · Apple silicon and Intel</span></span></li>
-    <li><a href="https://github.com/hongfaqiu/blankrun/releases/latest/download/BlankRun_x64-setup.exe"><span lang="zh">Windows 版</span><span lang="en">Windows</span></a><span class="num muted">1.4 MB</span><span class="muted">Windows 10/11 x64</span></li>
+    <li data-file="mac"><a href="https://github.com/hongfaqiu/blankrun/releases/latest/download/BlankRun_universal.dmg" download><span lang="zh">macOS 版</span><span lang="en">macOS</span></a><span class="num muted" data-size="mac">3.7 MB</span><span class="muted"><span lang="zh">macOS 11+ · Apple 芯片与 Intel 通用</span><span lang="en">macOS 11+ · Universal (Apple silicon and Intel)</span></span></li>
+    <li data-file="win"><a href="https://github.com/hongfaqiu/blankrun/releases/latest/download/BlankRun_x64-setup.exe" download><span lang="zh">Windows 版</span><span lang="en">Windows</span></a><span class="num muted" data-size="win">1.4 MB</span><span class="muted"><span lang="zh">Windows 10/11 x64 · ARM 电脑通过系统仿真运行</span><span lang="en">Windows 10/11 x64 · runs under emulation on ARM PCs</span></span></li>
   </ul>
   <h3><span lang="zh">首次打开</span><span lang="en">First launch</span></h3>
   <dl class="steps">
@@ -134,7 +252,5 @@
   <span>© 2026 COSFOC</span>
   <span><a href="https://github.com/hongfaqiu/blankrun">GitHub</a> · <a href="https://github.com/hongfaqiu/blankrun/blob/main/LICENSE">MIT</a> · <a href="https://github.com/hongfaqiu/blankrun/issues"><span lang="zh">反馈</span><span lang="en">Feedback</span></a></span>
 </footer>
-<script src="/lang.js"></script>
-<script src="/dl.js"></script>
 </body>
 </html>
