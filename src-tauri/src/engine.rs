@@ -41,11 +41,17 @@ pub struct Session { pub start_unix: u64, pub end_unix: Option<u64>, pub lit: u3
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct SchedStatus {
+    /// start / end / duration_min：正在进行或下一段（多组定时重叠、相接时合并后的）时段
     pub enabled: bool, pub start: String, pub end: String, pub in_window: bool, pub until_min: Option<u32>, pub duration_min: Option<u32>, pub skipped: bool,
     /// 到点后在等什么："postponed"（推迟中）/ "fullscreen"（全屏视频）
     pub waiting: Option<&'static str>,
     /// 推迟还剩几分钟
     pub postponed_min: Option<u32>,
+    /// 这段时段开始那天（0=周一）和名称（取开始它的那组定时）
+    pub weekday: Option<u8>,
+    pub label: Option<String>,
+    /// 今天哪些分钟在时段内 [(开始, 结束)]，画时间轴用
+    pub today: Vec<(u16, u16)>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -76,6 +82,8 @@ pub struct Engine {
     pub cfg: Config,
     pub cfg_path: PathBuf,
     pub cfg_mtime: Option<SystemTime>,
+    /// 已经应用到窗口的外观（general.theme）
+    theme_applied: Option<String>,
     pub last_session: Option<Session>,
     policy: WakePolicy,
     tracker: Tracker,
@@ -149,7 +157,7 @@ impl Engine {
         let mtime = std::fs::metadata(&cfg_path).and_then(|m| m.modified()).ok();
         let mut e = Self {
             sm: StateMachine::new(cfg.wake.lock_on_wake), policy: WakePolicy::new(&cfg), plat, cfg, cfg_path,
-            cfg_mtime: mtime, last_session: None, tracker: Tracker::default(), reminder: Reminder::default(), remind_open: false, gate: Gate::default(), fullscreen: (None, false),
+            cfg_mtime: mtime, theme_applied: None, last_session: None, tracker: Tracker::default(), reminder: Reminder::default(), remind_open: false, gate: Gate::default(), fullscreen: (None, false),
             hotkey_dirty: true, fullscreen_logged: false, login: None, countdown: None, power_off: false,
             overlay_on: false, power_off_at: None, reblank_at: None, hook_ok: true, wake_keys: false, awake_wanted: false, session: None, last_hint: None,
             last_sched_check: None, last_cfg_check: None, last_status: None, kbd_available,
@@ -206,7 +214,7 @@ impl Engine {
         // 计划从关到开：之前的「跳过」作废
         if cfg.schedule.enabled && !self.cfg.schedule.enabled && self.tracker.suppressed() { self.unskip(); }
         let (a, b) = (&cfg.schedule, &self.cfg.schedule);
-        if a.start != b.start || a.end != b.end || a.days != b.days || a.enabled != b.enabled { self.gate.clear_postpone(); }
+        if a.entries != b.entries || a.enabled != b.enabled { self.gate.clear_postpone(); }
         // 息屏中改了「防睡眠」：马上生效
         let awake_changed = cfg.power != self.cfg.power;
         let login_changed = cfg.general.launch_at_login != self.cfg.general.launch_at_login;
@@ -655,6 +663,14 @@ impl Engine {
                 }
             }
         }
+        if self.theme_applied.as_deref() != Some(self.cfg.general.theme.as_str()) {
+            // 原生窗口外观（Mac 上面板的毛玻璃底色、Windows 标题栏和 WebView 的配色）跟着设置走；
+            // 页面里的颜色由 common.js 设 <html data-theme> 控制
+            let t = self.cfg.general.theme.clone();
+            app.set_theme(match t.as_str() { "light" => Some(tauri::Theme::Light), "dark" => Some(tauri::Theme::Dark), _ => None });
+            nblog!("theme = {t}");
+            self.theme_applied = Some(t);
+        }
         if self.last_sched_check.is_none_or(|t| now - t >= Duration::from_secs(1)) {
             self.last_sched_check = Some(now);
             let (wd, min) = platform::local_time();
@@ -735,8 +751,16 @@ impl Engine {
         let (left, total) = self.countdown.map_or((0, 0), |(at, t)| {
             (at.saturating_duration_since(Instant::now()).as_secs_f32().ceil() as u32, t)
         });
-        let in_win = schedule::in_window(s, wd, min);
-        let until_min = schedule::minutes_until_start(s, wd, min);
+        let focus = schedule::focus(s, wd, min);
+        let in_win = focus.is_some_and(|(_, d)| d == 0);
+        let until_min = focus.and_then(|(_, d)| (d > 0).then_some(d));
+        let hm = |m: u16| format!("{:02}:{:02}", m / 60, m % 60);
+        // 没有可用的时段（计划关着、都没选星期）：显示第一组的时间
+        let (start, end) = match focus {
+            Some((sp, _)) => (hm(sp.start_hm()), hm(sp.end_hm())),
+            None => s.entries.iter().find(|e| e.enabled).or(s.entries.first())
+                .map_or(("--:--".into(), "--:--".into()), |e| (e.start.clone(), e.end.clone())),
+        };
         let now = platform::now_ms();
         let postponed_min = self.gate.postponed_until(now).map(|t| ((t - now) as f64 / 60_000.0).ceil() as u32);
         Status {
@@ -750,10 +774,14 @@ impl Engine {
             countdown_total: total,
             now_min: min,
             schedule: SchedStatus {
-                enabled: s.enabled, start: s.start.clone(), end: s.end.clone(),
+                enabled: s.enabled, start, end,
                 in_window: in_win,
                 until_min,
-                duration_min: schedule::duration_min(s),
+                duration_min: focus.map(|(sp, _)| sp.len()),
+                weekday: focus.map(|(sp, _)| sp.weekday()),
+                label: focus.and_then(|(sp, _)| schedule::label_of(s, &sp)).map(str::to_string),
+                // 计划关着也画出来（界面上变灰），让人看得到设的是什么
+                today: schedule::day_segments(&blankrun_core::config::ScheduleConfig { enabled: true, ..s.clone() }, wd),
                 skipped: self.tracker.suppressed(),
                 waiting: match self.gate.waiting(platform::now_ms(), self.fullscreen.1) {
                     // 还没到开始时间：推迟只在比开始更晚时才值得显示

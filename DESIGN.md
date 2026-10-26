@@ -32,6 +32,7 @@
 [general]
 launch_at_login = false    # 登录 / 开机时启动，默认关，由用户自己打开
 language = "auto"          # auto（跟随系统）或 ui/i18n 里的语言代码：zh-CN | en …；旧值 zh 会迁移成 zh-CN
+theme = "system"           # 外观：system（跟随系统）| light | dark，所有窗口实时切换
 blank_now_hotkey = "Ctrl+Alt+B"   # 立即息屏；Mac 上显示为 ⌃⌥B
 [wake]
 method = "hotkey"          # any_key | hotkey | mouse_move | click | password | schedule_only
@@ -42,12 +43,19 @@ mouse_window_ms = 800      # 并且要在这个时间窗口内完成，用来过
 lock_on_wake = false       # 唤醒后锁屏（用系统密码解锁）；公开版做成设置项，默认关
 reblank_after_s = 3        # 屏幕被意外点亮后几秒内自动再关
 [schedule]
-enabled = false
-start = "23:30"
-end = "07:30"
-days = ["mon","tue","wed","thu","fri","sat","sun"]   # 默认每天
+enabled = false            # 总开关（面板上的「今晚的计划」）
 remind_before_min = 5      # 开始前几分钟弹通知（可推迟 30 分钟 / 跳过今晚），0 = 不提醒
 skip_when_fullscreen_video = true   # 有程序在全屏播放视频时跳过本次
+[[schedule.entries]]       # 多组定时，最多 10 组，每组单独设时间和星期
+enabled = true
+label = ""                 # 可选名称，最多 24 个字
+start = "23:30"
+end = "07:30"              # 早于 start = 跨午夜，按开始那天算；等于 start = 不生效
+days = ["mon","tue","wed","thu","fri","sat","sun"]   # 默认每天
+```
+旧版（≤0.1.8）的 `[schedule]` 直接写 `start` / `end` / `days`，读取时自动迁移成一组 `entries`，下次保存写成新格式。
+多组时段重叠或首尾相接时合并成一段：从最早的开始黑到最晚的结束，中间不会醒一下再黑；提醒、推迟、跳过都按合并后的每一段算。
+```toml
 [display]
 mode = "all"               # all | selected
 targets = []               # 显示器 ID / 名称

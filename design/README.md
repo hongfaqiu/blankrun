@@ -17,7 +17,7 @@ NODE_PATH=/tmp/pw/node_modules node design/render.mjs [文件名过滤]
 ```
 
 ## 深色模式
-`nb.css` 用 `@media (prefers-color-scheme: dark)` 整体换一套中性灰阶变量，页面里不再写死颜色，跟随系统自动切换。`render.mjs` 会额外用深色输出 `popover-mac/win`、`settings-mac-wake/blank`、`onboarding-mac` 的 `*-dark.png`，以及 `overview-dark.png`。息屏遮罩本身就是纯黑，不分深浅。
+`nb.css` 用 `<html data-theme="dark">` 整体换一套中性灰阶变量，页面里不再写死颜色；`ui/theme.js` 按设置（跟随系统 / 浅色 / 深色）设这个属性，跟随系统时监听 `prefers-color-scheme`。`render.mjs` 会额外用深色输出 `popover-mac/win`、`settings-mac-wake/blank`、`onboarding-mac` 的 `*-dark.png`，以及 `overview-dark.png`。息屏遮罩本身就是纯黑，不分深浅。
 
 ## 和 config.rs 的对应
 稿里的设置项都已经进了 `crates/core/src/config.rs`（与 DESIGN.md 第 3 节一致）：
