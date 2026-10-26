@@ -36,10 +36,14 @@ pub struct GeneralConfig {
     pub blank_now_hotkey: String,
     /// 每天最多一次访问 GitHub 看有没有新版本（只读版本号，不下载、不上传）
     pub check_updates: bool,
+    /// 外观："system" 跟随系统 | "light" 浅色 | "dark" 深色
+    pub theme: String,
 }
+pub const THEMES: [&str; 3] = ["system", "light", "dark"];
 impl Default for GeneralConfig {
     fn default() -> Self {
-        Self { launch_at_login: false, language: LANG_AUTO.into(), blank_now_hotkey: "Ctrl+Alt+B".into(), check_updates: true }
+        Self { launch_at_login: false, language: LANG_AUTO.into(), blank_now_hotkey: "Ctrl+Alt+B".into(), check_updates: true,
+               theme: "system".into() }
     }
 }
 
@@ -70,24 +74,92 @@ impl Default for WakeConfig {
     }
 }
 
+/// 最多几组定时
+pub const MAX_SCHEDULES: usize = 10;
+/// 时段名称最多几个字
+pub const MAX_LABEL_CHARS: usize = 24;
+pub const ALL_DAYS: [&str; 7] = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+
+/// 定时计划。`enabled` 是总开关；每组时段在 `entries` 里各自设开始、结束、星期。
+///
+/// ```toml
+/// [schedule]
+/// enabled = true
+/// remind_before_min = 5
+///
+/// [[schedule.entries]]
+/// label = "工作日"
+/// start = "23:30"
+/// end = "07:30"
+/// days = ["mon", "tue", "wed", "thu", "fri"]
+/// ```
+///
+/// 0.1.8 及以前只有一组，写在 `[schedule]` 里的 start / end / days；读取时自动迁移成一组 entries。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, from = "ScheduleRaw")]
 pub struct ScheduleConfig {
     pub enabled: bool,
-    pub start: String,
-    pub end: String,
-    /// 不写时默认每天
-    pub days: Vec<String>,
     /// 开始前多少分钟弹通知（可推迟 / 跳过今晚），0 = 不提醒
     pub remind_before_min: u32,
     /// 有程序在全屏播放视频时跳过本次计划
     pub skip_when_fullscreen_video: bool,
+    /// 各组时段；重叠或首尾相接的时段合并成一段
+    pub entries: Vec<ScheduleEntry>,
 }
 impl Default for ScheduleConfig {
     fn default() -> Self {
-        Self { enabled: false, start: "23:30".into(), end: "07:30".into(),
-               days: ["mon","tue","wed","thu","fri","sat","sun"].iter().map(|s| s.to_string()).collect(),
-               remind_before_min: 5, skip_when_fullscreen_video: true }
+        Self { enabled: false, remind_before_min: 5, skip_when_fullscreen_video: true, entries: vec![ScheduleEntry::default()] }
+    }
+}
+
+/// 一组定时：每周哪几天、几点到几点。跨午夜（23:30–07:30）的时段算在开始那天
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ScheduleEntry {
+    pub enabled: bool,
+    /// 可选的名称（如「工作日」），只用于显示
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub label: String,
+    pub start: String,
+    pub end: String,
+    /// 不写时默认每天；写空列表 = 哪天都不生效
+    pub days: Vec<String>,
+}
+impl Default for ScheduleEntry {
+    fn default() -> Self {
+        Self { enabled: true, label: String::new(), start: "23:30".into(), end: "07:30".into(),
+               days: ALL_DAYS.iter().map(|s| s.to_string()).collect() }
+    }
+}
+
+/// 读取用的中间结构：兼容旧版单组写法（[schedule] 里的 start / end / days）
+#[derive(Deserialize)]
+#[serde(default)]
+struct ScheduleRaw {
+    enabled: bool,
+    remind_before_min: u32,
+    skip_when_fullscreen_video: bool,
+    entries: Option<Vec<ScheduleEntry>>,
+    start: Option<String>,
+    end: Option<String>,
+    days: Option<Vec<String>>,
+}
+impl Default for ScheduleRaw {
+    fn default() -> Self {
+        let d = ScheduleConfig::default();
+        Self { enabled: d.enabled, remind_before_min: d.remind_before_min, skip_when_fullscreen_video: d.skip_when_fullscreen_video,
+               entries: None, start: None, end: None, days: None }
+    }
+}
+impl From<ScheduleRaw> for ScheduleConfig {
+    fn from(r: ScheduleRaw) -> Self {
+        let entries = r.entries.unwrap_or_else(|| {
+            // 旧配置（或没写 entries）：迁移成一组，没写的字段用默认值
+            let d = ScheduleEntry::default();
+            vec![ScheduleEntry { enabled: true, label: String::new(), start: r.start.unwrap_or(d.start),
+                                 end: r.end.unwrap_or(d.end), days: r.days.unwrap_or(d.days) }]
+        });
+        Self { enabled: r.enabled, remind_before_min: r.remind_before_min, skip_when_fullscreen_video: r.skip_when_fullscreen_video, entries }
     }
 }
 
@@ -186,9 +258,18 @@ impl Config {
         w.mouse_threshold_px = w.mouse_threshold_px.clamp(10, 10_000);
         w.mouse_window_ms = w.mouse_window_ms.clamp(100, 10_000);
         self.schedule.remind_before_min = self.schedule.remind_before_min.min(240);
-        for t in [&self.schedule.start, &self.schedule.end] {
-            if crate::schedule::parse_hhmm(t).is_none() { return Err(format!("invalid time: {t} (use HH:MM)")); }
+        if self.schedule.entries.len() > MAX_SCHEDULES { return Err(format!("too many schedules (max {MAX_SCHEDULES})")); }
+        for e in &mut self.schedule.entries {
+            for t in [&mut e.start, &mut e.end] {
+                let m = crate::schedule::parse_hhmm(t).ok_or_else(|| format!("invalid time: {t} (use HH:MM)"))?;
+                *t = format!("{:02}:{:02}", m / 60, m % 60); // "7:5" → "07:05"
+            }
+            // 星期：小写、去掉不认识的和重复的，按周一到周日排好
+            let days: Vec<String> = e.days.iter().map(|d| d.trim().to_ascii_lowercase()).collect();
+            e.days = ALL_DAYS.iter().filter(|d| days.iter().any(|x| x == *d)).map(|d| d.to_string()).collect();
+            e.label = e.label.trim().chars().filter(|c| !c.is_control()).take(MAX_LABEL_CHARS).collect();
         }
+        if !THEMES.contains(&self.general.theme.as_str()) { self.general.theme = "system".into(); }
         if !["auto", "disconnect", "backlight"].contains(&self.display.builtin_off.as_str()) { self.display.builtin_off = "auto".into(); }
         if self.display.builtin_test.as_ref().is_some_and(|t| !BUILTIN_TEST_RESULTS.contains(&t.result.as_str())) { self.display.builtin_test = None; }
         if !valid_language(&self.general.language) { return Err(format!("invalid language: {}", self.general.language)); }
@@ -228,7 +309,9 @@ mod tests {
         assert_eq!(c.display.builtin_off, "auto");
         assert_eq!(Config::from_toml("[display]\nbuiltin_off = \"backlight\"\n").unwrap().display.builtin_off, "backlight");
         assert_eq!(Config::from_toml("[display]\nbuiltin_off = \"zap\"\n").unwrap().display.builtin_off, "auto");
-        assert_eq!(c.schedule.days.len(), 7);
+        assert_eq!(c.schedule.entries.len(), 1);
+        assert_eq!(c.schedule.entries[0].days.len(), 7);
+        assert_eq!(c.general.theme, "system");
         assert_eq!(c.schedule.remind_before_min, 5);
         assert!(c.schedule.skip_when_fullscreen_video);
         assert!(!c.power.ac_only);
@@ -285,7 +368,63 @@ mod tests {
         c.wake.reblank_after_s = 0; c.wake.hold_ms = 99_999; c.schedule.remind_before_min = 9999;
         c.normalize().unwrap();
         assert_eq!((c.wake.reblank_after_s, c.wake.hold_ms, c.schedule.remind_before_min), (1, 10_000, 240));
-        let mut c = Config::default(); c.schedule.start = "25:00".into();
+        let mut c = Config::default(); c.schedule.entries[0].start = "25:00".into();
         assert!(c.normalize().is_err());
+        let mut c = Config::default(); c.schedule.entries.push(ScheduleEntry { end: "7:60".into(), ..Default::default() });
+        assert!(c.normalize().is_err());
+        // 最多 10 组
+        let mut c = Config::default(); c.schedule.entries = vec![ScheduleEntry::default(); MAX_SCHEDULES];
+        assert!(c.normalize().is_ok());
+        c.schedule.entries.push(ScheduleEntry::default());
+        assert!(c.normalize().is_err());
+        // 时间补零、星期规范化、名称截断
+        let mut c = Config::default();
+        c.schedule.entries[0] = ScheduleEntry { start: "7:5".into(), days: vec!["SUN".into(), "mon".into(), "xyz".into(), "mon".into()],
+                                                label: "  ".to_string() + &"长".repeat(40), ..Default::default() };
+        c.normalize().unwrap();
+        let e = &c.schedule.entries[0];
+        assert_eq!((e.start.as_str(), e.days.clone()), ("07:05", vec!["mon".to_string(), "sun".to_string()]));
+        assert_eq!(e.label.chars().count(), MAX_LABEL_CHARS);
+    }
+
+    #[test]
+    fn legacy_schedule_migrates() {
+        // 0.1.8 及以前：单组写在 [schedule] 里
+        let old = "[schedule]\nenabled = true\nstart = \"22:15\"\nend = \"06:45\"\ndays = [\"mon\", \"wed\", \"fri\"]\nremind_before_min = 10\nskip_when_fullscreen_video = false\n";
+        let c = Config::from_toml(old).unwrap();
+        let s = &c.schedule;
+        assert!(s.enabled && !s.skip_when_fullscreen_video);
+        assert_eq!(s.remind_before_min, 10);
+        assert_eq!(s.entries, vec![ScheduleEntry { enabled: true, label: String::new(), start: "22:15".into(), end: "06:45".into(),
+                                                   days: vec!["mon".into(), "wed".into(), "fri".into()] }]);
+        // 写回去是新格式，不再有旧字段；再读一遍不变
+        let t = c.to_toml();
+        let head = &t[t.find("[schedule]").unwrap()..t.find("[[schedule.entries]]").unwrap()];
+        assert!(!head.contains("start") && !head.contains("days"), "{t}");
+        assert_eq!(Config::from_toml(&t).unwrap(), c);
+        // 旧配置只写了一部分：其余用默认值（23:30–07:30、每天）
+        let c = Config::from_toml("[schedule]\nenabled = true\nstart = \"21:00\"\n").unwrap();
+        assert_eq!(c.schedule.entries.len(), 1);
+        assert_eq!((c.schedule.entries[0].start.as_str(), c.schedule.entries[0].end.as_str()), ("21:00", "07:30"));
+        assert_eq!(c.schedule.entries[0].days.len(), 7);
+        // 只开了开关、没写时间：与旧版默认一致
+        assert_eq!(Config::from_toml("[schedule]\nenabled = true\n").unwrap().schedule.entries, vec![ScheduleEntry::default()]);
+        // 旧版写错的时间仍然报错
+        assert!(Config::from_toml("[schedule]\nstart = \"24:00\"\n").is_err());
+        // 新格式里同时写了 entries，旧字段忽略；entries = [] 表示一组都没有
+        let c = Config::from_toml("[schedule]\nstart = \"21:00\"\n[[schedule.entries]]\nstart = \"01:00\"\nend = \"05:00\"\n").unwrap();
+        assert_eq!(c.schedule.entries.len(), 1);
+        assert_eq!(c.schedule.entries[0].start, "01:00");
+        assert!(Config::from_toml("[schedule]\nentries = []\n").unwrap().schedule.entries.is_empty());
+        // 界面经 JSON 传过来的配置也走同一套
+        let j: Config = serde_json::from_str(r#"{"schedule":{"enabled":true,"start":"20:00","end":"21:00","days":["sat"]}}"#).unwrap();
+        assert_eq!((j.schedule.entries[0].start.as_str(), j.schedule.entries[0].days.len()), ("20:00", 1));
+    }
+
+    #[test]
+    fn theme_parse() {
+        assert_eq!(Config::from_toml("[general]\ntheme = \"dark\"\n").unwrap().general.theme, "dark");
+        assert_eq!(Config::from_toml("[general]\ntheme = \"light\"\n").unwrap().general.theme, "light");
+        assert_eq!(Config::from_toml("[general]\ntheme = \"neon\"\n").unwrap().general.theme, "system");
     }
 }

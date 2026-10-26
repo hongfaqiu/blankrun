@@ -22,7 +22,8 @@
 
 - **立即息屏 / 倒计时息屏**：可以立即息屏，也可以延迟 1、5、15 分钟。
 - **息屏时防睡眠**（默认开，可关）：macOS 用 IOPMAssertion，Windows 用 SetThreadExecutionState。
-- **定时计划**：例如每天 23:30 到 07:30，支持跨午夜，也可以跳过今晚。
+- **定时计划**：例如每天 23:30 到 07:30，支持跨午夜，也可以跳过今晚。最多 10 组时段，每组单独设时间和星期（比如工作日 23:30–07:30、周末 01:00–10:00）；重叠或首尾相接的时段合并成一段。
+- **外观**：跟随系统、浅色或深色（设置 › 通用），所有窗口立即切换。
 - **可配置唤醒**：任意键、按住快捷键（默认 ⌃⌥W 按住 1 秒）、移动鼠标、点击、唤醒后锁屏输密码，或者只在定时结束时唤醒；另有一个紧急恢复快捷键。按住快捷键唤醒后，键盘会继续拦截到按键全部松开（最多 2 秒），自动重复不会漏进前台程序；鼠标立即可用。
 - **防误触**：息屏期间拦截键鼠输入；屏幕被意外点亮时，几秒内自动再关。macOS 没给辅助功能权限时，唤醒快捷键照样能用，误触点亮后也会自动再熄灭。
 - **macOS 权限**：辅助功能或输入监控没授权时，每次启动（包括静默启动到菜单栏）会用系统授权框请求一次（`AXIsProcessTrustedWithOptions` + `kAXTrustedCheckOptionPrompt`、`CGRequestListenEventAccess`）。「设置 › 关于与诊断」里的权限状态每 1.5 秒刷新一次，授权后不用重启就会变绿。如果系统设置里的开关看起来开着、黑着跑仍显示未授权，多半是旧版本（0.1.6 及以前是临时签名，签名不同）留下的失效条目：在系统设置里用「−」删掉，或点**重置并重新授权**（执行 `tccutil reset Accessibility com.cosfoc.blankrun` 和 `tccutil reset ListenEvent com.cosfoc.blankrun` 后重新请求）。旁边还有**重启黑着跑**按钮，给需要重启才生效的权限用。
@@ -97,7 +98,27 @@ site/                   官网（静态 HTML/CSS）；push 到 main 后由 Cloud
 design/                 设计稿；design/preview/ 用假的 __TAURI__ 在 Chrome 里渲染 ui/ 检查布局
 docs/screenshots/       README 用的截图
 ```
-配置文件位置：系统应用配置目录下的 `com.cosfoc.blankrun/config.toml`。
+配置文件位置：系统应用配置目录下的 `com.cosfoc.blankrun/config.toml`。定时是一组 `[[schedule.entries]]`；0.1.8 及以前的写法（`start` / `end` / `days` 直接写在 `[schedule]` 下）会自动迁移：
+```toml
+[general]
+theme = "system"          # system 跟随系统 | light 浅色 | dark 深色
+
+[schedule]
+enabled = true
+remind_before_min = 5
+
+[[schedule.entries]]
+label = "工作日"
+start = "23:30"
+end = "07:30"             # 早于开始时间 = 次日早上结束
+days = ["mon", "tue", "wed", "thu", "fri"]
+
+[[schedule.entries]]
+label = "周末"
+start = "01:00"
+end = "10:00"
+days = ["sat", "sun"]
+```
 
 ## 体积目标
 | 产物 | 目标 |

@@ -31,6 +31,7 @@ addEventListener("hashchange", () => show());
 // ---------- 渲染 ----------
 function render() {
   if (!cfg) return;
+  renderEntries(); // 先建好时段卡片，下面的通用绑定（开关 / 时间）才能覆盖到
   // 「键鼠照常用」只在「只关所选」时有意义
   $("#keepToggle").disabled = cfg.display.mode !== "selected";
   $("#keepRow").classList.toggle("dim", cfg.display.mode !== "selected");
@@ -43,7 +44,9 @@ function render() {
   $$(".field[data-num]").forEach((f) => { const i = $("input", f); if (document.activeElement !== i) i.value = getK(f.dataset.num); });
   $$("input[data-range]").forEach((r) => (r.value = getK(r.dataset.range)));
   $$(".tp").forEach((tp) => {
-    const [hh, mm] = getK(tp.dataset.time).split(":");
+    const v = getK(tp.dataset.time);
+    if (typeof v !== "string") return;
+    const [hh, mm] = v.split(":");
     const m = $(".mm", tp);
     // 分钟按 5 分钟一档；配置里是别的分钟数（手改 config.toml）时也要能显示
     if (![...m.options].some((o) => o.value === mm)) m.append(new Option(mm, mm));
@@ -58,20 +61,72 @@ function render() {
   $("#rgbHost").textContent = cfg.lights.openrgb_host;
   $("#methodNote").textContent = t("b.note." + cfg.display.method);
 
-  // 定时
-  const s = cfg.schedule;
-  const days = $("#days");
-  if (!days.children.length) DAYS.forEach((d) => { const b = h("button"); b.dataset.d = d; b.dataset.i18n = "day." + d; days.append(b); });
-  $$("button", days).forEach((b) => (b.textContent = t(b.dataset.i18n)));
-  $$("button", days).forEach((b) => b.classList.toggle("on", s.days.includes(b.dataset.d)));
-  const ps = parseHM(s.start), pe = parseHM(s.end);
-  if (ps != null && pe != null) {
-    const dur = pe > ps ? pe - ps : pe + 1440 - ps;
-    $("#schedDur").textContent = t(pe > ps ? "s.dur_same" : "s.dur_next", { d: fmtDur(dur) });
-  }
-  drawTrack($("#track"), s.start, s.end, status ? status.now_min : 0);
   renderMonitors();
   renderStatus();
+}
+
+// ---------- 定时：多组时段 ----------
+const MAX_ENTRIES = 10;
+/** 新建一个时段：默认 23:30 → 07:30、每天 */
+const newEntry = () => ({ enabled: true, label: "", start: "23:30", end: "07:30", days: [...DAYS] });
+/** 时间选择：小时 00–23，分钟 5 分钟一档 */
+function fillTp(tp) {
+  for (let i = 0; i < 24; i++) $(".hh", tp).append(new Option(pad2(i), pad2(i)));
+  for (let i = 0; i < 60; i += 5) $(".mm", tp).append(new Option(pad2(i), pad2(i)));
+}
+function makeTp(key, hAria, mAria) {
+  const tp = h("span", "tp"); tp.dataset.time = key;
+  const hh = h("select", "hh"); hh.dataset.i18nAria = hAria; hh.setAttribute("aria-label", t(hAria));
+  const mm = h("select", "mm"); mm.dataset.i18nAria = mAria; mm.setAttribute("aria-label", t(mAria));
+  tp.append(hh, h("span", "c", ":"), mm); fillTp(tp);
+  return tp;
+}
+/** 一组时段的卡片。结构固定，按序号复用，只在数量变化时重建（不然正在输入的名称会丢焦点） */
+function makeEntry(i) {
+  const k = `schedule.entries.${i}`;
+  const r = h("div", "r col entry"); r.dataset.i = i;
+  const head = h("div", "entry-head");
+  const name = h("input", "entry-label"); name.type = "text"; name.maxLength = 24; name.dataset.label = i; name.spellcheck = false;
+  const del = h("button", "btn ghost mini entry-del"); del.dataset.del = i;
+  const tog = h("button", "toggle"); tog.setAttribute("role", "switch"); tog.dataset.k = `${k}.enabled`;
+  head.append(name, h("span", "small muted entry-dur"), del, tog);
+  const row = h("div", "time-row");
+  const big = h("div", "big-time");
+  big.append(makeTp(`${k}.start`, "s.start_h", "s.start_m"), h("span", "a", "→"), makeTp(`${k}.end`, "s.end_h", "s.end_m"));
+  const days = h("div", "days"); days.dataset.entry = i;
+  DAYS.forEach((d) => { const b = h("button"); b.dataset.d = d; days.append(b); });
+  row.append(big, days);
+  r.append(head, row, h("div", "track"));
+  return r;
+}
+function renderEntries() {
+  const list = cfg.schedule.entries, box = $("#entries");
+  if (box.dataset.n !== String(list.length)) {
+    box.dataset.n = list.length;
+    box.replaceChildren(...(list.length ? list.map((_, i) => makeEntry(i)) : [h("div", "r empty")]));
+  }
+  if (!list.length) { const r = box.firstChild; r.replaceChildren(h("div", "t")); r.firstChild.append(h("small", "", t("s.none"))); }
+  const now = status ? status.now_min : 0;
+  list.forEach((e, i) => {
+    const r = box.children[i];
+    r.classList.toggle("off", !e.enabled);
+    const name = $(".entry-label", r);
+    name.placeholder = t("s.label_ph", { n: i + 1 });
+    name.setAttribute("aria-label", t("s.label_aria"));
+    if (document.activeElement !== name) name.value = e.label || "";
+    const del = $(".entry-del", r); del.textContent = t("s.del");
+    $(".toggle", r).setAttribute("aria-label", t("s.entry_on"));
+    $$(".days button", r).forEach((b) => { b.textContent = t("day." + b.dataset.d); b.classList.toggle("on", e.days.includes(b.dataset.d)); });
+    const ps = parseHM(e.start), pe = parseHM(e.end);
+    $(".entry-dur", r).textContent = ps == null || pe == null ? "" : ps === pe ? t("s.dur_zero")
+      : !e.days.length ? t("s.no_days") : t(pe > ps ? "s.dur_same" : "s.dur_next", { d: fmtDur(pe > ps ? pe - ps : pe + 1440 - ps) });
+    drawTrack($(".track", r), e.start, e.end, now);
+  });
+  $("#addEntry").disabled = list.length >= MAX_ENTRIES;
+  $("#entriesNote").textContent = list.length >= MAX_ENTRIES ? t("s.max", { n: MAX_ENTRIES }) : t(list.length > 1 ? "s.merge_note" : "s.repeat_note");
+  // 今天的总览（多组合并后的样子）
+  drawSegs($("#todayTrack"), status ? status.schedule.today : [], now);
+  $("#todayWrap").classList.toggle("dim", !cfg.schedule.enabled);
 }
 
 function renderStatus() {
@@ -83,13 +138,14 @@ function renderStatus() {
   const he = status.hotkey_error;
   $("#hkErr").hidden = !he;
   if (he) $("#hkErr").textContent = /already used/.test(he) ? t("g.hk_taken") : /needs/.test(he) ? t("g.hk_mod") : t("g.hk_bad", { e: he });
-  const v = { start: cfg.schedule.start, end: cfg.schedule.end };
+  const v = { start: sc.start, end: sc.end };
   let next = t("s.next_off");
   if (en) {
     if (sc.skipped) next = t("s.next_skipped");
     else if (sc.in_window) next = t("s.next_in", v);
     else if (sc.until_min != null) next = t("s.next_until", { ...v, d: fmtDur(sc.until_min) });
     else next = t("s.next_nodays");
+    if (sc.label && (sc.in_window || sc.until_min != null) && !sc.skipped) next = `${sc.label} · ${next}`;
   }
   $("#schedNext").textContent = next;
   renderUpdate();
@@ -312,12 +368,14 @@ document.addEventListener("click", (e) => {
     const v = Math.min(+f.dataset.max, Math.max(+f.dataset.min, getK(k) + sv * +step.dataset.d));
     return change(k, v);
   }
-  const day = t.closest("#days button");
+  const day = t.closest(".days[data-entry] button");
   if (day) {
-    const d = day.dataset.d, list = cfg.schedule.days;
+    const k = `schedule.entries.${day.parentElement.dataset.entry}.days`, d = day.dataset.d, list = getK(k);
     const next = list.includes(d) ? list.filter((x) => x !== d) : DAYS.filter((x) => x === d || list.includes(x));
-    return change("schedule.days", next);
+    return change(k, next);
   }
+  const del = t.closest("button[data-del]");
+  if (del) return delEntry(+del.dataset.del);
   const mon = t.closest(".r.mon");
   if (mon && cfg.display.mode === "selected" && !mon.dataset.virtual && !t.closest(".select")) {
     const n = mon.dataset.mon, tg = cfg.display.targets;
@@ -333,6 +391,7 @@ document.addEventListener("change", (e) => {
     if (t.value === "off") setK("display.no_ddc", (cfg.display.no_ddc || []).filter((x) => x !== l));
     return change("display.prefs", prefs);
   }
+  if (t.matches("input[data-label]")) return change(`schedule.entries.${t.dataset.label}.label`, t.value.trim().slice(0, 24));
   if (t.matches("select[data-k]")) change(t.dataset.k, t.dataset.type === "num" ? +t.value : t.value);
   else if (t.matches(".field[data-num] input")) {
     const f = t.closest(".field");
@@ -374,10 +433,18 @@ $("#exportDiag").addEventListener("click", async () => {
   try { const p = await invoke("export_diagnostics", { text }); toast(t("toast.exported", { p })); } catch (e) { toast(t("toast.export_fail", { e })); }
 });
 
-// 时间选择：小时 00–23，分钟 5 分钟一档
-$$(".tp").forEach((tp) => {
-  for (let i = 0; i < 24; i++) $(".hh", tp).append(new Option(pad2(i), pad2(i)));
-  for (let i = 0; i < 60; i += 5) $(".mm", tp).append(new Option(pad2(i), pad2(i)));
+/** 删除一组时段：改过的删前确认一下，没动过的默认时段直接删 */
+function delEntry(i) {
+  const e = cfg.schedule.entries[i], d = newEntry();
+  if (!e) return;
+  if ((e.label || e.start !== d.start || e.end !== d.end || e.days.length !== 7) && !confirm(t("s.del_confirm", { n: e.label || t("s.label_ph", { n: i + 1 }) }))) return;
+  change("schedule.entries", cfg.schedule.entries.filter((_, j) => j !== i));
+}
+$("#addEntry").addEventListener("click", () => {
+  if (cfg.schedule.entries.length >= MAX_ENTRIES) return;
+  change("schedule.entries", [...cfg.schedule.entries, newEntry()]);
+  const last = $("#entries").lastElementChild;
+  if (last) { last.scrollIntoView({ block: "nearest" }); $(".entry-label", last).focus(); }
 });
 listen("nb://tray_hidden", () => { $("#trayHidden").hidden = false; });
 
@@ -390,7 +457,12 @@ listen("nb://tray_hidden", () => { $("#trayHidden").hidden = false; });
   show();
   render();
   loadDiag();
-  listen("nb://status", (s) => { status = s; renderStatus(); drawTrack($("#track"), cfg.schedule.start, cfg.schedule.end, s.now_min); });
+  listen("nb://status", (s) => {
+    const segs = JSON.stringify(status && status.schedule.today), min = status && status.now_min;
+    status = s; renderStatus();
+    // 时间轴只在跨分钟或今天的时段变了时重画
+    if (min !== s.now_min || segs !== JSON.stringify(s.schedule.today)) renderEntries();
+  });
   // 外部编辑 config.toml 后同步
   listen("nb://config", async () => { if (saveTimer) return; cfg = await invoke("get_config"); render(); refreshMonitors(); });
   // 窗口重新打开时显示器列表可能已变（插拔、息屏中自动识别出不响应断电的屏）

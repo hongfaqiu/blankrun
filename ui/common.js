@@ -18,10 +18,14 @@ async function initPlatform(onLang) {
   }
   INFO = info; OS = info.os;
   document.body.classList.add(OS === "win" ? "win" : OS === "mac" ? "mac" : "linux");
+  setTheme(c.general.theme);
   await setLocale(c.general.language);
-  listen("nb://config", async () => { const c2 = await invoke("get_config"); if (await setLocale(c2.general.language) && onLang) onLang(); });
+  listen("nb://config", async () => { const c2 = await invoke("get_config"); setTheme(c2.general.theme); if (await setLocale(c2.general.language) && onLang) onLang(); });
   return info;
 }
+
+/** 外观：theme.js 已在 <head> 里按上次的设置画好，这里按配置校正（设置页改了会实时切换所有窗口） */
+function setTheme(p) { if (window.nbSetTheme) window.nbSetTheme(p); }
 
 // ---------- 多语言 ----------
 // 词条在 ui/i18n/<代码>.js，每个文件调用一次 NB_LOCALE(代码, {...})。新增语言只要加一个文件（build.rs 会扫描到）。
@@ -128,6 +132,16 @@ function drawTrack(track, start, end, nowMin) {
   if (s != null && e != null) {
     const seg = (a, b, cls) => { const b0 = h("span", "band " + (cls || "")); b0.style.left = (a / 14.4) + "%"; b0.style.width = ((b - a) / 14.4) + "%"; track.append(b0); };
     if (s < e) seg(s, e, "solo"); else { seg(s, 1440, "tail"); seg(0, e, "head"); }
+  }
+  const n = h("span", "now"); n.style.left = (nowMin / 14.4) + "%"; track.append(n);
+}
+/** 画一天里的多段时段：segs = [[开始分钟, 结束分钟], …]（status.schedule.today，已合并） */
+function drawSegs(track, segs, nowMin) {
+  track.replaceChildren();
+  for (const [a, b] of segs || []) {
+    if (b <= a) continue;
+    const cls = a === 0 && b < 1440 ? "head" : b === 1440 && a > 0 ? "tail" : "solo";
+    const el = h("span", "band " + cls); el.style.left = (a / 14.4) + "%"; el.style.width = ((b - a) / 14.4) + "%"; track.append(el);
   }
   const n = h("span", "now"); n.style.left = (nowMin / 14.4) + "%"; track.append(n);
 }

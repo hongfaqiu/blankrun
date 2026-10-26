@@ -1,6 +1,6 @@
 // 息屏遮罩：引擎通过 nb://overlay 告诉我们"被碰到了"或"正在按住唤醒键"
 "use strict";
-let cfg = null, hideTimer = null;
+let cfg = null, hideTimer = null, schedEnd = "";
 
 function line() {
   const w = cfg.wake, el = $("#line");
@@ -9,7 +9,7 @@ function line() {
     el.replaceChildren(t("o.hold_a"), k, t("o.hold_b", { s: secs(w.hold_ms) }));
   } else if (w.method === "schedule_only") {
     const k = h("span", "keys"); renderKeys(k, cfg.safety.emergency_hotkey, "k");
-    el.replaceChildren(t("o.sched", { end: cfg.schedule.end }), k);
+    el.replaceChildren(t("o.sched", { end: schedEnd }), k);
   } else el.textContent = t("o.wake." + w.method);
 }
 
@@ -42,6 +42,10 @@ function showHint(p) {
   await initPlatform();
   cfg = await invoke("get_config");
   renderKeys($("#emKeys"), cfg.safety.emergency_hotkey, "k");
+  // 多组定时合并后的结束时间由引擎算好，放在状态里
+  const st = (s) => { if (s && s.schedule) schedEnd = s.schedule.end; };
+  st(await invoke("get_status").catch(() => null));
+  listen("nb://status", st);
   listen("nb://overlay", showHint);
   listen("nb://config", async () => { cfg = await invoke("get_config"); renderKeys($("#emKeys"), cfg.safety.emergency_hotkey, "k"); });
 })();

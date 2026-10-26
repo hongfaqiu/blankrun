@@ -79,3 +79,20 @@ section{display:none} section.on{display:block}
 .r.note{padding-top:8px;padding-bottom:10px}
 .r.note small{color:var(--ink3);font-size:12px;line-height:1.5}
 .r.note{min-height:0}
+/* 多组定时：每组一张卡片（名称 · 时长 · 删除 · 开关 / 时间 + 星期 / 时间轴） */
+.entry{gap:12px}
+.entry-head{display:flex;align-items:center;gap:10px}
+.entry-label{flex:1;min-width:0;border:0;border-bottom:1px solid transparent;background:transparent;color:var(--ink);font-family:inherit;font-size:13px;font-weight:500;padding:2px 0;outline:0}
+.entry-label::placeholder{color:var(--ink2)}
+.entry-label:hover{border-bottom-color:var(--line)}
+.entry-label:focus{border-bottom-color:var(--ink2)}
+.entry-dur{white-space:nowrap}
+.btn.mini{height:22px;padding:0 8px;font-size:12px}
+.entry .time-row{flex-wrap:wrap;gap:10px 16px}
+.entry .big-time{font-size:24px}
+.entry .big-time .a{font-size:16px;margin:0 6px}
+.entry.off .time-row,.entry.off .track,.entry.off .entry-dur{opacity:.45}
+.entries-foot{display:flex;align-items:center;gap:12px;margin-top:8px}
+.entries-foot small{font-size:11.5px;line-height:1.4}
+.r.today{gap:8px;padding-top:12px}
+.theme-seg button{padding:0 12px;white-space:nowrap}

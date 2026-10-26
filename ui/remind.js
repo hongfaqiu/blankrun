@@ -5,7 +5,7 @@ function render() {
   if (!status) return;
   const sc = status.schedule, n = sc.until_min != null ? sc.until_min : 0;
   $("#ttl").textContent = t("r.title", { n });
-  $("#when").replaceChildren(sc.start, " → ", sc.end);
+  $("#when").replaceChildren(...(sc.label ? [sc.label + " · "] : []), sc.start, " → ", sc.end);
 }
 const close = () => invoke("hide_window");
 $("#closeBtn").addEventListener("click", close);
