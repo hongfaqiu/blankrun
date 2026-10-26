@@ -34,7 +34,7 @@ Features:
 - **Keyboard backlight**: turned off together with the screen on macOS. It uses a private API that is probed at runtime and skipped when unavailable.
 - **Windows Modern Standby**: on PCs that drop into low-power standby when the display turns off, BlankRun uses a black overlay instead so jobs aren't suspended.
 - **English and Chinese UI**: follows the system language by default. Switch in Settings › General › Language and the tray menu, wake hints and onboarding update immediately, with no restart.
-- **Small**: built on Tauri 2 with a zero-dependency UI. v0.1.8: 1.4 MB Windows installer, 3.7 MB universal macOS DMG.
+- **Small**: built on Tauri 2 with a zero-dependency UI. v0.1.9: 1.4 MB Windows installer, 3.8 MB universal macOS DMG.
 - **Auto-update**: checks once a day (can be turned off). Updates are signed, downloads retry on network errors, and an update installs only when you click "Update and restart", never while the screen is blank. From v0.1.1 on; v0.1.0 needs one manual install.
 - **Blank history**: the last 30 sessions with time, trigger, how they ended and how many accidental touches were blocked. Stored locally and can be cleared.
 - **Local only**: apart from the daily update check, nothing goes over the network and nothing is uploaded.
