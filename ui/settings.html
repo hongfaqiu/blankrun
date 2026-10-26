@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title data-i18n="title.settings">BlankRun Settings</title>
-<link rel="stylesheet" href="nb.css"><link rel="stylesheet" href="settings.css">
+<script src="theme.js"></script><link rel="stylesheet" href="nb.css"><link rel="stylesheet" href="settings.css">
 </head>
 <body>
 <div class="window">
@@ -25,6 +25,7 @@
     <div class="group">
       <div class="r"><div class="t"><span data-i18n="g.launch"></span><small data-i18n="g.launch_note"></small></div><div class="c"><button class="toggle" role="switch" data-k="general.launch_at_login"></button></div></div>
       <div class="r"><div class="t"><span data-i18n="g.lang"></span></div><div class="c"><span class="select"><select data-k="general.language" id="langSel"></select></span></div></div>
+      <div class="r"><div class="t"><span data-i18n="g.theme"></span></div><div class="c"><div class="seg theme-seg" data-k="general.theme"><button data-v="system" data-i18n="g.theme_system"></button><button data-v="light" data-i18n="g.theme_light"></button><button data-v="dark" data-i18n="g.theme_dark"></button></div></div></div>
       <div class="r"><div class="t"><span data-i18n="g.hotkey"></span><small data-i18n="g.hotkey_note"></small><small class="err" id="hkErr" hidden></small></div><div class="c"><span class="recorder" data-hk="general.blank_now_hotkey"><span class="keys"></span><button class="x" data-i18n="rec.again"></button></span></div></div>
     </div>
     <div class="group-label"><span data-i18n="g.awake_label"></span></div>
@@ -104,18 +105,17 @@
     <p class="lead" data-i18n="s.lead"></p>
     <div class="group">
       <div class="r"><div class="t"><span class="with-dot"><span class="dot" id="schedDot"></span><span data-i18n="s.auto"></span></span><small id="schedNext"></small></div><div class="c"><button class="btn ghost" id="skipBtn" hidden data-i18n="s.skip"></button><button class="btn ghost" id="unskipBtn" hidden data-i18n="s.unskip"></button><button class="toggle" role="switch" data-k="schedule.enabled" data-i18n-aria="s.auto"></button></div></div>
-      <div class="r col">
-        <div class="time-row">
-          <div class="big-time"><span class="tp" data-time="schedule.start"><select class="hh" data-i18n-aria="s.start_h"></select><span class="c">:</span><select class="mm" data-i18n-aria="s.start_m"></select></span><span class="a">→</span><span class="tp" data-time="schedule.end"><select class="hh" data-i18n-aria="s.end_h"></select><span class="c">:</span><select class="mm" data-i18n-aria="s.end_m"></select></span></div>
-          <span class="small muted" id="schedDur"></span>
-        </div>
+      <div class="r col today" id="todayWrap">
+        <div class="t"><small data-i18n="s.today"></small></div>
         <div>
-          <div class="track" id="track"></div>
+          <div class="track" id="todayTrack"></div>
           <div class="track-labels"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>24:00</span></div>
         </div>
       </div>
-      <div class="r"><div class="t"><span data-i18n="s.repeat"></span><small data-i18n="s.repeat_note"></small></div><div class="c"><div class="days" id="days"></div></div></div>
     </div>
+    <div class="group-label"><span data-i18n="s.list_label"></span></div>
+    <div class="group" id="entries"></div>
+    <div class="entries-foot"><button class="btn" id="addEntry"><span aria-hidden="true">＋</span><span data-i18n="s.add"></span></button><small class="muted" id="entriesNote"></small></div>
     <div class="group-label"><span data-i18n="s.before_label"></span></div>
     <div class="group">
       <div class="r"><div class="t"><span data-i18n="s.remind"></span><small data-i18n="s.remind_note"></small></div><div class="c"><span class="select"><select data-k="schedule.remind_before_min" data-type="num"><option value="0" data-i18n="s.remind_0"></option><option value="1" data-i18n="s.remind_n" data-n="1"></option><option value="5" data-i18n="s.remind_n" data-n="5"></option><option value="10" data-i18n="s.remind_n" data-n="10"></option><option value="15" data-i18n="s.remind_n" data-n="15"></option><option value="30" data-i18n="s.remind_n" data-n="30"></option></select></span></div></div>

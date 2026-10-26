@@ -22,7 +22,8 @@ Features:
 
 - **Blank now or after a delay**: right away, or after 1, 5 or 15 minutes.
 - **No sleep while blank** (on by default, can be turned off): IOPMAssertion on macOS, SetThreadExecutionState on Windows.
-- **Schedule**: for example 23:30 to 07:30 every day. Works across midnight, and you can skip just tonight.
+- **Schedule**: for example 23:30 to 07:30 every day. Works across midnight, and you can skip just tonight. Add up to 10 time slots, each with its own times and days (say weeknights 23:30–07:30 and weekends 01:00–10:00). Overlapping or back-to-back slots merge into one session.
+- **Appearance**: follow the system, or always light or always dark (Settings › General). Applies to every window right away.
 - **Configurable wake**: any key, holding a shortcut (⌃⌥W for 1 second by default), moving the mouse, clicking, locking on wake so you enter your password, or only when the schedule ends. A separate emergency shortcut always restores everything. After a shortcut wake, the keyboard stays blocked until the keys are released (at most 2 seconds), so key repeats never reach the app in front; the mouse works right away.
 - **No accidental wake**: keyboard and mouse input is blocked while blank. If the screen lights up anyway, it goes dark again within seconds. On macOS without Accessibility permission, the wake shortcut still works and stray touches are re-blanked.
 - **macOS permissions**: if Accessibility or Input Monitoring isn't granted, BlankRun asks for it once per launch (also when it starts quietly in the menu bar) with the system prompt (`AXIsProcessTrustedWithOptions` with `kAXTrustedCheckOptionPrompt`, `CGRequestListenEventAccess`). Settings › About & Diagnostics refreshes the permission status every 1.5 seconds, so it turns green without a restart. If the switch in System Settings looks on but BlankRun still says not granted, it's usually a stale entry from an older version with a different signature (versions up to 0.1.6 were ad-hoc signed): remove it with "−" in System Settings, or click **Reset and ask again** (`tccutil reset Accessibility com.cosfoc.blankrun` and `tccutil reset ListenEvent com.cosfoc.blankrun`, then ask again). A **Restart BlankRun** button is there for permissions that only take effect after a restart.
@@ -97,7 +98,27 @@ site/                   website (static HTML/CSS); pushes to main auto-deploy vi
 design/                 mockups; design/preview/ renders ui/ in Chrome with a fake __TAURI__ to check layouts
 docs/screenshots/       screenshots used in the READMEs
 ```
-Config file: `com.cosfoc.blankrun/config.toml` in the system app-config directory.
+Config file: `com.cosfoc.blankrun/config.toml` in the system app-config directory. Schedules are a list of `[[schedule.entries]]`; a config from 0.1.8 or earlier (`start` / `end` / `days` directly under `[schedule]`) is migrated automatically:
+```toml
+[general]
+theme = "system"          # system | light | dark
+
+[schedule]
+enabled = true
+remind_before_min = 5
+
+[[schedule.entries]]
+label = "Weeknights"
+start = "23:30"
+end = "07:30"             # earlier than start = ends the next morning
+days = ["mon", "tue", "wed", "thu", "fri"]
+
+[[schedule.entries]]
+label = "Weekend"
+start = "01:00"
+end = "10:00"
+days = ["sat", "sun"]
+```
 
 ## Size targets
 | Artifact | Target |

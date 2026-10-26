@@ -3,9 +3,15 @@
   const q = new URLSearchParams(location.search);
   const os = q.get("os") || "mac", state = q.get("state") || "idle";
   const cfg = {
-    general: { launch_at_login: false, language: "auto", blank_now_hotkey: "Ctrl+Alt+B", check_updates: true },
+    general: { launch_at_login: false, language: "auto", theme: q.get("theme") || "system", blank_now_hotkey: "Ctrl+Alt+B", check_updates: true },
     wake: { allow_remote: false, method: "hotkey", hotkey: "Ctrl+Alt+W", mouse_threshold_px: 150, mouse_window_ms: 800, lock_on_wake: false, reblank_after_s: 3, hold_ms: 1000 },
-    schedule: { enabled: true, start: "23:30", end: "07:30", days: ["mon", "tue", "wed", "thu", "fri"], remind_before_min: 5, skip_when_fullscreen_video: true },
+    schedule: { enabled: true, remind_before_min: 5, skip_when_fullscreen_video: true,
+      // ?sched=multi：多组定时（工作日 / 周末 / 午休）
+      entries: q.get("sched") === "multi" ? [
+        { enabled: true, label: "工作日", start: "23:30", end: "07:30", days: ["mon", "tue", "wed", "thu", "fri"] },
+        { enabled: true, label: "周末", start: "01:00", end: "10:00", days: ["sat", "sun"] },
+        { enabled: false, label: "", start: "13:00", end: "14:00", days: ["mon", "tue", "wed", "thu", "fri"] },
+      ] : [{ enabled: true, label: "", start: "23:30", end: "07:30", days: ["mon", "tue", "wed", "thu", "fri"] }] },
     display: { mode: q.get("mode") || "all", targets: q.get("keep") ? ["Built-in Retina Display"] : ["DISPLAY1"], method: "auto", prefs: { "LG HDR 4K": "overlay" }, no_ddc: ["DM73u pro"], keep_input: !!q.get("keep"), builtin_off: "auto" },
     lights: { keyboard_backlight: true, openrgb: false, openrgb_host: "127.0.0.1:6742" },
     safety: { emergency_hotkey: "Ctrl+Alt+Shift+Esc" }, power: { keep_awake: q.get("awake") !== "off", ac_only: false },
@@ -24,7 +30,7 @@
   });
   const status = {
     state, countdown_left: 272, countdown_total: 300, now_min: 20 * 60 + 43,
-    schedule: { enabled: true, start: "23:30", end: "07:30", in_window: false, until_min: 167, duration_min: 480, skipped: false, waiting: null, postponed_min: null },
+    schedule: { enabled: true, start: "23:30", end: "07:30", in_window: false, until_min: 167, duration_min: 480, skipped: false, waiting: null, postponed_min: null, weekday: 0, label: q.get("sched") === "multi" ? "工作日" : null, today: [[0, 450], [1410, 1440]] },
     hotkey_error: q.get("hkerr") || null, login: false, input_guard: q.get("guard") || "ok",
     displays: 2, keyboard: os === "mac", power_off: true, keep_awake: state !== "idle",
     update: { phase: q.get("upd") || "latest", version: q.get("upd") ? "0.1.2" : null, progress: q.get("upd") === "downloading" ? 42 : null, error: null, updated_from: q.get("from") || null },

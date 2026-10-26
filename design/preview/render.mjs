@@ -22,6 +22,10 @@ jobs.push([`settings.html?os=mac&mode=selected#blank`, `settings-mac-blank-selec
 jobs.push([`settings.html?os=win&mode=selected#blank`, `settings-win-blank-selected`, 820, 900]);
 jobs.push([`settings.html?os=win&lang=en#blank`, `settings-win-blank-en`, 820, 900]);
 jobs.push([`settings.html?os=mac&mode=selected&keep=1#blank`, `settings-mac-blank-keep`, 820, 900]);
+jobs.push([`settings.html?os=mac&sched=multi#schedule`, `settings-mac-schedule-multi`, 820, 1100]);
+jobs.push([`settings.html?os=win&sched=multi#schedule`, `settings-win-schedule-multi`, 820, 1100]);
+jobs.push([`settings.html?os=mac&theme=dark#general`, `settings-mac-general-forced-dark`, 820, 760]);
+jobs.push([`popover.html?os=mac&theme=light&sched=multi`, `popover-mac-forced-light`, 320, 428]);
 jobs.push([`overlay.html?os=mac`, `overlay-mac-hint`, 1280, 800, { kind: "hint", reblank_s: 3 }]);
 jobs.push([`overlay.html?os=win`, `overlay-win-hold`, 1280, 800, { kind: "hold", progress: 0.62 }]);
 jobs.push([`onboarding.html?os=mac&perm=no`, `onboarding-mac`, 600, 600]);
