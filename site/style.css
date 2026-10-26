@@ -59,7 +59,7 @@ nav a:hover{color:var(--ink)}
 
 /* ---------- Hero ---------- */
 .hero{border-top:0;padding:64px 0 40px;display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr);gap:56px;align-items:center}
-.hero-shot{margin:0;justify-self:end;width:100%;max-width:380px}
+.hero-shot{margin:0;justify-self:end;width:100%;max-width:380px;line-height:0}
 .hero-shot img{border-radius:12px;box-shadow:var(--shadow)}
 h1{font-size:clamp(40px,6vw,64px);line-height:1.12;letter-spacing:-.02em;font-weight:650;margin:0 0 22px}
 .lead{font-size:17px;color:var(--ink2);max-width:36em;margin:0 0 36px}
