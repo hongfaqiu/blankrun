@@ -130,6 +130,12 @@ pub struct Engine {
     last_mon_reassert: Option<Instant>,
     /// 本次息屏里每块屏被重新点亮的次数
     mon_relit: std::collections::HashMap<String, u32>,
+    /// 本次息屏里内建屏没能断开的原因码（core::monitors::notice / "came_back" / "disconnect_failed"），设置页显示
+    mon_notes: std::collections::HashMap<String, &'static str>,
+    /// 内建屏被 macOS 重新打开的时间记录（10 秒内两次就不再对抗）
+    came_back: std::collections::HashMap<String, monitors::CameBack>,
+    /// 已经放弃断开的屏：id → 当时的显示器组合签名（组合变了就再试一次）
+    gave_up: std::collections::HashMap<String, String>,
     /// 本次息屏 id → 显示名（no_ddc / prefs 按显示名记）
     mon_labels: std::collections::HashMap<String, String>,
     /// 本次息屏 id → show_overlays 编号
@@ -163,7 +169,7 @@ impl Engine {
             last_sched_check: None, last_cfg_check: None, last_status: None, kbd_available,
             displays: 1, last_mon_check: None, keep_display: false, last_asleep: None, settle_until: None,
             trigger: "manual", history: History::default(), last_heartbeat: None,
-            overlay_idx: vec![], mon_off_plan: vec![], mon_off: vec![], last_mon_reassert: None, mon_relit: Default::default(), mon_labels: Default::default(), mon_idx: Default::default(), uncovered: Default::default(), mon_power: Default::default(), disconnecting: Default::default(), blank_ids: Default::default(), keep_input: false, rdp_logged: false,
+            overlay_idx: vec![], mon_off_plan: vec![], mon_off: vec![], last_mon_reassert: None, mon_relit: Default::default(), mon_notes: Default::default(), came_back: Default::default(), gave_up: Default::default(), mon_labels: Default::default(), mon_idx: Default::default(), uncovered: Default::default(), mon_power: Default::default(), disconnecting: Default::default(), blank_ids: Default::default(), keep_input: false, rdp_logged: false,
         };
         // 息屏记录；上次息屏中途崩溃/强退的那一条记为 crash
         e.history = History::from_json(&std::fs::read_to_string(e.history_path()).unwrap_or_default());
@@ -271,7 +277,7 @@ impl Engine {
                     self.reblank_at = None;
                     hide_overlays(app);
                     for (id, x, y) in std::mem::take(&mut self.mon_off) {
-                        match self.plat.monitor_power(&id, x, y, false) { Ok(()) => nblog!("monitor {id}: power on ok"), Err(e) => nblog!("monitor {id}: power on failed: {e}") }
+                        match self.plat.monitor_power(&id, x, y, false) { Ok(()) => nblog!("monitor {id}: power on ok"), Err(e) => nblog!("monitor {id}: restoring power failed: {e}") }
                     }
                     self.plat.display_off(false)
                 }
@@ -327,12 +333,18 @@ impl Engine {
         // 每块屏怎么关：系统级断电 / 单独断电（DDC/CI、内建屏背光）/ 遮罩 / 不管（虚拟屏、没选中的）
         let mons = self.monitor_list(app);
         let list: Vec<_> = mons.iter().map(|(m, _, _)| m.clone()).collect();
-        let plan = monitors::plan(&self.cfg.display, &list, !self.plat.power_off_unsafe(), self.cfg.wake.allow_remote);
+        let mut plan = monitors::plan(&self.cfg.display, &list, !self.plat.power_off_unsafe(), self.cfg.wake.allow_remote);
+        let notes = self.plan_notes(&list, &mut plan);
         // 「键鼠照常用」：只关所选、还有屏亮着。绝不用系统级关屏（会把亮着的外接屏也关掉）
         self.keep_input = monitors::keep_input_active(&self.cfg.display, &list);
         self.power_off = plan.global_off && !self.keep_input;
         self.mon_power = list.iter().filter_map(|m| Some((m.id.clone(), m.power?))).collect();
         self.mon_relit.clear();
+        self.came_back.clear();
+        self.mon_notes = notes;
+        for (m, how) in list.iter().zip(&plan.per) {
+            if let Some(code) = self.mon_notes.get(&m.id) { nblog!("notice: {} ({}) {how:?}: {}", m.id, m.label, monitors::notice_text(code)); }
+        }
         self.mon_labels = mons.iter().map(|(m, _, _)| (m.id.clone(), m.label.clone())).collect();
         self.mon_idx = mons.iter().enumerate().map(|(i, (m, _, _))| (m.id.clone(), i)).collect();
         self.uncovered.clear();
@@ -392,22 +404,42 @@ impl Engine {
             let hw = self.plat.probe_monitor(&id, x, y);
             (monitors::Monitor {
                 label: hw.label.clone().unwrap_or_else(|| id.clone()), id, width: m.size().width, height: m.size().height,
-                primary: primary == Some(*m.position()), virtual_: hw.virtual_, power: hw.power,
+                primary: primary == Some(*m.position()), virtual_: hw.virtual_, power: hw.power, note: hw.note,
             }, x, y)
         }).collect()
+    }
+
+    /// 显示器组合的签名（id + 是不是虚拟屏）：组合变了，之前「放弃对抗」的结论就不算数了
+    fn mon_sig(list: &[monitors::Monitor]) -> String {
+        list.iter().map(|m| format!("{}:{}", m.id, m.virtual_ as u8)).collect::<Vec<_>>().join("|")
+    }
+
+    /// 在 `plan()` 的结果上补两件事：之前被 macOS 反复接回、已经放弃断开的内建屏改成只盖遮罩；
+    /// 给每块要处理的屏配上「为什么没法断开」的说明码（没有就不在表里）
+    fn plan_notes(&self, list: &[monitors::Monitor], plan: &mut monitors::Plan) -> std::collections::HashMap<String, &'static str> {
+        let sig = Self::mon_sig(list);
+        let mut notes = std::collections::HashMap::new();
+        for (m, how) in list.iter().zip(plan.per.iter_mut()) {
+            let gave_up = m.power == Some("disconnect") && self.gave_up.get(&m.id) == Some(&sig);
+            if *how == Method::Off && gave_up { *how = Method::Overlay; }
+            if *how == Method::Skip { continue; }
+            if let Some(code) = if gave_up { Some("came_back") } else { monitors::notice(m, list) } { notes.insert(m.id.clone(), code); }
+        }
+        notes
     }
 
     /// 设置页用：每块屏和它息屏时会怎么处理
     pub fn monitor_report(&mut self, app: &AppHandle) -> Vec<serde_json::Value> {
         let mons = self.monitor_list(app);
         let list: Vec<_> = mons.iter().map(|(m, _, _)| m.clone()).collect();
-        let plan = monitors::plan(&self.cfg.display, &list, !self.plat.power_off_unsafe(), self.cfg.wake.allow_remote);
+        let mut plan = monitors::plan(&self.cfg.display, &list, !self.plat.power_off_unsafe(), self.cfg.wake.allow_remote);
+        let mut notes = self.plan_notes(&list, &mut plan);
+        // 这次息屏中途才发现的原因（断开被系统拒绝等）
+        if self.sm.state == State::ScreenOff { for (id, code) in &self.mon_notes { notes.insert(id.clone(), code); } }
         list.iter().zip(&plan.per).map(|(m, how)| {
             let how = match how {
-                // 只剩这一块物理屏时不会断开，退回背光
-                Method::Off if m.power == Some("disconnect") && !monitors::disconnect_ok(m, &list) => "backlight",
                 Method::Off => m.power.unwrap_or("overlay"), Method::Overlay if plan.global_off => "power", Method::Overlay => "overlay", Method::Skip => "skip" };
-            serde_json::json!({ "id": m.id, "label": m.label, "width": m.width, "height": m.height, "primary": m.primary, "virtual": m.virtual_, "power": m.power, "how": how,
+            serde_json::json!({ "id": m.id, "label": m.label, "width": m.width, "height": m.height, "primary": m.primary, "virtual": m.virtual_, "power": m.power, "how": how, "note": notes.get(&m.id),
                 "pref": monitors::pref(&self.cfg.display, m), "unresponsive": monitors::unresponsive(&self.cfg.display, m) })
         }).collect()
     }
@@ -429,11 +461,10 @@ impl Engine {
         for (id, x, y) in self.mon_off_plan.clone() {
             match self.plat.monitor_power(&id, x, y, true) {
                 Ok(()) => { nblog!("monitor {id}: power off ok"); if !self.mon_off.iter().any(|(i, _, _)| *i == id) { self.mon_off.push((id, x, y)); } }
-                // 断开失败（平台层已退回背光 0）：这块屏没盖遮罩，现在补上。没有断开过，编号还是息屏时的
+                // 断开失败（亮度原样没动，绝不自动退到背光 0）：这块屏没盖遮罩，现在补上。没有断开过，编号还是息屏时的
                 Err(e) if self.disconnecting.remove(&id) => {
-                    nblog!("monitor {id}: disconnect failed: {e} (adding overlay)");
-                    self.mon_power.insert(id.clone(), "backlight");
-                    if !self.mon_off.iter().any(|(i, _, _)| *i == id) { self.mon_off.push((id.clone(), x, y)); }
+                    nblog!("monitor {id}: disconnect failed: {e} (brightness untouched, adding overlay)");
+                    self.mon_notes.insert(id.clone(), "disconnect_failed");
                     if self.overlay_on { if let Some(&i) = self.mon_idx.get(&id) { self.overlay_idx.push(i); show_overlays(app, &[i], self.keep_input); } }
                 }
                 Err(e) => nblog!("monitor {id}: power off failed: {e} (overlay stays)"),
@@ -583,16 +614,32 @@ impl Engine {
                     let lit = self.plat.monitor_lit(&id, x, y);
                     let idx = self.mon_idx.get(&id).copied();
                     // 断开的内建屏被系统接了回来（休眠唤醒、开合盖）：再断开一次，不计入「不响应断电」。
-                    // 显示器编号这时已经变过，不碰遮罩
+                    // 显示器编号这时已经变过，不碰遮罩。
+                    // 10 秒内被接回来第二次：macOS 不让断开（比如只剩虚拟屏），不再对抗——内建屏保持原样、亮度不动，盖上遮罩并提示
                     if self.disconnecting.contains(&id) {
                         if lit == Some(true) {
-                            nblog!("monitor {id}: display came back, disconnecting it again");
-                            if let Err(e) = self.plat.monitor_power(&id, x, y, true) {
-                                // 平台层已退回背光 0；屏又回来了，编号也就回到了息屏时的样子，补上遮罩
-                                nblog!("monitor {id}: disconnect again failed: {e} (adding overlay)");
+                            if self.came_back.entry(id.clone()).or_default().feed(platform::now_ms()) {
+                                nblog!("monitor {id}: macOS re-enabled the display {} times within {}s, not fighting it any more (brightness untouched, overlay only)", monitors::RELIT_MAX, monitors::RELIT_WINDOW_MS / 1000);
+                                // 让平台层忘掉「已断开」（屏本来就亮着；重连报 1001 也算成功）
+                                if let Err(e) = self.plat.monitor_power(&id, x, y, false) { nblog!("monitor {id}: releasing the disconnect failed: {e}"); }
                                 self.disconnecting.remove(&id);
-                                self.mon_power.insert(id.clone(), "backlight");
-                                if let Some(i) = idx { show_overlays(app, &[i], self.keep_input); }
+                                self.mon_off.retain(|(i, _, _)| *i != id);
+                                self.mon_off_plan.retain(|(i, _, _)| *i != id);
+                                self.mon_notes.insert(id.clone(), "came_back");
+                                let sig = Self::mon_sig(&self.monitor_list(app).into_iter().map(|(m, _, _)| m).collect::<Vec<_>>());
+                                self.gave_up.insert(id.clone(), sig);
+                                if let Some(i) = idx { if !self.overlay_idx.contains(&i) { self.overlay_idx.push(i); } show_overlays(app, &[i], self.keep_input); }
+                                let _ = app.emit("nb://config", ());
+                            } else {
+                                nblog!("monitor {id}: display came back, disconnecting it again");
+                                if let Err(e) = self.plat.monitor_power(&id, x, y, true) {
+                                    // 亮度没动；屏又回来了，编号也就回到了息屏时的样子，补上遮罩
+                                    nblog!("monitor {id}: disconnect again failed: {e} (brightness untouched, adding overlay)");
+                                    self.disconnecting.remove(&id);
+                                    self.mon_off.retain(|(i, _, _)| *i != id);
+                                    self.mon_notes.insert(id.clone(), "disconnect_failed");
+                                    if let Some(i) = idx { show_overlays(app, &[i], self.keep_input); }
+                                }
                             }
                         }
                         continue;
