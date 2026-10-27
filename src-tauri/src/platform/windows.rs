@@ -1,5 +1,6 @@
 //! Windows 实现。见 RESEARCH.md §3。
-//! - 防睡眠：SetThreadExecutionState(ES_SYSTEM_REQUIRED)。注意它按线程生效，引擎保证所有动作都在同一个引擎线程里调用。
+//! - 防睡眠：SetThreadExecutionState(ES_SYSTEM_REQUIRED)。它按线程生效，所以持续状态统一交给专用线程 nb-awake 设置（见 exec_state），
+//!   不管是引擎线程、设置命令所在的异步线程还是退出时的主线程调用，改的都是同一份状态。
 //! - 关屏：SC_MONITORPOWER=2（只发给自己的隐藏窗口，不广播）；Modern Standby（AoAc）机器上关屏会进 S0 低功耗待机，自动模式下改用遮罩（上层 webview）。
 //! - 屏幕状态：PowerSettingRegisterNotification(GUID_CONSOLE_DISPLAY_STATE) 回调，不需要窗口。
 //! - 输入：WH_KEYBOARD_LL / WH_MOUSE_LL，跑在独立的消息循环线程里，吞掉所有非注入事件。
@@ -137,12 +138,36 @@ fn display_on_now() {
     }
 }
 
+/// 带 ES_CONTINUOUS 的执行状态只在设置它的线程上生效、线程结束就失效。
+/// 以前直接在调用线程上设置：息屏中在设置页改了「防睡眠」，save_config 跑在 tauri 的异步线程上，
+/// 状态就挂到了那个线程上——息屏中打开防睡眠，唤醒时引擎线程清不掉它，系统之后一直不睡直到退出 BlankRun；
+/// 息屏中关掉防睡眠也关不掉引擎线程上已有的那份。
+/// 现在所有持续状态都发给同一个常驻线程执行。线程起不来时退回在当前线程设置（和以前一样）。
+fn exec_state(flags: EXECUTION_STATE) -> EXECUTION_STATE {
+    use std::sync::{mpsc, OnceLock};
+    type Req = (EXECUTION_STATE, mpsc::Sender<EXECUTION_STATE>);
+    static TX: OnceLock<Option<mpsc::Sender<Req>>> = OnceLock::new();
+    let tx = TX.get_or_init(|| {
+        let (tx, rx) = mpsc::channel::<Req>();
+        std::thread::Builder::new().name("nb-awake".into()).spawn(move || {
+            for (f, reply) in rx { let _ = reply.send(unsafe { SetThreadExecutionState(f) }); }
+        }).ok().map(|_| tx)
+    });
+    if let Some(tx) = tx {
+        let (rtx, rrx) = mpsc::channel();
+        if tx.send((flags, rtx)).is_ok() {
+            if let Ok(r) = rrx.recv_timeout(std::time::Duration::from_secs(2)) { return r; }
+        }
+    }
+    unsafe { SetThreadExecutionState(flags) }
+}
+
 impl Platform for Native {
     fn keep_awake(&mut self, on: bool) -> Result {
         // 只在息屏期间持有 ES_SYSTEM_REQUIRED（不加 DISPLAY_REQUIRED）。
         // TODO: 实测 Modern Standby 下能否挡住 S0 低功耗待机（RESEARCH.md §5 风险 2）。
         let flags = if on { ES_CONTINUOUS | ES_SYSTEM_REQUIRED } else { ES_CONTINUOUS };
-        let ok = unsafe { SetThreadExecutionState(flags) } != 0;
+        let ok = exec_state(flags) != 0;
         if on { self.awake_ok = Some(ok); }
         if !ok { return Err("SetThreadExecutionState failed".into()); }
         Ok(())
@@ -150,7 +175,7 @@ impl Platform for Native {
 
     fn keep_display_on(&mut self, on: bool) -> Result {
         let flags = ES_CONTINUOUS | ES_SYSTEM_REQUIRED | if on { ES_DISPLAY_REQUIRED } else { 0 };
-        if unsafe { SetThreadExecutionState(flags) } == 0 { return Err("SetThreadExecutionState failed".into()); }
+        if exec_state(flags) == 0 { return Err("SetThreadExecutionState failed".into()); }
         Ok(())
     }
 
