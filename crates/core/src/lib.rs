@@ -9,6 +9,7 @@ pub mod history;
 pub mod monitors;
 pub mod drain;
 pub mod wake;
+pub mod watchdog;
 
 pub use config::Config;
 pub use state::{Event, State, StateMachine};

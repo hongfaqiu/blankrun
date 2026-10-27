@@ -6,6 +6,7 @@ mod log;
 mod engine;
 mod platform;
 mod update;
+mod watchdog;
 
 use std::sync::{mpsc, Arc, Mutex};
 
@@ -310,6 +311,8 @@ fn main() {
         platform::emergency_restore();
         nblog!("panic: {info}");
     }));
+    // 看门狗模式（见 watchdog.rs）：不起界面，等主进程退出后按需恢复屏幕，然后直接结束
+    watchdog::run_if_requested();
 
     let (tx, rx) = mpsc::channel::<Msg>();
     let input_tx = tx.clone();
@@ -350,6 +353,8 @@ fn main() {
                 if let Err(e) = plat.restore_on_startup(Some(&saved)) { nblog!("restore after abnormal exit failed: {e}"); }
                 let _ = std::fs::remove_file(&marker);
             }
+            // 之后被强退 / 结束任务时由看门狗进程恢复屏幕（启动恢复做完再拉起，免得两边同时恢复）
+            if let Some(d) = cfg_path.parent() { watchdog::start(d); }
             let first_run = !cfg_path.with_file_name("onboarded").exists();
             for c in plat.capabilities() { nblog!("cap {} {} {}", c.id, c.status, c.tech); }
             nblog!("permissions (accessibility, input monitoring) = {:?}; modern_standby = {}; fullscreen_video = {}; launch_at_login = {:?}",
