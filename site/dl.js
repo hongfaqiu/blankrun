@@ -4,7 +4,7 @@
   var REPO = 'hongfaqiu/blankrun';
   var BASE = 'https://github.com/' + REPO + '/releases/latest/download/';
   var FILES = { mac: 'BlankRun_universal.dmg', win: 'BlankRun_x64-setup.exe' };
-  var info = { ver: '0.1.9', size: { mac: '3.8 MB', win: '1.4 MB' } }; // 发版时改这里（和页面里的 v0.1.9 / 大小）
+  var info = { ver: '0.1.10', size: { mac: '3.8 MB', win: '1.4 MB' } }; // 发版时改这里（和页面里的 v0.1.10 / 大小）
   var root = document.documentElement;
   var nav = navigator, ua = nav.userAgent || '', uad = nav.userAgentData;
   var plat = (uad && uad.platform) || nav.platform || '';
