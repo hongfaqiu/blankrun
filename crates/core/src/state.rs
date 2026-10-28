@@ -38,8 +38,11 @@ impl StateMachine {
             (Armed, Event::Cancel) => (Idle, vec![StopKeepAwake]),
             (ScreenOff, Event::ScreenLitUnexpectedly) => (ScreenOff, vec![DisplayOff]),
             (ScreenOff, Event::WakeRequested) => {
-                let mut a = vec![InputHookOff, DisplayRestore, BacklightRestore];
+                // 要锁屏就先锁、再亮屏：否则亮屏（DDC 逐台写 D6=1、撤遮罩）到锁屏之间桌面会露出来一两秒。
+                // 输入钩子仍然最先关，免得锁屏界面收不到键鼠
+                let mut a = vec![InputHookOff];
                 if self.lock_on_wake { a.push(LockScreen); }
+                a.extend([DisplayRestore, BacklightRestore]);
                 (Waking, a)
             }
             (Waking, Event::RestoreDone) => (Idle, vec![StopKeepAwake]),
@@ -64,5 +67,24 @@ mod tests {
         m.handle(Event::RestoreDone);
         assert_eq!(m.state, State::Idle);
         assert!(m.handle(Event::Blank).is_empty());
+    }
+
+    fn blanked(lock: bool) -> StateMachine {
+        let mut m = StateMachine::new(lock);
+        m.handle(Event::Arm);
+        m.handle(Event::Blank);
+        m
+    }
+
+    #[test]
+    fn locks_before_lighting_the_screen() {
+        let a = blanked(true).handle(Event::WakeRequested);
+        assert_eq!(a, vec![Action::InputHookOff, Action::LockScreen, Action::DisplayRestore, Action::BacklightRestore]);
+    }
+
+    #[test]
+    fn no_lock_when_disabled() {
+        let a = blanked(false).handle(Event::WakeRequested);
+        assert_eq!(a, vec![Action::InputHookOff, Action::DisplayRestore, Action::BacklightRestore]);
     }
 }
