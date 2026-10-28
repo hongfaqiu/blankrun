@@ -223,6 +223,7 @@ function renderMonitors() {
     if (m.virtual) name.append(h("i", "tag", t("b.mon_virtual")));
     const how = m.virtual ? t("b.how_virtual") : on ? t("b.how." + m.how) + (m.unresponsive && m.how === "overlay" ? " · " + t("b.unresponsive") : "") : t("b.mon_off_sel");
     const tx = h("div", "t"); tx.append(name, h("small", "", [m.width && `${m.width} × ${m.height}`, how].filter(Boolean).join(" · ")));
+    if (m.note && !m.virtual && on) tx.append(h("small", "err", t("b.note." + m.note)));
     lead.append(tx); r.append(lead);
     if (!m.virtual) {
       // 每台单独指定：自动 / 仅遮罩 / 断电（只有能单独断电的屏才有）
@@ -428,7 +429,7 @@ $("#exportDiag").addEventListener("click", async () => {
   const text = [`BlankRun ${info.version} (${info.os}) · ui=${LANG} · system=${info.system_locale}`, `time ${new Date().toString()}`, "", "[capabilities]",
     ...diag.caps.map((c) => `- ${c.id}: ${c.key} (${c.status}) · ${c.tech}`),
     diag.perms ? `\n[permissions] accessibility=${diag.perms[0]} input_monitoring=${diag.perms[1]}` : "",
-    `\n[displays] ${diag.monitors.map((m) => `${m.id} "${m.label}" ${m.width}x${m.height}${m.primary ? " primary" : ""}${m.virtual ? " virtual" : ""} power=${m.power || "-"} how=${m.how}`).join("; ")}`, `\n[last session] ${JSON.stringify(diag.last_session)}`,
+    `\n[displays] ${diag.monitors.map((m) => `${m.id} "${m.label}" ${m.width}x${m.height}${m.primary ? " primary" : ""}${m.virtual ? " virtual" : ""} power=${m.power || "-"} how=${m.how}${m.note ? " note=" + m.note : ""}`).join("; ")}`, `\n[last session] ${JSON.stringify(diag.last_session)}`,
     "\n[config]", JSON.stringify(cfg, null, 2)].join("\n");
   try { const p = await invoke("export_diagnostics", { text }); toast(t("toast.exported", { p })); } catch (e) { toast(t("toast.export_fail", { e })); }
 });

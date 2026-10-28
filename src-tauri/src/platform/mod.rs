@@ -26,8 +26,10 @@ impl Cap {
 pub struct MonHw {
     pub label: Option<String>,
     pub virtual_: bool,
-    /// "ddc" | "backlight" | None
+    /// "ddc" | "disconnect" | "backlight"（仅用户明确选了才有）| None
     pub power: Option<&'static str>,
+    /// 内建屏没法断开的原因码（"os" | "risky" | "tested" | "api"），见 core::monitors::notice
+    pub note: Option<&'static str>,
     /// 诊断用：显卡/驱动描述
     #[allow(dead_code)]
     pub detail: String,

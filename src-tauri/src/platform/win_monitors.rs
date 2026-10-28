@@ -111,7 +111,7 @@ pub fn probe(dev: &str, names: &HashMap<String, String>) -> MonHw {
     let label = names.get(dev).cloned();
     let virtual_ = blankrun_core::monitors::looks_virtual(&adapter) || label.as_deref().is_some_and(blankrun_core::monitors::looks_virtual);
     let power = if virtual_ { None } else { ddc_power(dev).map(|_| "ddc") };
-    MonHw { label, virtual_, power, detail: adapter }
+    MonHw { label, virtual_, power, detail: adapter, ..Default::default() }
 }
 
 /// 把关着的显示器重新打开（崩溃恢复 / 紧急恢复）。只会写 D6=1（开），绝不写 5。

@@ -5,7 +5,10 @@
 //! - 恢复：IOPMAssertionDeclareUserActivity 点亮屏幕。
 //! - 内建屏单独关闭：Apple 芯片 + macOS 13 起用 SkyLight 私有 `SLSConfigureDisplayEnabled(false)`「断开」，
 //!   和合盖、BetterDisplay「断开显示器」、Lunar BlackOut 同一机制：屏幕从桌面布局里消失，面板进待机。
-//!   运行时 dlsym，拿不到、被拒绝或只剩这一块屏时退回 DisplayServices 背光调 0 + 遮罩。
+//!   运行时 dlsym。**绝不自动把背光调 0**：拿不到接口、系统不支持、被拒绝、被系统反复接回、或没有别的真实屏时，
+//!   内建屏的亮度原样不动，只盖黑色遮罩并提示原因；背光调 0 只在用户明确选了「只调背光」（builtin_off = "backlight"）时才用。
+//! - 虚拟屏（BetterDisplay / DeskPad / Sidecar…，CGVirtualDisplay）：CoreDisplay 私有的 kCGDisplayIsVirtualDevice 标记 + 显示名兜底；
+//!   不处理，也不算「别的物理屏」——macOS 不让虚拟屏当唯一的活动显示器，这时断开内建屏会被系统立刻接回来。
 //! - 键盘背光：运行时 dlopen 私有的 CoreBrightness.framework，KeyboardBrightnessClient，每个方法先 respondsToSelector，缺任何一个就降级为"只关屏幕"。
 //! - 输入：CGEventTap（会话级、主动过滤），需要「辅助功能」权限；回调吞掉所有事件并翻译后送进引擎。
 //!   「键鼠照常用」（Mac Mini 模式）时只吞唤醒键 / 紧急键，别的事件原样返回（= 放行），光标被挡在关掉的屏外面。
@@ -40,6 +43,9 @@ extern "C" {
     fn CFDictionaryGetCount(d: *const c_void) -> isize;
     fn CFDictionaryGetKeysAndValues(d: *const c_void, keys: *mut *const c_void, values: *mut *const c_void);
     fn CFNumberGetValue(n: *const c_void, ty: isize, out: *mut c_void) -> u8;
+    fn CFGetTypeID(cf: *const c_void) -> usize;
+    fn CFBooleanGetTypeID() -> usize;
+    fn CFBooleanGetValue(b: *const c_void) -> u8;
     fn CFDictionaryCreate(alloc: *const c_void, keys: *const *const c_void, values: *const *const c_void, n: isize, kcb: *const c_void, vcb: *const c_void) -> *const c_void;
     static kCFTypeDictionaryKeyCallBacks: [usize; 6];
     static kCFTypeDictionaryValueCallBacks: [usize; 5];
@@ -235,11 +241,106 @@ fn set_builtin_off(id: u32, off: bool) -> Result {
     Ok(())
 }
 
+// ---------- 显示器信息：是不是虚拟屏、真实名字 ----------
+/// CoreDisplay 私有的 `CoreDisplay_DisplayCreateInfoDictionary(CGDirectDisplayID)`（Lunar / BetterDisplay 也用它认虚拟屏）。
+/// CGDisplayIOServicePort 在 Apple 芯片上不可靠，所以不走 IOKit。
+type CdInfo = unsafe extern "C" fn(u32) -> *const c_void;
+fn coredisplay_info() -> Option<CdInfo> {
+    static F: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+    let p = *F.get_or_init(|| unsafe {
+        let h = libc::dlopen(c"/System/Library/Frameworks/CoreDisplay.framework/CoreDisplay".as_ptr(), libc::RTLD_LAZY);
+        let f = if h.is_null() { std::ptr::null_mut() } else { libc::dlsym(h, c"CoreDisplay_DisplayCreateInfoDictionary".as_ptr()) };
+        f as usize
+    });
+    (p != 0).then(|| unsafe { std::mem::transmute::<usize, CdInfo>(p) })
+}
+
+/// 一块屏的系统信息
+#[derive(Debug, Default, Clone)]
+struct DisplayInfo {
+    /// 系统标了 kCGDisplayIsVirtualDevice（CGVirtualDisplay 创建的屏）
+    virtual_flag: bool,
+    /// 真实显示名（"Color LCD" / "VirtMitm"）
+    name: Option<String>,
+}
+
+fn cf_truthy(v: *const c_void) -> bool {
+    if v.is_null() { return false; }
+    unsafe { if CFGetTypeID(v) == CFBooleanGetTypeID() { CFBooleanGetValue(v) != 0 } else { cf_i64(v).is_some_and(|n| n != 0) } }
+}
+
+/// NSScreen.localizedName：按 NSScreenNumber 找到对应的 NSScreen（CoreDisplay 取不到名字时的兜底）
+fn nsscreen_name(id: u32) -> Option<String> {
+    unsafe {
+        let cls = objc_getClass(c"NSScreen".as_ptr());
+        if cls.is_null() { return None; }
+        let screens = msg0(cls, "screens");
+        if screens.is_null() { return None; }
+        let count: extern "C" fn(Id, Id) -> usize = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
+        let at: extern "C" fn(Id, Id, usize) -> Id = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
+        let obj_for: extern "C" fn(Id, Id, Id) -> Id = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
+        let uint: extern "C" fn(Id, Id) -> u32 = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
+        let utf8: extern "C" fn(Id, Id) -> *const c_char = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
+        let key = cfstr("NSScreenNumber");
+        let mut out = None;
+        for i in 0..count(screens, sel("count")).min(16) {
+            let scr = at(screens, sel("objectAtIndex:"), i);
+            if scr.is_null() || !responds(scr, "localizedName") { continue; }
+            let num = obj_for(msg0(scr, "deviceDescription"), sel("objectForKey:"), key as Id);
+            if num.is_null() || uint(num, sel("unsignedIntValue")) != id { continue; }
+            let name = msg0(scr, "localizedName");
+            if !name.is_null() {
+                let c = utf8(name, sel("UTF8String"));
+                if !c.is_null() { out = Some(std::ffi::CStr::from_ptr(c).to_string_lossy().into_owned()); }
+            }
+            break;
+        }
+        CFRelease(key);
+        out.filter(|n| !n.is_empty())
+    }
+}
+
+fn display_info(id: u32) -> DisplayInfo {
+    let mut info = DisplayInfo::default();
+    if let Some(f) = coredisplay_info() {
+        unsafe {
+            let d = f(id);
+            if !d.is_null() {
+                let k = cfstr("kCGDisplayIsVirtualDevice");
+                info.virtual_flag = cf_truthy(CFDictionaryGetValue(d, k as *const c_void));
+                CFRelease(k);
+                // DisplayProductName：{ "en_US": "Color LCD", ... }
+                let k = cfstr("DisplayProductName");
+                let names = CFDictionaryGetValue(d, k as *const c_void);
+                CFRelease(k);
+                let n = if names.is_null() { 0 } else { CFDictionaryGetCount(names).clamp(0, 32) as usize };
+                if n > 0 {
+                    let (mut ks, mut vs) = (vec![std::ptr::null(); n], vec![std::ptr::null(); n]);
+                    CFDictionaryGetKeysAndValues(names, ks.as_mut_ptr(), vs.as_mut_ptr());
+                    let en = ks.iter().position(|&k| cf_string(k) == "en_US").unwrap_or(0);
+                    let s = cf_string(vs[en]);
+                    if !s.is_empty() { info.name = Some(s); }
+                }
+                CFRelease(d);
+            }
+        }
+    }
+    if info.name.is_none() { info.name = nsscreen_name(id); }
+    info
+}
+
+/// 是不是虚拟屏：内建屏一定不是；其余看系统标记，再看显示名（BetterDisplay / DeskPad / Sidecar / AirPlay…）
+fn display_is_virtual(id: u32) -> bool {
+    if unsafe { CGDisplayIsBuiltin(id) } != 0 { return false; }
+    let i = display_info(id);
+    i.virtual_flag || i.name.as_deref().is_some_and(blankrun_core::monitors::looks_virtual_mac)
+}
+
 // ---------- 内建屏「断开」（SkyLight SLSConfigureDisplayEnabled） ----------
 type CfgEnabled = unsafe extern "C" fn(*mut c_void, u32, bool) -> i32;
 /// 当前被我们断开的屏（CGDirectDisplayID，0 = 没有）。崩溃标记里也记一份，下次启动接回
 static DISCONNECTED: AtomicU32 = AtomicU32::new(0);
-/// 本次息屏断开失败过：之后只调背光（遮罩已经盖上，再断开会把遮罩窗口挪到外接屏上）
+/// 本次运行里断开失败过：不再重试（每次尝试都会让屏闪一下），内建屏保持原样、由遮罩盖住
 static DISCONNECT_FAILED: AtomicBool = AtomicBool::new(false);
 /// 设置里的 display.builtin_off
 static BUILTIN_OFF: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
@@ -286,13 +387,16 @@ fn tested_verdict() -> Option<bool> {
     BUILTIN_TEST.lock().ok()?.as_ref()?.verdict(&chip, &model, major)
 }
 
-/// 按设置和机器决定内建屏能不能用「断开」
-fn disconnect_supported() -> bool {
+/// 按设置和机器决定内建屏怎么关。找不到私有接口时也是 `Unavailable("api")`——不会退到背光 0
+fn builtin_mode() -> blankrun_core::monitors::BuiltinOff {
+    use blankrun_core::monitors::BuiltinOff;
     let setting = BUILTIN_OFF.lock().map(|g| g.clone()).unwrap_or_default();
     let (model, chip, _, os_major) = machine();
-    let how = blankrun_core::monitors::builtin_off(if setting.is_empty() { "auto" } else { &setting },
-        &chip, &model, os_major, cfg!(target_arch = "aarch64"), tested_verdict());
-    how == blankrun_core::monitors::BuiltinOff::Disconnect && display_enable_fn().is_some()
+    match blankrun_core::monitors::builtin_off(if setting.is_empty() { "auto" } else { &setting },
+        &chip, &model, os_major, cfg!(target_arch = "aarch64"), tested_verdict()) {
+        BuiltinOff::Disconnect if display_enable_fn().is_none() => BuiltinOff::Unavailable("api"),
+        how => how,
+    }
 }
 
 // ---------- 内建屏断开检测（设置 › 息屏 › 内建屏 › 检测） ----------
@@ -415,21 +519,30 @@ fn configure_display(id: u32, enabled: bool, option: u32) -> Result {
     Ok(())
 }
 
-/// 除 `except` 以外，系统当前还在用的真实显示器数。
-/// 别的屏都没了时 macOS 会放一个厂商号为 0 / 'unkn' / 'virt' 的占位显示器，不算。
+/// 除 `except` 以外，系统当前还在用的真实（物理）显示器数。
+/// 别的屏都没了时 macOS 会放一个厂商号为 0 / 'unkn' / 'virt' 的占位显示器，不算；
+/// 虚拟屏（BetterDisplay / DeskPad / Sidecar…）也不算：macOS 不让它们当唯一的活动显示器，只剩它们时断开内建屏会被立刻接回来。
 fn other_real_displays(except: u32) -> usize {
     let mut ids = [0u32; 16];
     let mut n = 0u32;
     if unsafe { CGGetActiveDisplayList(16, ids.as_mut_ptr(), &mut n) } != 0 { return 0; }
     let fake = [0, u32::MAX, u32::from_be_bytes(*b"unkn"), u32::from_be_bytes(*b"virt")];
-    ids[..(n as usize).min(16)].iter().filter(|&&d| d != except && unsafe { CGDisplayIsActive(d) } != 0 && !fake.contains(&unsafe { CGDisplayVendorNumber(d) })).count()
+    ids[..(n as usize).min(16)].iter().filter(|&&d| d != except && unsafe { CGDisplayIsActive(d) } != 0 && !fake.contains(&unsafe { CGDisplayVendorNumber(d) }) && !display_is_virtual(d)).count()
 }
 
 /// 接回我们断开的屏（没有就什么都不做）
 fn reconnect_builtin(why: &str) -> Result {
     let d = DISCONNECTED.swap(0, Relaxed);
     if d == 0 { return Ok(()); }
-    let r = set_display_enabled(d, true);
+    let mut r = set_display_enabled(d, true);
+    // 系统已经自己把它接回来了（休眠唤醒 / 开合盖 / 被系统反复接回）：再配置一次会返回 CGCompleteDisplayConfiguration = 1001，
+    // 但屏幕本来就是亮的，目的已经达到，不算失败
+    if let Err(e) = &r {
+        if unsafe { CGDisplayIsActive(d) } != 0 && display_list(false).contains(&d) {
+            crate::nblog!("built-in display {d}: already active ({why}), ignoring: {e}");
+            r = Ok(());
+        }
+    }
     match &r {
         Ok(()) => crate::nblog!("built-in display {d}: reconnected ({why})"),
         // 失败也别丢了这个 id：崩溃标记 / 下次启动还会再试
@@ -438,13 +551,20 @@ fn reconnect_builtin(why: &str) -> Result {
     r
 }
 
-/// 关内建屏：能断开就断开，不行退回背光 0（返回 Err 让引擎补上遮罩）
+/// 关内建屏：只有「断开」成功才算数。不能断开时一律返回 Err、**不动亮度**（引擎会补上黑色遮罩并提示原因）；
+/// 背光调 0 只在用户明确选了「只调背光」时才用。
 fn builtin_off(d: u32) -> Result {
+    use blankrun_core::monitors::BuiltinOff;
+    match builtin_mode() {
+        BuiltinOff::Backlight => return set_builtin_off(d, true),
+        BuiltinOff::Unavailable(why) => return Err(format!("can't disconnect the built-in display here ({why}); leaving its brightness alone")),
+        BuiltinOff::Disconnect => {}
+    }
     // 正在「检测」时别同时去断开（检测会自己接回）
-    if DISCONNECT_FAILED.load(Relaxed) || TESTING.load(Relaxed) != 0 || !disconnect_supported() { return set_builtin_off(d, true); }
+    if TESTING.load(Relaxed) != 0 { return Err("built-in display test in progress; leaving the display alone".into()); }
+    if DISCONNECT_FAILED.load(Relaxed) { return Err("disconnect failed earlier in this session; not retrying, brightness untouched".into()); }
     if other_real_displays(d) == 0 {
-        set_builtin_off(d, true)?;
-        return Err("built-in is the only display: not disconnecting it, backlight 0 instead".into());
+        return Err("no other physical display (virtual displays don't count: macOS won't keep them as the only display): not disconnecting, brightness untouched".into());
     }
     match set_display_enabled(d, false) {
         Ok(()) => {
@@ -454,8 +574,7 @@ fn builtin_off(d: u32) -> Result {
         }
         Err(e) => {
             DISCONNECT_FAILED.store(true, Relaxed);
-            set_builtin_off(d, true)?;
-            Err(format!("{e}; backlight 0 instead"))
+            Err(format!("{e}; leaving the display on, brightness untouched"))
         }
     }
 }
@@ -661,18 +780,33 @@ impl Platform for Native {
     }
 
     fn probe_monitor(&mut self, id: &str, x: f64, y: f64) -> super::MonHw {
+        use blankrun_core::monitors::BuiltinOff;
         let did = display_at(x, y);
         let builtin = did.is_some_and(|d| unsafe { CGDisplayIsBuiltin(d) } != 0);
-        let virtual_ = blankrun_core::monitors::looks_virtual(id);
-        let power = if builtin && disconnect_supported() { Some("disconnect") } else { (builtin && display_services().is_some()).then_some("backlight") };
-        super::MonHw { label: None, virtual_, power, detail: did.map_or(String::new(), |d| format!("CGDisplay {d} {}px{}", unsafe { CGDisplayPixelsWide(d) }, if builtin { " built-in" } else { "" })) }
+        let info = did.map(display_info).unwrap_or_default();
+        let virtual_ = !builtin && (info.virtual_flag || info.name.as_deref().is_some_and(blankrun_core::monitors::looks_virtual_mac) || blankrun_core::monitors::looks_virtual(id));
+        // 内建屏怎么关：断开 / 用户明确选了才用背光 / 不能断开就只盖遮罩（power = None，note 说明原因）
+        let (power, note) = if !builtin { (None, None) } else {
+            match builtin_mode() {
+                BuiltinOff::Disconnect => (Some("disconnect"), None),
+                BuiltinOff::Backlight if display_services().is_some() => (Some("backlight"), None),
+                BuiltinOff::Backlight => (None, Some("api")),
+                BuiltinOff::Unavailable(why) => (None, Some(why)),
+            }
+        };
+        super::MonHw {
+            label: info.name.clone().filter(|n| !n.is_empty() && n != id), virtual_, power, note,
+            detail: did.map_or(String::new(), |d| format!("CGDisplay {d} {}px{}{}", unsafe { CGDisplayPixelsWide(d) }, if builtin { " built-in" } else { "" }, if info.virtual_flag { " virtual" } else { "" })),
+        }
     }
 
     fn monitor_power(&mut self, _id: &str, x: f64, y: f64, off: bool) -> Result {
         if !off {
             DISCONNECT_FAILED.store(false, Relaxed);
             let r = reconnect_builtin("wake");
-            return r.and(set_builtin_off(0, false));
+            // 重连出错也要把（明确选了背光时）调暗的亮度还原
+            let b = set_builtin_off(0, false);
+            return r.and(b);
         }
         // 已经断开了（断开的屏不在活动列表里，按坐标找不到它）：被系统接回来了就再断开一次
         let dis = DISCONNECTED.load(Relaxed);
