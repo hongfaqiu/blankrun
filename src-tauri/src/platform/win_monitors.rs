@@ -114,11 +114,21 @@ pub fn probe(dev: &str, names: &HashMap<String, String>) -> MonHw {
     MonHw { label, virtual_, power, detail: adapter }
 }
 
-/// 把所有读得到 D6 且不是「开」的显示器重新打开（崩溃恢复 / 紧急恢复）
+/// 把关着的显示器重新打开（崩溃恢复 / 紧急恢复）。只会写 D6=1（开），绝不写 5。
+/// - 读得到 D6 且不是 1：写 1；
+/// - 读不到 D6：有的显示器 DPM 关着时 DDC 读也不应答，但仍会响应写入——试写一次 1（不重试）。
+///   虚拟屏（远程桌面、串流、IDD）跳过；本来就不支持 DDC 的屏写失败也没有副作用。
 pub fn wake_all() {
     let mut v: Vec<(HMONITOR, String)> = Vec::new();
     unsafe { EnumDisplayMonitors(std::ptr::null_mut(), std::ptr::null(), Some(collect), &mut v as *mut _ as LPARAM); }
     for (_, dev) in v {
-        if ddc_power(&dev).is_some_and(|p| p != 1) { let _ = set_ddc_power(&dev, 1); }
+        match blankrun_core::ddc::wake_write(ddc_power(&dev), || blankrun_core::monitors::looks_virtual(&adapter_string(&dev))) {
+            blankrun_core::ddc::WakeWrite::Retry => { let _ = set_ddc_power(&dev, 1); }
+            blankrun_core::ddc::WakeWrite::Once => {
+                let ok = with_physical(&dev, |h| unsafe { (SetVCPFeature(h, 0xD6, 1) != 0).then_some(()) }).is_some();
+                crate::nblog!("wake_all: {dev} D6 unreadable, single D6=1 write {}", if ok { "accepted" } else { "failed" });
+            }
+            blankrun_core::ddc::WakeWrite::Skip => {}
+        }
     }
 }
