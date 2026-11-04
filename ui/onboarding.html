@@ -3,38 +3,88 @@
 <script src="theme.js"></script><link rel="stylesheet" href="nb.css"><link rel="stylesheet" href="onboarding.css">
 </head>
 <body>
+<!-- 首次使用引导：欢迎 → 权限 → 显示器 → 唤醒 → 试一下 → 完成。只有用户点「关屏 5 秒试试」才会息屏 -->
 <div class="window">
   <div class="content">
-    <div class="mark" aria-hidden="true"></div>
-    <h1 data-i18n="ob.welcome"></h1>
-    <p class="lead" data-i18n="ob.welcome_lead"></p>
+    <!-- 1 欢迎 -->
+    <div class="page" data-step="welcome">
+      <div class="mark" aria-hidden="true"></div>
+      <h1 data-i18n="ob.welcome"></h1>
+      <p class="lead"><b class="key-line" data-i18n="ob.s1_key"></b> <span data-i18n="ob.welcome_lead"></span></p>
+      <dl class="tips">
+        <div><dt data-i18n="ob.t_blank"></dt><dd><span data-i18n="ob.t_blank_a"></span><span class="keys" id="blankKeys"></span></dd></div>
+        <div><dt data-i18n="ob.t_sched"></dt><dd data-i18n="ob.t_sched_a"></dd></div>
+        <div><dt data-i18n="ob.t_where"></dt><dd data-i18n="ob.t_where_a"></dd></div>
+      </dl>
+    </div>
 
-    <dl class="tips">
-      <div><dt data-i18n="ob.t_blank"></dt><dd><span data-i18n="ob.t_blank_a"></span><span class="keys" id="blankKeys"></span></dd></div>
-      <div><dt data-i18n="ob.t_wake"></dt><dd><span data-i18n="ob.t_wake_a"></span><span class="keys" id="wakeKeys"></span><span data-i18n="ob.t_wake_b"></span></dd></div>
-      <div><dt data-i18n="ob.t_sched"></dt><dd data-i18n="ob.t_sched_a"></dd></div>
-      <div><dt data-i18n="ob.t_where"></dt><dd data-i18n="ob.t_where_a"></dd></div>
-    </dl>
+    <!-- 2 权限 -->
+    <div class="page" data-step="perm" hidden>
+      <h1 data-i18n="ob.perm_h"></h1>
+      <p class="lead" data-i18n="ob.perm_lead"></p>
+      <div id="permMac" hidden>
+        <div class="step">
+          <span class="n">1</span>
+          <div class="t"><b data-i18n="a.ax"></b><small data-i18n="a.ax_note"></small></div>
+          <div class="c" id="s1"></div>
+        </div>
+        <div class="step">
+          <span class="n">2</span>
+          <div class="t"><b data-i18n="a.in"></b><small data-i18n="ob.in_note"></small></div>
+          <div class="c" id="s2"></div>
+        </div>
+        <p class="note nl" id="permNote" data-i18n="ob.note"></p>
+      </div>
+      <p class="note" id="permNone" hidden data-i18n="ob.perm_none"></p>
+    </div>
 
-    <div id="perm" hidden>
-      <h2 data-i18n="ob.perm_h"></h2>
-      <p class="sub" data-i18n="ob.perm_lead"></p>
-      <div class="step">
-        <span class="n">1</span>
-        <div class="t"><b data-i18n="a.ax"></b><small data-i18n="a.ax_note"></small></div>
-        <div class="c" id="s1"></div>
+    <!-- 3 显示器 -->
+    <div class="page" data-step="displays" hidden>
+      <h1 data-i18n="ob.disp_h"></h1>
+      <p class="lead" data-i18n="ob.disp_lead"></p>
+      <div id="mons"><p class="note" data-i18n="ob.disp_none"></p></div>
+    </div>
+
+    <!-- 4 唤醒 -->
+    <div class="page" data-step="wake" hidden>
+      <h1 data-i18n="ob.wake_h"></h1>
+      <p class="lead" data-i18n="ob.wake_lead"></p>
+      <dl class="tips">
+        <div><dt data-i18n="ob.wake_method"></dt><dd><span class="select"><select id="wakeSel"></select></span><span class="hold" id="wakeHold"></span></dd></div>
+        <div><dt data-i18n="ob.blank_key"></dt><dd><span class="keys" id="blankKeys2"></span></dd></div>
+        <div><dt data-i18n="ob.em_key"></dt><dd><span class="keys" id="emKeys"></span><small class="dd-note" data-i18n="ob.em_note"></small></dd></div>
+      </dl>
+      <p class="note"><span data-i18n="ob.keys_note"></span> <button class="link" id="openWake" data-i18n="p.change"></button></p>
+    </div>
+
+    <!-- 5 试一下 -->
+    <div class="page" data-step="try" hidden>
+      <h1 data-i18n="ob.try_h"></h1>
+      <p class="lead" data-i18n="ob.try_lead"></p>
+      <div class="warn" data-i18n="ob.try_warn"></div>
+      <div class="try-row"><button class="btn primary" id="tryBtn" data-i18n="ob.try_btn"></button><span class="wait" id="tryWait" hidden><span class="dot standby"></span><span data-i18n="ob.try_running"></span></span></div>
+      <div id="tryAsk" hidden>
+        <h2 data-i18n="ob.try_q"></h2>
+        <div class="try-row"><button class="btn" id="tryYes" data-i18n="ob.try_yes"></button><button class="btn" id="tryNo" data-i18n="ob.try_no"></button></div>
+        <p class="note" id="tryAns"></p>
       </div>
-      <div class="step">
-        <span class="n">2</span>
-        <div class="t"><b data-i18n="a.in"></b><small data-i18n="ob.in_note"></small></div>
-        <div class="c" id="s2"></div>
-      </div>
-      <p class="note nl" data-i18n="ob.note"></p>
+    </div>
+
+    <!-- 6 完成 -->
+    <div class="page" data-step="done" hidden>
+      <div class="mark" aria-hidden="true"></div>
+      <h1 data-i18n="ob.done_h"></h1>
+      <p class="lead" data-i18n="ob.done_lead"></p>
+      <dl class="tips">
+        <div><dt data-i18n="ob.t_blank"></dt><dd><span class="keys" id="blankKeys3"></span></dd></div>
+        <div><dt data-i18n="ob.t_wake"></dt><dd id="wakeSum"></dd></div>
+        <div><dt data-i18n="ob.em_key"></dt><dd><span class="keys" id="emKeys2"></span></dd></div>
+      </dl>
     </div>
   </div>
   <div class="foot">
-    <button class="btn ghost skip" id="skip" hidden data-i18n="ob.skip"></button>
-    <span class="foot-r"><span class="wait" id="wait" hidden><span class="dot" id="doneDot"></span><span id="doneText"></span></span><button class="btn primary" id="done" data-i18n="ob.start"></button></span>
+    <span class="foot-l"><button class="btn ghost skip" id="back" data-i18n="ob.back"></button><span class="num faint xs" id="stepNo"></span></span>
+    <span class="foot-r"><button class="btn ghost" id="skip" hidden></button><button class="btn primary" id="next" data-i18n="ob.next"></button></span>
   </div>
 </div>
 <script src="common.js"></script>
