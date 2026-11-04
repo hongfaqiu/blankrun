@@ -1,8 +1,11 @@
 // 下载按钮：识别访问者的系统，一键直接下载对应安装包（不跳发布页）。
 // 版本号与大小先用写在页面里的值；GitHub API 可用时再刷新为最新发布（CSP connect-src 已放行 api.github.com）。
+// 本域名的更新镜像（tools/update-mirror，Cloudflare Worker）上线后，下载改走 /dl/<tag>/<文件名>；
+// 镜像没部署或出错（/update/latest.json 不是有效 JSON）时保持 GitHub 链接。
 (function () {
   var REPO = 'hongfaqiu/blankrun';
   var BASE = 'https://github.com/' + REPO + '/releases/latest/download/';
+  var MIRROR = null; // 镜像可用时为 '/dl/vX.Y.Z/'
   var FILES = { mac: 'BlankRun_universal.dmg', win: 'BlankRun_x64-setup.exe' };
   var info = { ver: '0.1.10', size: { mac: '3.8 MB', win: '1.4 MB' } }; // 发版时改这里（和页面里的 v0.1.10 / 大小）
   var root = document.documentElement;
@@ -28,7 +31,7 @@
     if (!main) return;
     var v = 'v' + info.ver;
     if (os === 'mac' || os === 'win') {
-      main.href = BASE + FILES[os];
+      main.href = (MIRROR || BASE) + FILES[os];
       main.setAttribute('download', '');
       fill(label, os === 'mac' ? '下载 Mac 版' : '下载 Windows 版', os === 'mac' ? 'Download for Mac' : 'Download for Windows');
       var ver = document.createElement('span'); ver.className = 'num ver'; ver.textContent = ' ' + v; label.appendChild(ver);
@@ -50,6 +53,10 @@
         if (os === 'linux') { fill(note, '暂时没有 Linux 版，可以在下方选择 macOS 或 Windows 版。', 'There is no Linux build yet. macOS and Windows builds are below.'); note.hidden = false; }
       }
     }
+    if (MIRROR) {
+      var fl = document.querySelectorAll('[data-file] a');
+      for (var j = 0; j < fl.length; j++) { var k = fl[j].parentNode.getAttribute('data-file'); if (FILES[k]) fl[j].href = MIRROR + FILES[k]; }
+    }
     var vs = document.querySelectorAll('[data-ver]');
     for (var i = 0; i < vs.length; i++) vs[i].textContent = v;
     ['mac', 'win'].forEach(function (k) { var s = document.querySelector('[data-size="' + k + '"]'); if (s) s.textContent = info.size[k]; });
@@ -67,6 +74,18 @@
   }
 
   render();
+  // 先探测本域名的镜像（同源请求，CSP 的 'self' 已放行）
+  if (window.fetch) {
+    fetch('/update/latest.json', { cache: 'no-store' })
+      .then(function (res) { return res.ok ? res.json() : null; })
+      .then(function (j) {
+        if (!j || typeof j.version !== 'string' || !/^\d+\.\d+\.\d+$/.test(j.version)) return;
+        MIRROR = '/dl/v' + j.version + '/';
+        info.ver = j.version;
+        render();
+      })
+      .catch(function () {});
+  }
   if (os === 'win' && uad && uad.getHighEntropyValues) {
     uad.getHighEntropyValues(['architecture', 'bitness']).then(function (h) {
       if (h && h.architecture === 'arm') { arch = 'arm'; render(); }
