@@ -320,7 +320,7 @@ fn display_info(id: u32) -> DisplayInfo {
                 CFRelease(k);
                 if !names.is_null() && CFGetTypeID(names) == CFDictionaryGetTypeID() {
                     let en = cfstr("en_US");
-                    let mut v = CFDictionaryGetValue(names, en as *const c_void);
+                    let mut v = CFDictionaryGetValue(names, en);
                     CFRelease(en);
                     if v.is_null() {
                         let n = CFDictionaryGetCount(names);

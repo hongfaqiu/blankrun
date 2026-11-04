@@ -43,6 +43,9 @@ pub struct Plan {
     pub per: Vec<Method>,
     /// 用系统级关屏（Windows SC_MONITORPOWER / Mac pmset displaysleepnow）一次关掉全部物理屏
     pub global_off: bool,
+    /// 和 `per` 一一对应：这块屏的 `Overlay` 是「假息屏」——没有任何真正断电的办法（不是用户自己选的遮罩，
+    /// 也不是系统级关屏之上的那层遮罩）。这种屏要先征得同意（`overlay_choice`）才盖遮罩
+    pub fallback: Vec<bool>,
 }
 
 /// 名字或驱动描述像不像虚拟显示器
@@ -218,14 +221,54 @@ pub fn plan(d: &DisplayConfig, monitors: &[Monitor], global_ok: bool, remote: bo
         DisplayMethod::Overlay => false,
         DisplayMethod::Auto => global_ok,
     };
-    let per = monitors.iter().map(|m| {
+    let per: Vec<Method> = monitors.iter().map(|m| {
         if !targeted(m) { Method::Skip }
         else if global_off || d.method == DisplayMethod::Overlay || m.power.is_none() || pref(d, m) == "overlay" || unresponsive(d, m) { Method::Overlay }
-        // 断不开（它是唯一的显示器）：亮度不动，只盖遮罩
+        // 断不开（它是唯一的显示器）：亮度不动，只能遮罩
         else if m.power == Some("disconnect") && !disconnect_ok(m, monitors) { Method::Overlay }
         else { Method::Off }
     }).collect();
-    Plan { per, global_off }
+    // 用户自己选的遮罩（整体「仅遮罩」或这台「仅遮罩」）、系统级关屏上面那层遮罩都不算假息屏
+    let fallback = monitors.iter().zip(&per)
+        .map(|(m, how)| *how == Method::Overlay && !global_off && d.method != DisplayMethod::Overlay && pref(d, m) != "overlay")
+        .collect();
+    Plan { per, global_off, fallback }
+}
+
+/// 用户对「只能遮罩」的这块屏记住的选择：Some(true) 用遮罩，Some(false) 跳过，None 没选过（要先问）。
+/// 按显示名找，找不到再按 id
+pub fn overlay_choice(d: &DisplayConfig, m: &Monitor) -> Option<bool> {
+    d.overlay_ok.get(&m.label).or_else(|| d.overlay_ok.get(&m.id)).copied()
+}
+
+/// 把对「只能遮罩」的屏的选择落到计划上：选了跳过的改成 `Skip`，选了遮罩的保留；
+/// 返回还没有任何选择的屏（下标）——交互触发时先弹窗问，无人值守（定时）时跳过并提示。
+/// `choice`：先看本次弹窗里的选择，再看配置里记住的
+pub fn apply_overlay_choices(plan: &mut Plan, monitors: &[Monitor], choice: impl Fn(&Monitor) -> Option<bool>) -> Vec<usize> {
+    let mut pending = vec![];
+    for (i, m) in monitors.iter().enumerate() {
+        if !plan.fallback.get(i).copied().unwrap_or(false) { continue; }
+        match choice(m) {
+            Some(true) => {}
+            Some(false) => { plan.per[i] = Method::Skip; plan.fallback[i] = false; }
+            None => pending.push(i),
+        }
+    }
+    pending
+}
+
+/// 设置页 / 面板上「这块屏会怎么关」：
+/// "disconnect"（断开）| "ddc"（DDC 关闭）| "backlight"（只关背光，用户明确选的）| "power"（整机关屏）|
+/// "overlay"（仅遮罩：用户自己选的，或同意过的假息屏）| "ask"（只能遮罩、还没选：会先问）|
+/// "skipped"（只能遮罩、用户选了跳过）| "skip"（不关）。传入**还没套用选择**的 `plan()` 结果
+pub fn how(plan: &Plan, i: usize, m: &Monitor, d: &DisplayConfig) -> &'static str {
+    match plan.per[i] {
+        Method::Off => m.power.unwrap_or("overlay"),
+        Method::Overlay if plan.global_off => "power",
+        Method::Overlay if plan.fallback[i] => match overlay_choice(d, m) { None => "ask", Some(false) => "skipped", Some(true) => "overlay" },
+        Method::Overlay => "overlay",
+        Method::Skip => "skip",
+    }
 }
 
 #[cfg(test)]
@@ -239,6 +282,42 @@ mod tests {
         DisplayConfig { mode: mode.into(), targets: targets.iter().map(|s| s.to_string()).collect(), method, ..Default::default() }
     }
     use Method::*;
+
+    #[test]
+    fn overlay_is_only_a_consented_last_resort() {
+        // 全部关、系统级关屏可用：没有 DDC 的屏也随整机关屏真正断电，不是假息屏
+        let ms = [mon("A", false, Some("ddc")), mon("B", false, None)];
+        let p = plan(&cfg("all", &[], DisplayMethod::Auto), &ms, true, false);
+        assert_eq!(p.fallback, vec![false, false]);
+        // Modern Standby（不能整机关屏）：A 走 DDC，B 没法断电 → 假息屏，要先问
+        let mut p = plan(&cfg("all", &[], DisplayMethod::Auto), &ms, false, false);
+        assert_eq!((p.per.clone(), p.fallback.clone()), (vec![Off, Overlay], vec![false, true]));
+        let d = cfg("all", &[], DisplayMethod::Auto);
+        assert_eq!(how(&p, 1, &ms[1], &d), "ask");
+        assert_eq!(apply_overlay_choices(&mut p.clone(), &ms, |_| None), vec![1]);
+        // 选了跳过：这块屏不动，别的照常
+        assert!(apply_overlay_choices(&mut p, &ms, |m| (m.id == "B").then_some(false)).is_empty());
+        assert_eq!(p.per, vec![Off, Skip]);
+        // 记住了「用遮罩」
+        let mut d2 = d.clone();
+        d2.overlay_ok.insert("B".into(), true);
+        let mut p = plan(&d2, &ms, false, false);
+        assert!(apply_overlay_choices(&mut p, &ms, |m| overlay_choice(&d2, m)).is_empty());
+        assert_eq!(p.per, vec![Off, Overlay]);
+        assert_eq!(how(&p, 1, &ms[1], &d2), "overlay");
+        d2.overlay_ok.insert("B".into(), false);
+        assert_eq!(how(&plan(&d2, &ms, false, false), 1, &ms[1], &d2), "skipped");
+        // 用户自己选的遮罩（整体或单台）不用问
+        let p = plan(&cfg("all", &[], DisplayMethod::Overlay), &ms, false, false);
+        assert_eq!(p.fallback, vec![false, false]);
+        let mut d3 = cfg("all", &[], DisplayMethod::Auto);
+        d3.prefs.insert("B".into(), "overlay".into());
+        assert_eq!(plan(&d3, &ms, false, false).fallback, vec![false, false]);
+        // Mac：内建屏是唯一的显示器 → 断不开 → 假息屏
+        let b = mon("Built-in", false, Some("disconnect"));
+        let p = plan(&cfg("selected", &["Built-in"], DisplayMethod::Auto), std::slice::from_ref(&b), true, true);
+        assert_eq!((p.per.clone(), p.fallback.clone()), (vec![Overlay], vec![true]));
+    }
 
     #[test]
     fn virtual_names() {

@@ -34,9 +34,25 @@ function renderStatus() {
     $("#updGo").disabled = ph !== "available" || s.state !== "idle";
     $("#updGo").title = s.state !== "idle" ? t("a.upd_blank") : "";
   }
-  const off = [t("p.off_displays", { n: s.displays })]; if (s.keyboard) off.push(t("p.off_kbd"));
+  // 「会关掉哪些屏」：引擎按当前选择算好的（不含虚拟屏、被跳过的屏）；只有一块时直接写名字
+  const tg = s.targets || [], n = tg.length;
+  const nameOf = (d) => (d.builtin ? t("p.builtin") : t("p.name", { name: d.label }));
+  const tidy = (x) => x.replace(/^\s+|\s+(?=[，。、,])/g, "").replace(/\s{2,}/g, " ").trim();
+  const one = n === 1 ? nameOf(tg[0]) : null;
+  const off = [one ? tidy(one.charAt(0).toUpperCase() + one.slice(1)) : t("p.off_displays", { n })]; if (s.keyboard) off.push(t("p.off_kbd"));
   $("#offText").textContent = off.join(" · ");
-  $("#blankSub").textContent = t((s.displays > 1 ? "p.sub_n" : "p.sub") + (s.keyboard ? "_kbd" : ""), { n: s.displays });
+  const blank = s.state === "blank";
+  // 息屏中（比如外接屏还亮着、或只关了部分屏）：大按钮变成「点亮屏幕」
+  $("#blankBtn").classList.toggle("waking", blank);
+  $("#blankLabel").textContent = t(blank ? "p.wake_now" : "p.blank_now");
+  $("#blankSub").textContent = blank ? t(s.trial ? "p.trial_sub" : "p.wake_sub") :
+    n === 0 && !s.keyboard ? t("p.sub_none") :
+    n === 1 ? tidy(t("p.sub_one" + (s.keyboard ? "_kbd" : ""), { name: one })) :
+    t((n > 1 ? "p.sub_n" : "p.sub") + (s.keyboard ? "_kbd" : ""), { n });
+  // 上次因为「只能遮罩」被跳过的屏：告诉用户一声
+  const sk = s.skipped || [];
+  $("#skipRow").hidden = !sk.length;
+  if (sk.length) $("#skipText").textContent = t("p.skipped", { names: sk.join(LANG.startsWith("zh") ? "、" : ", ") });
 
   const sc = s.schedule;
   // 开关表示「今晚会不会自动息屏」：跳过今晚时显示为关，再点一下就恢复
@@ -74,10 +90,13 @@ $("#delay").addEventListener("click", (e) => {
   delay = +b.dataset.s; localStorage.setItem("nb.delay", delay); renderDelay();
 });
 $("#blankBtn").addEventListener("click", async () => {
+  if (status && status.state === "blank") { invoke("wake_now"); return; }
   await invoke("blank_now", { delayS: delay });
   if (delay === 0) invoke("hide_window");
 });
 $("#cancelBtn").addEventListener("click", () => invoke("cancel"));
+$("#skipOk").addEventListener("click", () => invoke("dismiss_skipped"));
+$("#skipSet").addEventListener("click", () => { invoke("dismiss_skipped"); invoke("open_settings", { section: "blank" }); });
 $("#planToggle").addEventListener("click", async () => {
   cfg = await invoke("get_config");
   if (cfg.schedule.enabled && status && status.schedule.skipped) await invoke("unskip");
@@ -99,7 +118,7 @@ document.addEventListener("keydown", (e) => {
 /** 托盘菜单和窗口标题跟着界面语言走（弹出面板在启动时就加载了，由它来同步） */
 function syncNative() {
   const text = {};
-  ["tray.blank", "tray.settings", "tray.quit", "tray.tooltip", "title.popover", "title.settings", "title.onboarding"].forEach((k) => (text[k] = t(k)));
+  ["tray.blank", "tray.settings", "tray.quit", "tray.tooltip", "title.popover", "title.settings", "title.onboarding", "title.confirm"].forEach((k) => (text[k] = t(k)));
   invoke("apply_locale", { text });
 }
 
@@ -111,7 +130,7 @@ function syncNative() {
   renderCfg(); renderStatus();
   listen("nb://status", (s) => { status = s; renderStatus(); });
   listen("nb://config", async () => { cfg = await invoke("get_config"); renderCfg(); renderStatus(); });
-  listen("nb://shown", async () => { status = await invoke("get_status"); renderStatus(); });
+  listen("nb://shown", async () => { invoke("refresh_targets"); status = await invoke("get_status"); renderStatus(); });
 })();
 
 $("#updGo").addEventListener("click", () => invoke("install_update").catch(() => {}));

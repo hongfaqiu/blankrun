@@ -33,8 +33,20 @@ pub enum Msg {
     Postpone { min: u32 },
     /// 「立即息屏」全局快捷键
     Hotkey,
+    /// 确认窗里对「只能遮罩」的屏的回答：(id, 用遮罩?, 记住?)；go = false 是取消这次息屏
+    OverlayAnswer { choices: Vec<(String, bool, bool)>, go: bool },
+    /// 面板打开：重算「会关掉哪些屏」
+    RefreshTargets,
+    /// 面板上「有屏被跳过」的提示点了知道了
+    DismissSkipped,
+    /// 引导里的「试一试」：息屏 `secs` 秒后自动恢复
+    Trial { secs: u32 },
     Quit,
 }
+
+/// 面板上显示的「会关掉的屏」
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct Target { pub label: String, pub builtin: bool }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Session { pub start_unix: u64, pub end_unix: Option<u64>, pub lit: u32, pub touches: u32, pub by_schedule: bool, pub trigger: &'static str, pub power_off: bool }
@@ -74,6 +86,12 @@ pub struct Status {
     pub update: crate::update::UpdState,
     /// 现在是否在阻止系统睡眠
     pub keep_awake: bool,
+    /// 会被关掉的屏（按选择、不含虚拟屏和被跳过的）；息屏中是这次实际关掉的
+    pub targets: Vec<Target>,
+    /// 只能遮罩、又没有许可而被跳过的屏（显示名），面板上提示一次
+    pub skipped: Vec<String>,
+    /// 正在「试一试」（引导里的 5 秒试关）
+    pub trial: bool,
 }
 
 pub struct Engine {
@@ -151,6 +169,19 @@ pub struct Engine {
     /// 本次息屏是「键鼠照常用」（Mac Mini 模式）：键鼠放行、不算误触，只认唤醒键 / 紧急键 / 菜单 / 计划结束
     keep_input: bool,
     rdp_logged: bool,
+    /// 这次确认窗里对「只能遮罩」的屏的选择（id → 用遮罩?）；息屏结束 / 取消后清空
+    overlay_once: std::collections::HashMap<String, bool>,
+    /// 等确认窗回答的那次息屏 (delay_s, trigger)
+    pending_arm: Option<(u32, &'static str)>,
+    /// 确认窗要问的屏
+    pub overlay_ask: Vec<serde_json::Value>,
+    /// 因为没有遮罩许可而跳过的屏（显示名）
+    skipped: Vec<String>,
+    targets: Vec<Target>,
+    targets_dirty: bool,
+    /// 「试一试」：到点自动恢复
+    trial_until: Option<Instant>,
+    trial_secs: u32,
 }
 
 fn unix_now() -> u64 { SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0) }
@@ -159,6 +190,7 @@ impl Engine {
     pub fn new(cfg: Config, cfg_path: PathBuf, mut plat: Native) -> Self {
         plat.configure(&cfg);
         crate::update::set_enabled(cfg.general.check_updates);
+        crate::update::set_source(&cfg.general.update_source);
         let kbd_available = plat.capabilities().iter().any(|c| c.id == "kbd" && c.status == "ok");
         let mtime = std::fs::metadata(&cfg_path).and_then(|m| m.modified()).ok();
         let mut e = Self {
@@ -170,6 +202,7 @@ impl Engine {
             displays: 1, last_mon_check: None, keep_display: false, last_asleep: None, settle_until: None,
             trigger: "manual", history: History::default(), last_heartbeat: None,
             overlay_idx: vec![], mon_off_plan: vec![], mon_off: vec![], last_mon_reassert: None, mon_relit: Default::default(), mon_notes: Default::default(), came_back: Default::default(), gave_up: Default::default(), mon_labels: Default::default(), mon_idx: Default::default(), uncovered: Default::default(), mon_power: Default::default(), disconnecting: Default::default(), blank_ids: Default::default(), keep_input: false, rdp_logged: false,
+            overlay_once: Default::default(), pending_arm: None, overlay_ask: vec![], skipped: vec![], targets: vec![], targets_dirty: true, trial_until: None, trial_secs: 5,
         };
         // 息屏记录；上次息屏中途崩溃/强退的那一条记为 crash
         e.history = History::from_json(&std::fs::read_to_string(e.history_path()).unwrap_or_default());
@@ -228,6 +261,8 @@ impl Engine {
         self.plat.configure(&cfg);
         self.policy.configure(&cfg);
         crate::update::set_enabled(cfg.general.check_updates);
+        crate::update::set_source(&cfg.general.update_source);
+        if cfg.display != self.cfg.display || cfg.wake.allow_remote != self.cfg.wake.allow_remote { self.targets_dirty = true; }
         self.cfg = cfg;
         if login_changed { self.sync_login(); }
         if awake_changed && self.awake_wanted {
@@ -317,6 +352,22 @@ impl Engine {
             if !self.rdp_logged { self.rdp_logged = true; nblog!("remote desktop session: not blanking ({trigger})"); }
             return;
         }
+        // 有屏只能盖遮罩（没法真正断电）、又没有选择过：手动 / 快捷键触发时先问，定时触发时在 do_blank 里跳过它
+        if self.sm.state == State::Idle && trigger != "schedule" {
+            let list = self.monitor_vec(app);
+            let (_, notes, pending, _) = self.full_plan(&list);
+            if !pending.is_empty() {
+                self.overlay_ask = pending.iter().map(|&i| {
+                    let m = &list[i];
+                    serde_json::json!({ "id": m.id, "label": m.label, "builtin": is_builtin(m), "reason": self.ask_reason(m, &notes) })
+                }).collect();
+                let names: Vec<_> = pending.iter().map(|&i| list[i].label.as_str()).collect();
+                nblog!("blank ({trigger}): {names:?} can only be covered by an overlay and have no saved choice; asking first");
+                self.pending_arm = Some((delay_s, trigger));
+                show_confirm(app);
+                return;
+            }
+        }
         match self.sm.state {
             State::Idle => self.apply(app, Event::Arm),
             State::Armed => {}
@@ -333,8 +384,25 @@ impl Engine {
         // 每块屏怎么关：系统级断电 / 单独断电（DDC/CI、内建屏背光）/ 遮罩 / 不管（虚拟屏、没选中的）
         let mons = self.monitor_list(app);
         let list: Vec<_> = mons.iter().map(|(m, _, _)| m.clone()).collect();
-        let mut plan = monitors::plan(&self.cfg.display, &list, !self.plat.power_off_unsafe(), self.cfg.wake.allow_remote);
-        let notes = self.plan_notes(&list, &mut plan);
+        let (mut plan, notes, pending, had_any) = self.full_plan(&list);
+        // 只能遮罩又没有选择（定时触发；或确认后显示器变了）：这块屏不动，记下来在面板上提示
+        for &i in &pending {
+            plan.per[i] = Method::Skip;
+            plan.fallback[i] = false;
+            let m = &list[i];
+            nblog!("monitor {} ({}): can't be powered off ({}), only an overlay would be possible and there is no saved choice: left on ({trigger})", m.id, m.label, self.ask_reason(m, &notes));
+            if !self.skipped.contains(&m.label) { self.skipped.push(m.label.clone()); }
+        }
+        // 本来有屏要关，按选择全都跳过了：这次不息屏
+        if had_any && plan.per.iter().all(|h| *h == Method::Skip) {
+            nblog!("blank ({trigger}): every target was skipped (overlay-only, no consent); not blanking");
+            self.countdown = None;
+            self.overlay_once.clear();
+            self.trial_until = None;
+            if self.sm.state == State::Armed { self.apply(app, Event::Cancel); }
+            return;
+        }
+        self.targets = list.iter().zip(&plan.per).filter(|(_, h)| **h != Method::Skip).map(|(m, _)| Target { label: m.label.clone(), builtin: is_builtin(m) }).collect();
         // 「键鼠照常用」：只关所选、还有屏亮着。绝不用系统级关屏（会把亮着的外接屏也关掉）
         self.keep_input = monitors::keep_input_active(&self.cfg.display, &list);
         self.power_off = plan.global_off && !self.keep_input;
@@ -372,6 +440,8 @@ impl Engine {
         let _ = std::fs::write(self.marker_path(), self.plat.persist().unwrap_or_default());
         let now = unix_now();
         self.session = Some(Session { start_unix: now, end_unix: None, lit: 0, touches: 0, by_schedule, trigger, power_off: self.power_off });
+        // 引导里的「试一试」：到点自动点亮（唤醒键照样能提前结束）
+        if trigger == "trial" { self.trial_until = Some(Instant::now() + Duration::from_secs(self.trial_secs as u64)); }
         self.history.begin(now, trigger);
         self.last_heartbeat = Some(Instant::now());
         self.save_history();
@@ -419,9 +489,9 @@ impl Engine {
     fn plan_notes(&self, list: &[monitors::Monitor], plan: &mut monitors::Plan) -> std::collections::HashMap<String, &'static str> {
         let sig = Self::mon_sig(list);
         let mut notes = std::collections::HashMap::new();
-        for (m, how) in list.iter().zip(plan.per.iter_mut()) {
+        for (i, (m, how)) in list.iter().zip(plan.per.iter_mut()).enumerate() {
             let gave_up = m.power == Some("disconnect") && self.gave_up.get(&m.id) == Some(&sig);
-            if *how == Method::Off && gave_up { *how = Method::Overlay; }
+            if *how == Method::Off && gave_up { *how = Method::Overlay; plan.fallback[i] = true; }
             if *how == Method::Skip { continue; }
             if let Some(code) = if gave_up { Some("came_back") } else { monitors::notice(m, list) } { notes.insert(m.id.clone(), code); }
         }
@@ -436,12 +506,62 @@ impl Engine {
         let mut notes = self.plan_notes(&list, &mut plan);
         // 这次息屏中途才发现的原因（断开被系统拒绝等）
         if self.sm.state == State::ScreenOff { for (id, code) in &self.mon_notes { notes.insert(id.clone(), code); } }
-        list.iter().zip(&plan.per).map(|(m, how)| {
-            let how = match how {
-                Method::Off => m.power.unwrap_or("overlay"), Method::Overlay if plan.global_off => "power", Method::Overlay => "overlay", Method::Skip => "skip" };
+        list.iter().enumerate().map(|(i, m)| {
+            let how = monitors::how(&plan, i, m, &self.cfg.display);
             serde_json::json!({ "id": m.id, "label": m.label, "width": m.width, "height": m.height, "primary": m.primary, "virtual": m.virtual_, "power": m.power, "how": how, "note": notes.get(&m.id),
+                "builtin": is_builtin(m), "fallback": plan.fallback[i], "reason": plan.fallback[i].then(|| self.ask_reason(m, &notes)),
+                "overlay_ok": monitors::overlay_choice(&self.cfg.display, m),
                 "pref": monitors::pref(&self.cfg.display, m), "unresponsive": monitors::unresponsive(&self.cfg.display, m) })
         }).collect()
+    }
+
+    fn monitor_vec(&mut self, app: &AppHandle) -> Vec<monitors::Monitor> { self.monitor_list(app).into_iter().map(|(m, _, _)| m).collect() }
+
+    /// 这次息屏的完整计划：`plan()` + 放弃断开的内建屏 + 对「只能遮罩」的屏的选择（先看确认窗，再看记住的）。
+    /// 返回 (计划, 说明码, 还没有选择的屏, 套用选择前有没有屏要关)
+    fn full_plan(&self, list: &[monitors::Monitor]) -> (monitors::Plan, std::collections::HashMap<String, &'static str>, Vec<usize>, bool) {
+        let mut plan = monitors::plan(&self.cfg.display, list, !self.plat.power_off_unsafe(), self.cfg.wake.allow_remote);
+        let notes = self.plan_notes(list, &mut plan);
+        let had_any = plan.per.iter().any(|h| *h != Method::Skip);
+        let pending = monitors::apply_overlay_choices(&mut plan, list, |m| self.overlay_once.get(&m.id).copied().or_else(|| monitors::overlay_choice(&self.cfg.display, m)));
+        (plan, notes, pending, had_any)
+    }
+
+    /// 这块屏为什么只能遮罩（确认窗 / 设置页 / 日志用的原因码）
+    fn ask_reason(&self, m: &monitors::Monitor, notes: &std::collections::HashMap<String, &'static str>) -> &'static str {
+        if let Some(code) = notes.get(&m.id) { return code; }
+        let d = &self.cfg.display;
+        if monitors::unresponsive(d, m) { "unresponsive" }
+        else if self.cfg.wake.allow_remote { "remote" }
+        else if d.keep_input && d.mode == "selected" { "keep_input" }
+        else if d.mode == "selected" { "selected" }
+        else if self.plat.power_off_unsafe() { "standby" }
+        else { "no_power" }
+    }
+
+    /// 息屏中途发现某块屏没法真正断电（断开被拒、被系统反复接回）：有遮罩许可才盖遮罩，否则让它亮着并提示
+    fn fallback_overlay(&mut self, app: &AppHandle, id: &str) {
+        let label = self.mon_labels.get(id).cloned().unwrap_or_else(|| id.to_string());
+        let ok = self.overlay_once.get(id).copied()
+            .or_else(|| self.cfg.display.overlay_ok.get(&label).or_else(|| self.cfg.display.overlay_ok.get(id)).copied());
+        if ok == Some(true) {
+            nblog!("monitor {id} ({label}): covering it with an overlay (allowed by the user)");
+            if let Some(&i) = self.mon_idx.get(id) {
+                if !self.overlay_idx.contains(&i) { self.overlay_idx.push(i); }
+                if self.overlay_on { show_overlays(app, &[i], self.keep_input); }
+            }
+        } else {
+            nblog!("monitor {id} ({label}): no consent for an overlay ({ok:?}); leaving it on");
+            // 已经盖着的遮罩（比如 DDC 关屏前先铺的那层）也拿掉
+            if let Some(&i) = self.mon_idx.get(id) {
+                self.overlay_idx.retain(|&x| x != i);
+                if let Some(w) = app.get_webview_window(&format!("overlay-{i}")) { let _ = w.destroy(); }
+            }
+            self.blank_ids.remove(id);
+            self.targets.retain(|t| t.label != label);
+            if !self.skipped.contains(&label) { self.skipped.push(label); }
+            self.refence(app);
+        }
     }
 
     /// 记住这台屏不响应 DDC/CI 断电，写进配置
@@ -463,11 +583,12 @@ impl Engine {
                 Ok(()) => { nblog!("monitor {id}: power off ok"); if !self.mon_off.iter().any(|(i, _, _)| *i == id) { self.mon_off.push((id, x, y)); } }
                 // 断开失败（亮度原样没动，绝不自动退到背光 0）：这块屏没盖遮罩，现在补上。没有断开过，编号还是息屏时的
                 Err(e) if self.disconnecting.remove(&id) => {
-                    nblog!("monitor {id}: disconnect failed: {e} (brightness untouched, adding overlay)");
+                    nblog!("monitor {id}: disconnect failed: {e} (brightness untouched)");
                     self.mon_notes.insert(id.clone(), "disconnect_failed");
-                    if self.overlay_on { if let Some(&i) = self.mon_idx.get(&id) { self.overlay_idx.push(i); show_overlays(app, &[i], self.keep_input); } }
+                    self.fallback_overlay(app, &id);
                 }
-                Err(e) => nblog!("monitor {id}: power off failed: {e} (overlay stays)"),
+                // DDC 关屏指令失败：这块屏没真关，只剩遮罩——用户允许过才留着遮罩，否则让它亮着并提示
+                Err(e) => { nblog!("monitor {id}: power off failed: {e}"); self.fallback_overlay(app, &id); }
             }
         }
         self.refence(app);
@@ -483,7 +604,8 @@ impl Engine {
     }
 
     fn cancel(&mut self, app: &AppHandle) {
-        if self.sm.state == State::Armed { self.countdown = None; self.apply(app, Event::Cancel); }
+        if self.pending_arm.take().is_some() { self.overlay_ask.clear(); hide_confirm(app); }
+        if self.sm.state == State::Armed { self.countdown = None; self.overlay_once.clear(); self.trial_until = None; self.apply(app, Event::Cancel); }
     }
 
     fn wake(&mut self, app: &AppHandle, why: &str) {
@@ -493,12 +615,16 @@ impl Engine {
             "schedule ended" => "schedule",
             "quit" => "quit",
             "requested" => "manual",
+            "trial ended" => "trial",
             _ => "no_hook",
         };
         self.policy.by_emergency = false;
         if self.sm.state == State::Armed { return self.cancel(app); }
         if self.sm.state != State::ScreenOff { return; }
         nblog!("wake: {why}");
+        self.overlay_once.clear();
+        self.trial_until = None;
+        self.targets_dirty = true;
         self.apply(app, Event::WakeRequested);
         self.keep_input = false;
         self.policy.set_keep_input(false);
@@ -508,7 +634,7 @@ impl Engine {
         if let Some(mut s) = self.session.take() {
             // 时段内被手动唤醒：本时段不再自动息屏
             let (wd, min) = platform::local_time();
-            if schedule::in_window(&self.cfg.schedule, wd, min) { self.skip(); }
+            if schedule::in_window(&self.cfg.schedule, wd, min) && s.trigger != "trial" { self.skip(); }
             s.end_unix = Some(unix_now());
             self.history.finish(unix_now(), ended, s.touches, s.lit);
             self.save_history();
@@ -565,12 +691,46 @@ impl Engine {
             }
             Msg::Hotkey if matches!(self.sm.state, State::Idle | State::Armed) => { nblog!("blank-now hotkey"); self.arm(app, 0, "hotkey") }
             Msg::Hotkey => {}
+            Msg::OverlayAnswer { choices, go } => self.overlay_answer(app, choices, go),
+            Msg::RefreshTargets => { if self.sm.state == State::Idle { self.targets_dirty = true; } }
+            Msg::DismissSkipped => self.skipped.clear(),
+            Msg::Trial { secs } if self.sm.state == State::Idle => {
+                nblog!("trial: blanking for {secs}s (started from the welcome guide)");
+                self.trial_secs = secs.clamp(1, 30);
+                self.arm(app, 0, "trial");
+            }
+            Msg::Trial { .. } => {}
             Msg::Quit => {
                 nblog!("quit");
                 self.shutdown(app);
                 app.exit(0);
             }
         }
+    }
+
+    fn overlay_answer(&mut self, app: &AppHandle, choices: Vec<(String, bool, bool)>, go: bool) {
+        let pend = self.pending_arm.take();
+        let asked = std::mem::take(&mut self.overlay_ask);
+        hide_confirm(app);
+        if !go { nblog!("overlay question: cancelled, not blanking"); return; }
+        let mut cfg = self.cfg.clone();
+        for (id, use_overlay, remember) in choices {
+            let label = asked.iter().find(|a| a["id"] == id.as_str()).and_then(|a| a["label"].as_str()).unwrap_or(&id).to_string();
+            nblog!("overlay question: {id} ({label}) -> {} (remember={remember})", if use_overlay { "overlay" } else { "skip" });
+            if remember { cfg.display.overlay_ok.insert(label, use_overlay); }
+            self.overlay_once.insert(id, use_overlay);
+        }
+        if cfg != self.cfg {
+            match self.save_config(cfg) { Ok(()) => { let _ = app.emit("nb://config", ()); } Err(e) => nblog!("saving the overlay choice failed: {e}") }
+        }
+        if let Some((d, t)) = pend { self.arm(app, d, t); }
+    }
+
+    /// 重新算「会关掉哪些屏」（面板标题用）：套用记住的选择，还没选的算进去（息屏前会问）
+    fn refresh_targets(&mut self, app: &AppHandle) {
+        let list = self.monitor_vec(app);
+        let (plan, _, _, _) = self.full_plan(&list);
+        self.targets = list.iter().zip(&plan.per).filter(|(_, h)| **h != Method::Skip).map(|(m, _)| Target { label: m.label.clone(), builtin: is_builtin(m) }).collect();
     }
 
     /// 退出前恢复一切
@@ -588,6 +748,7 @@ impl Engine {
             if let Some(s) = self.session.as_ref() { let (t, l) = (s.touches, s.lit); self.history.touch(unix_now(), t, l); self.save_history(); }
         }
         let now = Instant::now();
+        if self.trial_until.is_some_and(|t| now >= t) { self.trial_until = None; self.wake(app, "trial ended"); }
         if let Some((at, _)) = self.countdown {
             if now >= at { self.countdown = None; self.do_blank(app); }
         }
@@ -615,7 +776,7 @@ impl Engine {
                     let idx = self.mon_idx.get(&id).copied();
                     // 断开的内建屏被系统接了回来（休眠唤醒、开合盖）：再断开一次，不计入「不响应断电」。
                     // 显示器编号这时已经变过，不碰遮罩。
-                    // 10 秒内被接回来第二次：macOS 不让断开（比如只剩虚拟屏），不再对抗——内建屏保持原样、亮度不动，盖上遮罩并提示
+                    // 10 秒内被接回来第二次：macOS 不让断开，不再对抗——内建屏保持原样、亮度不动；用户允许过才盖遮罩，否则让它亮着并提示
                     if self.disconnecting.contains(&id) {
                         if lit == Some(true) {
                             if self.came_back.entry(id.clone()).or_default().feed(platform::now_ms()) {
@@ -628,17 +789,17 @@ impl Engine {
                                 self.mon_notes.insert(id.clone(), "came_back");
                                 let sig = Self::mon_sig(&self.monitor_list(app).into_iter().map(|(m, _, _)| m).collect::<Vec<_>>());
                                 self.gave_up.insert(id.clone(), sig);
-                                if let Some(i) = idx { if !self.overlay_idx.contains(&i) { self.overlay_idx.push(i); } show_overlays(app, &[i], self.keep_input); }
+                                self.fallback_overlay(app, &id);
                                 let _ = app.emit("nb://config", ());
                             } else {
                                 nblog!("monitor {id}: display came back, disconnecting it again");
                                 if let Err(e) = self.plat.monitor_power(&id, x, y, true) {
                                     // 亮度没动；屏又回来了，编号也就回到了息屏时的样子，补上遮罩
-                                    nblog!("monitor {id}: disconnect again failed: {e} (brightness untouched, adding overlay)");
+                                    nblog!("monitor {id}: disconnect again failed: {e} (brightness untouched)");
                                     self.disconnecting.remove(&id);
                                     self.mon_off.retain(|(i, _, _)| *i != id);
                                     self.mon_notes.insert(id.clone(), "disconnect_failed");
-                                    if let Some(i) = idx { show_overlays(app, &[i], self.keep_input); }
+                                    self.fallback_overlay(app, &id);
                                 }
                             }
                         }
@@ -667,6 +828,8 @@ impl Engine {
                         if *n >= 2 {
                             // 接受了 D6=4 却没真关（或有信号就自己醒）：记下来，以后只用遮罩，也不再发断电指令（免得闪）
                             self.mark_unresponsive(&id);
+                            // 这次也就只剩遮罩了：用户允许过才留着，否则拿掉遮罩、让它亮着并提示
+                            self.fallback_overlay(app, &id);
                             let _ = app.emit("nb://config", ());
                             continue;
                         }
@@ -773,7 +936,14 @@ impl Engine {
         if std::fs::remove_file(&req).is_ok() { nblog!("second launch: showing settings"); crate::show_settings(app, None); }
         if self.last_mon_check.is_none_or(|t| now - t >= Duration::from_secs(5)) {
             self.last_mon_check = Some(now);
-            self.displays = app.available_monitors().map(|m| m.len().max(1)).unwrap_or(1);
+            let n = app.available_monitors().map(|m| m.len().max(1)).unwrap_or(1);
+            if n != self.displays { self.targets_dirty = true; }
+            self.displays = n;
+        }
+        // 显示器 / 设置变了、面板打开时重算（息屏中保持这次实际关掉的那些）
+        if self.targets_dirty && self.sm.state == State::Idle {
+            self.targets_dirty = false;
+            self.refresh_targets(app);
         }
         let st = self.status();
         if self.last_status.as_ref() != Some(&st) {
@@ -851,6 +1021,9 @@ impl Engine {
             },
             update: crate::update::state(),
             keep_awake: self.awake_wanted && self.cfg.power.keep_awake,
+            targets: self.targets.clone(),
+            skipped: self.skipped.clone(),
+            trial: self.trial_until.is_some(),
         }
     }
 }
@@ -948,4 +1121,26 @@ fn show_reminder(app: &AppHandle) {
 
 fn hide_reminder(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("remind") { let _ = w.hide(); }
+}
+
+/// Mac 内建屏（平台层只给内建屏填断开 / 背光方式或「断不开」的原因）
+fn is_builtin(m: &monitors::Monitor) -> bool {
+    matches!(m.power, Some("disconnect") | Some("backlight")) || m.note.is_some()
+}
+
+/// 「只能遮罩」确认窗：列出没法真正断电的屏，问用遮罩还是跳过
+fn show_confirm(app: &AppHandle) {
+    let app2 = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        if let Some(w) = app2.get_webview_window("confirm") { let _ = w.emit("nb://ask", ()); let _ = w.show(); let _ = w.set_focus(); return; }
+        let Ok(w) = WebviewWindowBuilder::new(&app2, "confirm", WebviewUrl::App("confirm.html".into()))
+            .title("BlankRun").inner_size(440.0, 360.0).resizable(false).always_on_top(true).center()
+            .skip_taskbar(true).visible(false).build() else { return };
+        let _ = w.show();
+        let _ = w.set_focus();
+    });
+}
+
+fn hide_confirm(app: &AppHandle) {
+    if let Some(w) = app.get_webview_window("confirm") { let _ = w.hide(); }
 }
