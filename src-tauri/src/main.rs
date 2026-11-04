@@ -86,6 +86,28 @@ async fn install_update(e: State<'_, Eng>, app: AppHandle) -> R<()> {
 }
 #[tauri::command]
 fn wake_now(tx: State<Tx>) { send(&tx, Msg::Wake) }
+/// 确认窗要问的屏（只能遮罩、还没选过）
+#[tauri::command]
+async fn get_overlay_ask(e: State<'_, Eng>) -> R<Vec<Value>> { Ok(lock(&e).overlay_ask.clone()) }
+/// 确认窗的回答：choices = [{ id, overlay, remember }]；go = false 取消这次息屏
+#[tauri::command]
+fn overlay_answer(tx: State<Tx>, choices: Vec<Value>, go: bool) {
+    let choices = choices.iter().filter_map(|c| Some((c["id"].as_str()?.to_string(), c["overlay"].as_bool()?, c["remember"].as_bool().unwrap_or(false)))).collect();
+    send(&tx, Msg::OverlayAnswer { choices, go })
+}
+#[tauri::command]
+fn refresh_targets(tx: State<Tx>) { send(&tx, Msg::RefreshTargets) }
+#[tauri::command]
+fn dismiss_skipped(tx: State<Tx>) { send(&tx, Msg::DismissSkipped) }
+/// 引导里的「试一试」：只在用户点了按钮时调用，息屏 5 秒后自动恢复
+#[tauri::command]
+fn trial_blank(tx: State<Tx>) { send(&tx, Msg::Trial { secs: 5 }) }
+/// 设置里「重新打开引导」
+#[tauri::command]
+fn open_onboarding(app: AppHandle) {
+    if let Some(p) = app.get_webview_window("popover") { let _ = p.hide(); }
+    if let Some(w) = app.get_webview_window("onboarding") { let _ = w.emit("nb://restart", ()); let _ = w.show(); let _ = w.set_focus(); }
+}
 #[tauri::command]
 fn quit(tx: State<Tx>) { send(&tx, Msg::Quit) }
 
@@ -161,7 +183,7 @@ fn apply_locale(app: AppHandle, tray: State<Tray>, text: std::collections::HashM
     if let Some(t) = get("tray.settings") { let _ = tray.settings.set_text(t); }
     if let Some(t) = get("tray.quit") { let _ = tray.quit.set_text(t); }
     if let (Some(t), Some(icon)) = (get("tray.tooltip"), app.tray_by_id("main")) { let _ = icon.set_tooltip(Some(t)); }
-    for label in ["popover", "settings", "onboarding"] {
+    for label in ["popover", "settings", "onboarding", "confirm"] {
         if let (Some(t), Some(w)) = (get(&format!("title.{label}")), app.get_webview_window(label)) { let _ = w.set_title(t); }
     }
 }
@@ -441,6 +463,12 @@ fn main() {
         })
         .on_window_event(|w, e| match e {
             // 设置等窗口关闭时只隐藏，应用继续驻留托盘；遮罩窗口由引擎 destroy
+            // 关掉「只能遮罩」确认窗 = 取消这次息屏
+            WindowEvent::CloseRequested { api, .. } if w.label() == "confirm" => {
+                api.prevent_close();
+                let _ = w.hide();
+                if let Some(tx) = w.app_handle().try_state::<Tx>() { send(&tx, Msg::OverlayAnswer { choices: vec![], go: false }); }
+            }
             WindowEvent::CloseRequested { api, .. } if !w.label().starts_with("overlay-") => { api.prevent_close(); let _ = w.hide(); }
             WindowEvent::Focused(false) if w.label() == "popover" => popover_blur(w),
             _ => {}
@@ -448,7 +476,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             get_info, get_config, popover_hold, get_history, clear_history, open_link, check_update, install_update, save_config, get_status, blank_now, cancel, skip_tonight, unskip, postpone, overlay_input, wake_now, quit,
             get_diagnostics, get_monitors, request_permission, get_permissions, reset_permissions, restart_app, test_builtin, reveal_config, export_diagnostics, open_settings, hide_window,
-            finish_onboarding, apply_locale
+            finish_onboarding, apply_locale, get_overlay_ask, overlay_answer, refresh_targets, dismiss_skipped, trial_blank, open_onboarding
         ])
         .build(tauri::generate_context!())
         .expect("error while building BlankRun");

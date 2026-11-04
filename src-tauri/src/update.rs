@@ -1,6 +1,10 @@
-//! 自动更新（tauri-plugin-updater）：启动后稍等一会儿、之后每天最多查一次 GitHub 上的 latest.json。
+//! 自动更新（tauri-plugin-updater）：启动后稍等一会儿、之后每天最多查一次 latest.json。
 //! 有新版本只在设置和面板里安静地提示，用户点「更新并重启」才下载安装；息屏时不更新。
-//! 安装包用 minisign 签名（公钥在 tauri.conf.json），签名不对就拒绝安装。
+//! 安装包用 minisign 签名（公钥在 tauri.conf.json），签名不对就拒绝安装——不管从哪里下载的。
+//! 更新源（general.update_source）：
+//! - "mirror"（默认）：先查 blankrun.cosfoc.com 的镜像（官网 Pages Functions，见 functions/ 和 mirror/），安装包也从镜像下；
+//!   镜像查不到 / 下载失败（网络错误、非 2xx）再回到 GitHub。镜像还没部署时它返回 404，等于直接走 GitHub。
+//! - "github"：只走 GitHub。
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
 use std::sync::Mutex;
@@ -17,6 +21,7 @@ pub const REPO_URL: &str = "https://github.com/hongfaqiu/blankrun";
 pub const RELEASES_URL: &str = "https://github.com/hongfaqiu/blankrun/releases/latest";
 
 static ENABLED: AtomicBool = AtomicBool::new(true);
+static MIRROR: AtomicBool = AtomicBool::new(true);
 static BUSY: AtomicBool = AtomicBool::new(false);
 static PENDING: Mutex<Option<Update>> = Mutex::new(None);
 static STATE: Mutex<UpdState> = Mutex::new(UpdState { phase: "idle", version: None, progress: None, error: None, updated_from: None });
@@ -39,6 +44,23 @@ fn set(f: impl FnOnce(&mut UpdState)) { if let Ok(mut g) = STATE.lock() { f(&mut
 pub fn state() -> UpdState { STATE.lock().map(|g| g.clone()).unwrap_or(UpdState { phase: "idle", version: None, progress: None, error: None, updated_from: None }) }
 
 pub fn set_enabled(on: bool) { ENABLED.store(on, Relaxed); }
+pub fn set_source(src: &str) { MIRROR.store(src != "github", Relaxed); }
+
+/// 只查一个地址
+async fn check_at(app: &AppHandle, url: &str) -> tauri_plugin_updater::Result<Option<Update>> {
+    app.updater_builder().endpoints(vec![url.parse()?])?.timeout(Duration::from_secs(30)).build()?.check().await
+}
+
+/// 按更新源查：镜像优先，镜像出任何错（连不上、404、内容不对）都再查一次 GitHub
+async fn check_any(app: &AppHandle) -> tauri_plugin_updater::Result<Option<Update>> {
+    if MIRROR.load(Relaxed) {
+        match check_at(app, update::MIRROR_JSON).await {
+            Ok(r) => { nblog!("update check via mirror"); return Ok(r); }
+            Err(e) => nblog!("update check via mirror failed ({e}), trying GitHub"),
+        }
+    }
+    check_at(app, update::GITHUB_JSON).await
+}
 
 fn unix_now() -> u64 { std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs()) }
 
@@ -56,7 +78,7 @@ fn write_state(p: &PathBuf, last: Option<u64>) {
 pub async fn check(app: &AppHandle, manual: bool) {
     if BUSY.swap(true, Relaxed) { return; }
     set(|s| { if manual || s.phase != "available" { s.phase = "checking"; s.error = None; } });
-    let r = async { app.updater_builder().timeout(Duration::from_secs(30)).build()?.check().await }.await;
+    let r = check_any(app).await;
     match r {
         Ok(Some(u)) => {
             nblog!("update check: {} available (current {})", u.version, env!("CARGO_PKG_VERSION"));
@@ -101,11 +123,13 @@ pub fn start(app: AppHandle, state_file: PathBuf) {
 /// 下载、校验签名、安装、重启。busy() = 正在息屏或倒计时：这时不更新（下载完也会再看一次）
 pub async fn install(app: AppHandle, busy: impl Fn() -> bool) -> Result<(), String> {
     if busy() { return Err("blanked".into()); }
-    let u = PENDING.lock().ok().and_then(|g| g.clone()).ok_or("no update")?;
+    let mut u = PENDING.lock().ok().and_then(|g| g.clone()).ok_or("no update")?;
     if BUSY.swap(true, Relaxed) { return Err("busy".into()); }
     nblog!("update: downloading v{}", u.version);
     set(|s| { s.phase = "downloading"; s.progress = Some(0); s.error = None; });
     // 网络抖动时自动重试 2 次（2 秒、6 秒后）；签名不对之类的错误不重试
+    // 镜像地址下载失败时换成 GitHub 上的同一个文件（签名校验不变）
+    let mut github = update::mirror_to_github(u.download_url.as_str()).and_then(|s| s.parse::<tauri::Url>().ok());
     let mut attempt = 0;
     let r = loop {
         let (mut got, mut last_pct) = (0usize, 0u8);
@@ -120,6 +144,13 @@ pub async fn install(app: AppHandle, busy: impl Fn() -> bool) -> Result<(), Stri
             || {},
         ).await;
         match r {
+            Err(e @ (tauri_plugin_updater::Error::Reqwest(_) | tauri_plugin_updater::Error::Network(_))) if github.is_some() => {
+                let g = github.take().unwrap_or_else(|| u.download_url.clone());
+                nblog!("update: download from the mirror failed ({e}), switching to GitHub");
+                u.download_url = g;
+                set(|s| s.progress = Some(0));
+                if busy() { break Ok(Vec::new()); }
+            }
             Err(e @ (tauri_plugin_updater::Error::Reqwest(_) | tauri_plugin_updater::Error::Network(_))) if attempt < 2 => {
                 let wait = [2u64, 6][attempt];
                 attempt += 1;

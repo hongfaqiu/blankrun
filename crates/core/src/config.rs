@@ -38,12 +38,16 @@ pub struct GeneralConfig {
     pub check_updates: bool,
     /// 外观："system" 跟随系统 | "light" 浅色 | "dark" 深色
     pub theme: String,
+    /// 检查 / 下载更新走哪里："mirror"（默认：先走 blankrun.cosfoc.com 镜像，失败再回 GitHub）| "github"（只走 GitHub）。
+    /// 两条路下到的安装包都要过同一个内置公钥的签名校验
+    pub update_source: String,
 }
+pub const UPDATE_SOURCES: [&str; 2] = ["mirror", "github"];
 pub const THEMES: [&str; 3] = ["system", "light", "dark"];
 impl Default for GeneralConfig {
     fn default() -> Self {
         Self { launch_at_login: false, language: LANG_AUTO.into(), blank_now_hotkey: "Ctrl+Alt+B".into(), check_updates: true,
-               theme: "system".into() }
+               theme: "system".into(), update_source: "mirror".into() }
     }
 }
 
@@ -187,9 +191,12 @@ pub struct DisplayConfig {
     /// builtin_off = "auto" 时测过成功就断开（包括 M3），测过失败就不断开，没测过按默认规则
     #[serde(skip_serializing_if = "Option::is_none")]
     pub builtin_test: Option<BuiltinTest>,
+    /// 「只能遮罩」（没法真正断电）的屏，用户记住的选择（按显示名）：true = 用遮罩，false = 跳过这块屏；没写 = 每次先问。
+    /// 遮罩只是最后手段：没有这里的 true，BlankRun 不会自己给哪块屏盖遮罩
+    pub overlay_ok: std::collections::BTreeMap<String, bool>,
 }
 impl Default for DisplayConfig {
-    fn default() -> Self { Self { mode: "all".into(), targets: vec![], method: DisplayMethod::Auto, prefs: Default::default(), no_ddc: vec![], keep_input: false, builtin_off: "auto".into(), builtin_test: None } }
+    fn default() -> Self { Self { mode: "all".into(), targets: vec![], method: DisplayMethod::Auto, prefs: Default::default(), no_ddc: vec![], keep_input: false, builtin_off: "auto".into(), builtin_test: None, overlay_ok: Default::default() } }
 }
 
 /// 内建屏断开检测的结果
@@ -270,6 +277,7 @@ impl Config {
             e.label = e.label.trim().chars().filter(|c| !c.is_control()).take(MAX_LABEL_CHARS).collect();
         }
         if !THEMES.contains(&self.general.theme.as_str()) { self.general.theme = "system".into(); }
+        if !UPDATE_SOURCES.contains(&self.general.update_source.as_str()) { self.general.update_source = "mirror".into(); }
         if !["auto", "disconnect", "backlight"].contains(&self.display.builtin_off.as_str()) { self.display.builtin_off = "auto".into(); }
         if self.display.builtin_test.as_ref().is_some_and(|t| !BUILTIN_TEST_RESULTS.contains(&t.result.as_str())) { self.display.builtin_test = None; }
         if !valid_language(&self.general.language) { return Err(format!("invalid language: {}", self.general.language)); }

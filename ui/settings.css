@@ -96,3 +96,4 @@ section{display:none} section.on{display:block}
 .entries-foot small{font-size:11.5px;line-height:1.4}
 .r.today{gap:8px;padding-top:12px}
 .theme-seg button{padding:0 12px;white-space:nowrap}
+.r.mon .mon-c{flex-direction:column;align-items:flex-end;gap:6px}

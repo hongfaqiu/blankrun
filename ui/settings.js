@@ -175,7 +175,7 @@ function renderUpdate() {
   $("#updCheck").hidden = ph === "available" || ph === "downloading" || ph === "installing";
   $("#updCheck").disabled = busy;
 }
-const TRIG = { manual: "a.tr_manual", hotkey: "a.tr_hotkey", schedule: "a.tr_schedule" };
+const TRIG = { manual: "a.tr_manual", hotkey: "a.tr_hotkey", schedule: "a.tr_schedule", trial: "a.tr_trial" };
 async function loadHistory() {
   try { history = (await invoke("get_history")).sessions || []; } catch (e) { return; }
   renderHistory();
@@ -205,6 +205,7 @@ $("#histClear").addEventListener("click", async () => {
   await invoke("clear_history"); history = []; renderHistory();
 });
 $("#updCheck").addEventListener("click", () => invoke("check_update"));
+$("#openGuide").addEventListener("click", () => invoke("open_onboarding"));
 $("#updInstall").addEventListener("click", () => invoke("install_update").catch(() => {}));
 document.querySelectorAll("[data-link]").forEach((b) => b.addEventListener("click", () => invoke("open_link", { which: b.dataset.link })));
 
@@ -221,9 +222,11 @@ function renderMonitors() {
     const name = h("span", "", m.label);
     if (m.primary) name.append(h("i", "tag", t("b.mon_primary")));
     if (m.virtual) name.append(h("i", "tag", t("b.mon_virtual")));
-    const how = m.virtual ? t("b.how_virtual") : on ? t("b.how." + m.how) + (m.unresponsive && m.how === "overlay" ? " · " + t("b.unresponsive") : "") : t("b.mon_off_sel");
+    // 关闭方式：断开 / DDC 关闭 / 整机关屏 / 仅遮罩（只能遮罩的会先问，或按记住的选择跳过）
+    const how = m.virtual ? t("b.how_virtual") : on ? t("b.how." + m.how) + (m.unresponsive && ["overlay", "ask", "skipped"].includes(m.how) ? " · " + t("b.unresponsive") : "") : t("b.mon_off_sel");
     const tx = h("div", "t"); tx.append(name, h("small", "", [m.width && `${m.width} × ${m.height}`, how].filter(Boolean).join(" · ")));
     if (m.note && !m.virtual && on) tx.append(h("small", "err", t("b.note." + m.note)));
+    else if (m.fallback && m.reason && on) tx.append(h("small", "", t("c.why." + m.reason)));
     lead.append(tx); r.append(lead);
     if (!m.virtual) {
       // 每台单独指定：自动 / 仅遮罩 / 断电（只有能单独断电的屏才有）
@@ -232,7 +235,15 @@ function renderMonitors() {
         const o = h("option", "", t("b.pref." + v)); o.value = v; o.selected = (m.pref || "auto") === v; ps.append(o);
       }
       const wrap = h("span", "select"); wrap.append(ps);
-      const c = h("div", "c"); c.append(wrap); r.append(c);
+      const c = h("div", "c mon-c"); c.append(wrap);
+      // 只能遮罩的屏：每次问 / 用遮罩 / 跳过（确认窗里勾「记住」也存在这里）
+      if (m.fallback && on) {
+        const os = h("select"); os.dataset.ook = m.label; os.title = t("b.ook") + " · " + t("b.ook_note");
+        const cur = m.overlay_ok === true ? "overlay" : m.overlay_ok === false ? "skip" : "ask";
+        for (const v of ["ask", "overlay", "skip"]) { const o = h("option", "", t("b.ook." + v)); o.value = v; o.selected = cur === v; os.append(o); }
+        const w2 = h("span", "select"); w2.append(os); c.append(w2);
+      }
+      r.append(c);
     }
     r.dataset.mon = m.id;
     if (m.virtual) r.dataset.virtual = "1";
@@ -385,6 +396,11 @@ document.addEventListener("click", (e) => {
 });
 document.addEventListener("change", (e) => {
   const t = e.target;
+  if (t.matches("select[data-ook]")) {
+    const l = t.dataset.ook, ook = { ...(cfg.display.overlay_ok || {}) };
+    if (t.value === "ask") delete ook[l]; else ook[l] = t.value === "overlay";
+    return change("display.overlay_ok", ook);
+  }
   if (t.matches("select[data-pref]")) {
     const l = t.dataset.pref, prefs = { ...(cfg.display.prefs || {}) };
     if (t.value === "auto") delete prefs[l]; else prefs[l] = t.value;

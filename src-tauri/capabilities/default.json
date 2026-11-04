@@ -5,7 +5,8 @@
     "settings",
     "onboarding",
     "overlay-*",
-    "remind"
+    "remind",
+    "confirm"
   ],
   "permissions": [
     "core:default",

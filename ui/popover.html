@@ -11,7 +11,7 @@
 
   <div class="sec">
     <button class="blank-btn" id="blankBtn">
-      <div><div class="label" data-i18n="p.blank_now"></div><div class="sub" id="blankSub"></div></div>
+      <div><div class="label" id="blankLabel" data-i18n="p.blank_now"></div><div class="sub" id="blankSub"></div></div>
       <span class="led"></span>
     </button>
     <div class="blank-btn counting" id="countBox" hidden>
@@ -51,6 +51,7 @@
       <dt data-i18n="p.em"></dt>
       <dd><span class="muted"><span class="keys" id="emKeys"></span>&nbsp;<span data-i18n="p.em_any"></span></span></dd>
     </dl>
+    <div class="guard" id="skipRow" hidden><span id="skipText"></span><span class="guard-acts"><button class="link xs" id="skipSet" data-i18n="p.skipped_set"></button><button class="link xs" id="skipOk" data-i18n="p.skipped_ok"></button></span></div>
     <div class="guard" id="guard" hidden><span id="guardText"></span><button class="link xs" id="guardFix" data-i18n="p.guard_fix"></button></div>
   </div>
   <hr>

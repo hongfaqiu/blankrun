@@ -25,10 +25,38 @@ pub fn due(last_check_unix: Option<u64>, now_unix: u64) -> bool {
     match last_check_unix { None => true, Some(t) => now_unix < t || now_unix - t >= INTERVAL_S }
 }
 
+/// 更新镜像（官网 Cloudflare Pages Functions，见 functions/ 和 mirror/，随 main 自动部署）：latest.json 和安装包都从这里走，失败再回 GitHub。
+/// 两条路下到的安装包都用 tauri.conf.json 里内置的公钥校验 minisign 签名，镜像改不了内容。
+pub const MIRROR_BASE: &str = "https://blankrun.cosfoc.com";
+pub const MIRROR_JSON: &str = "https://blankrun.cosfoc.com/update/latest.json";
+pub const GITHUB_JSON: &str = "https://github.com/hongfaqiu/blankrun/releases/latest/download/latest.json";
+const GITHUB_DL: &str = "https://github.com/hongfaqiu/blankrun/releases/download/";
+
+/// 镜像上的安装包地址 → GitHub 上同一个文件（镜像下载失败时回退用）。
+/// 只认 `https://blankrun.cosfoc.com/dl/<vX.Y.Z>/<文件名>`，别的返回 None
+pub fn mirror_to_github(url: &str) -> Option<String> {
+    let rest = url.strip_prefix(MIRROR_BASE)?.strip_prefix("/dl/")?;
+    let (tag, file) = rest.split_once('/')?;
+    let tag_ok = tag.starts_with('v') && parse_version(tag).is_some();
+    let file_ok = !file.is_empty() && file.chars().all(|c| c.is_ascii_alphanumeric() || "._-".contains(c)) && !file.starts_with('.');
+    (tag_ok && file_ok).then(|| format!("{GITHUB_DL}{tag}/{file}"))
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn mirror_fallback_url() {
+        assert_eq!(mirror_to_github("https://blankrun.cosfoc.com/dl/v0.1.11/BlankRun_universal.app.tar.gz").as_deref(),
+            Some("https://github.com/hongfaqiu/blankrun/releases/download/v0.1.11/BlankRun_universal.app.tar.gz"));
+        assert_eq!(mirror_to_github("https://blankrun.cosfoc.com/dl/v0.1.11/BlankRun_0.1.11_x64-setup.exe").as_deref(),
+            Some("https://github.com/hongfaqiu/blankrun/releases/download/v0.1.11/BlankRun_0.1.11_x64-setup.exe"));
+        // 已经是 GitHub 地址、路径不对、带 .. 的都不改
+        assert_eq!(mirror_to_github("https://github.com/hongfaqiu/blankrun/releases/download/v0.1.11/a.tar.gz"), None);
+        assert_eq!(mirror_to_github("https://blankrun.cosfoc.com/dl/latest/a.tar.gz"), None);
+        assert_eq!(mirror_to_github("https://blankrun.cosfoc.com/dl/v0.1.11/../x"), None);
+        assert_eq!(mirror_to_github("https://blankrun.cosfoc.com.evil.com/dl/v0.1.11/a.tar.gz"), None);
+    }
     #[test]
     fn versions() {
         assert_eq!(parse_version("v0.1.2"), Some((0, 1, 2)));

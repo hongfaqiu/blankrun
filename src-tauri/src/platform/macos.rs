@@ -8,7 +8,8 @@
 //!   运行时 dlsym。**绝不自动把背光调 0**：拿不到接口、系统不支持、被拒绝、被系统反复接回、或没有别的真实屏时，
 //!   内建屏的亮度原样不动，只盖黑色遮罩并提示原因；背光调 0 只在用户明确选了「只调背光」（builtin_off = "backlight"）时才用。
 //! - 虚拟屏（BetterDisplay / DeskPad / Sidecar…，CGVirtualDisplay）：CoreDisplay 私有的 kCGDisplayIsVirtualDevice 标记 + 显示名兜底；
-//!   不处理，也不算「别的物理屏」——macOS 不让虚拟屏当唯一的活动显示器，这时断开内建屏会被系统立刻接回来。
+//!   自己不处理（关不了），但**算**「别的显示器」：有虚拟屏在线时照样断开内建屏（v0.1.9 就是这样，实测可行）。
+//!   万一系统真把内建屏接回来，引擎的「被接回」判定会停手并按用户对遮罩的选择处理。
 //! - 键盘背光：运行时 dlopen 私有的 CoreBrightness.framework，KeyboardBrightnessClient，每个方法先 respondsToSelector，缺任何一个就降级为"只关屏幕"。
 //! - 输入：CGEventTap（会话级、主动过滤），需要「辅助功能」权限；回调吞掉所有事件并翻译后送进引擎。
 //!   「键鼠照常用」（Mac Mini 模式）时只吞唤醒键 / 紧急键，别的事件原样返回（= 放行），光标被挡在关掉的屏外面。
@@ -44,6 +45,8 @@ extern "C" {
     fn CFDictionaryGetKeysAndValues(d: *const c_void, keys: *mut *const c_void, values: *mut *const c_void);
     fn CFNumberGetValue(n: *const c_void, ty: isize, out: *mut c_void) -> u8;
     fn CFGetTypeID(cf: *const c_void) -> usize;
+    fn CFDictionaryGetTypeID() -> usize;
+    fn CFStringGetTypeID() -> usize;
     fn CFBooleanGetTypeID() -> usize;
     fn CFBooleanGetValue(b: *const c_void) -> u8;
     fn CFDictionaryCreate(alloc: *const c_void, keys: *const *const c_void, values: *const *const c_void, n: isize, kcb: *const c_void, vcb: *const c_void) -> *const c_void;
@@ -309,17 +312,29 @@ fn display_info(id: u32) -> DisplayInfo {
                 let k = cfstr("kCGDisplayIsVirtualDevice");
                 info.virtual_flag = cf_truthy(CFDictionaryGetValue(d, k as *const c_void));
                 CFRelease(k);
-                // DisplayProductName：{ "en_US": "Color LCD", ... }
+                // DisplayProductName：{ "en_US": "Color LCD", "zh_CN": …, … }，常见有 40 来个语言。
+                // v0.1.10 这里把缓冲区限成 32 个却让 CFDictionaryGetKeysAndValues 写满整个字典 → 堆溢出 → 随机崩溃。
+                // 现在先直接按 "en_US" 取；取不到再按**实际个数**分配缓冲区取第一个。每个值都先确认是 CFString。
                 let k = cfstr("DisplayProductName");
                 let names = CFDictionaryGetValue(d, k as *const c_void);
                 CFRelease(k);
-                let n = if names.is_null() { 0 } else { CFDictionaryGetCount(names).clamp(0, 32) as usize };
-                if n > 0 {
-                    let (mut ks, mut vs) = (vec![std::ptr::null(); n], vec![std::ptr::null(); n]);
-                    CFDictionaryGetKeysAndValues(names, ks.as_mut_ptr(), vs.as_mut_ptr());
-                    let en = ks.iter().position(|&k| cf_string(k) == "en_US").unwrap_or(0);
-                    let s = cf_string(vs[en]);
-                    if !s.is_empty() { info.name = Some(s); }
+                if !names.is_null() && CFGetTypeID(names) == CFDictionaryGetTypeID() {
+                    let en = cfstr("en_US");
+                    let mut v = CFDictionaryGetValue(names, en);
+                    CFRelease(en);
+                    if v.is_null() {
+                        let n = CFDictionaryGetCount(names);
+                        if (1..=1024).contains(&n) {
+                            let n = n as usize;
+                            let (mut ks, mut vs) = (vec![std::ptr::null(); n], vec![std::ptr::null(); n]);
+                            CFDictionaryGetKeysAndValues(names, ks.as_mut_ptr(), vs.as_mut_ptr());
+                            v = vs[0];
+                        }
+                    }
+                    if !v.is_null() && CFGetTypeID(v) == CFStringGetTypeID() {
+                        let s = cf_string(v);
+                        if !s.is_empty() { info.name = Some(s); }
+                    }
                 }
                 CFRelease(d);
             }
@@ -327,13 +342,6 @@ fn display_info(id: u32) -> DisplayInfo {
     }
     if info.name.is_none() { info.name = nsscreen_name(id); }
     info
-}
-
-/// 是不是虚拟屏：内建屏一定不是；其余看系统标记，再看显示名（BetterDisplay / DeskPad / Sidecar / AirPlay…）
-fn display_is_virtual(id: u32) -> bool {
-    if unsafe { CGDisplayIsBuiltin(id) } != 0 { return false; }
-    let i = display_info(id);
-    i.virtual_flag || i.name.as_deref().is_some_and(blankrun_core::monitors::looks_virtual_mac)
 }
 
 // ---------- 内建屏「断开」（SkyLight SLSConfigureDisplayEnabled） ----------
@@ -519,15 +527,16 @@ fn configure_display(id: u32, enabled: bool, option: u32) -> Result {
     Ok(())
 }
 
-/// 除 `except` 以外，系统当前还在用的真实（物理）显示器数。
-/// 别的屏都没了时 macOS 会放一个厂商号为 0 / 'unkn' / 'virt' 的占位显示器，不算；
-/// 虚拟屏（BetterDisplay / DeskPad / Sidecar…）也不算：macOS 不让它们当唯一的活动显示器，只剩它们时断开内建屏会被立刻接回来。
+/// 除 `except` 以外，系统当前还在用的显示器数（含虚拟屏）。
+/// 别的屏都没了时 macOS 会放一个厂商号为 0 / 'unkn' / 'virt' 的占位显示器，那个不算；
+/// 虚拟屏（BetterDisplay / DeskPad / Sidecar…）**算**：v0.1.9 有虚拟屏时断开内建屏实测可行，v0.1.10 把它排除后只剩黑色遮罩（回归）。
+/// 万一系统把内建屏接回来，引擎的「被接回」判定兜底。
 fn other_real_displays(except: u32) -> usize {
     let mut ids = [0u32; 16];
     let mut n = 0u32;
     if unsafe { CGGetActiveDisplayList(16, ids.as_mut_ptr(), &mut n) } != 0 { return 0; }
     let fake = [0, u32::MAX, u32::from_be_bytes(*b"unkn"), u32::from_be_bytes(*b"virt")];
-    ids[..(n as usize).min(16)].iter().filter(|&&d| d != except && unsafe { CGDisplayIsActive(d) } != 0 && !fake.contains(&unsafe { CGDisplayVendorNumber(d) }) && !display_is_virtual(d)).count()
+    ids[..(n as usize).min(16)].iter().filter(|&&d| d != except && unsafe { CGDisplayIsActive(d) } != 0 && !fake.contains(&unsafe { CGDisplayVendorNumber(d) })).count()
 }
 
 /// 接回我们断开的屏（没有就什么都不做）
@@ -564,7 +573,7 @@ fn builtin_off(d: u32) -> Result {
     if TESTING.load(Relaxed) != 0 { return Err("built-in display test in progress; leaving the display alone".into()); }
     if DISCONNECT_FAILED.load(Relaxed) { return Err("disconnect failed earlier in this session; not retrying, brightness untouched".into()); }
     if other_real_displays(d) == 0 {
-        return Err("no other physical display (virtual displays don't count: macOS won't keep them as the only display): not disconnecting, brightness untouched".into());
+        return Err("no other display online (it would be the only one left): not disconnecting, brightness untouched".into());
     }
     match set_display_enabled(d, false) {
         Ok(()) => {
@@ -1137,7 +1146,7 @@ pub fn system_locale() -> String {
 pub fn instance_lock(path: &std::path::Path) -> bool {
     let Ok(c) = CString::new(path.as_os_str().as_encoded_bytes()) else { return true };
     unsafe {
-        let fd = libc::open(c.as_ptr(), libc::O_RDWR | libc::O_CREAT, 0o644);
+        let fd = libc::open(c.as_ptr(), libc::O_RDWR | libc::O_CREAT | libc::O_CLOEXEC, 0o644);
         if fd < 0 { return true; }
         libc::flock(fd, libc::LOCK_EX | libc::LOCK_NB) == 0 // fd 故意不关，锁随进程存在
     }
