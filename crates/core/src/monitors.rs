@@ -1,5 +1,6 @@
-//! 每块显示器怎么关：断电（DDC/CI、Mac 内建屏断开）、黑色遮罩，或者不管（虚拟显示器、没选中的）。
-//! Mac 内建屏**绝不自动把背光调 0**：断不开时只盖遮罩、亮度不动，并给出原因（`notice`）；背光 0 只在用户明确选了「只关背光」时才用。
+//! 每块显示器怎么关：断电（DDC/CI、Mac 内建屏断开、整机关屏）、黑色遮罩（只作最后手段），或者不管（虚拟显示器、没选中的）。
+//! Mac 内建屏**绝不自动把背光调 0**：断不开时亮度不动，并给出原因（`notice`）；背光 0 只在用户明确选了「只关背光」时才用。
+//! 虚拟屏自己不处理，但算「别的显示器」：有它在线时内建屏照样可以断开。
 //! 平台层负责探测（是不是虚拟屏、能不能单独断电），这里只做决定，便于单测。
 use serde::Serialize;
 
@@ -16,7 +17,7 @@ pub struct Monitor {
     pub height: u32,
     pub primary: bool,
     /// 虚拟显示器：远程软件 / 头显装的（向日葵/Oray、Parsec、Virtual Desktop、IddCx…），
-    /// Mac 上的 BetterDisplay / DeskPad / Sidecar / AirPlay 等（CGVirtualDisplay）。不处理，也不算「别的物理屏」
+    /// Mac 上的 BetterDisplay / DeskPad / Sidecar / AirPlay 等（CGVirtualDisplay）。自己不处理，但算「别的显示器」（Mac 内建屏断开的前提）
     pub virtual_: bool,
     /// 能单独断电的方式："ddc"（外接屏 DDC/CI）| "disconnect"（Mac 内建屏断开，同合盖）| "backlight"（Mac 内建屏背光调 0，仅用户明确选了才有）；None = 只能遮罩
     pub power: Option<&'static str>,
@@ -111,20 +112,22 @@ pub fn builtin_off(setting: &str, chip: &str, model: &str, os_major: u32, arm: b
     }
 }
 
-/// 这块屏能不能「断开」：它支持断开，而且断开后还有别的物理屏（不算虚拟屏）亮着。
-/// 绝不断开唯一的物理屏——那样用户就什么都看不见了。平台层断开前还会再按系统当前的显示器列表查一次。
+/// 这块屏能不能「断开」：它支持断开，而且断开后系统里还有别的显示器在线——**虚拟屏也算**
+/// （BetterDisplay 的 VirtMitm 这类 CGVirtualDisplay：v0.1.9 及之前就是这样断开的，实测 macOS 会把它留作唯一的活动显示器）。
+/// 只有它是唯一的显示器时才不断开（断开后 macOS 会立刻自动接回）。真被系统反复接回时，引擎的 `CameBack` 会停手改盖遮罩。
+/// 平台层断开前还会再按系统当前的显示器列表查一次。
 pub fn disconnect_ok(m: &Monitor, monitors: &[Monitor]) -> bool {
-    m.power == Some("disconnect") && monitors.iter().any(|o| o.id != m.id && !o.virtual_)
+    m.power == Some("disconnect") && monitors.iter().any(|o| o.id != m.id)
 }
 
 /// 这块屏现在断不开 / 没断开的原因码（给设置页和日志）：
-/// "virtual_only"（别的屏都是虚拟屏，macOS 不让虚拟屏当唯一的活动显示器）| "only_display"（没有别的显示器）|
+/// "only_display"（没有别的显示器）|
 /// 平台层给的 `m.note`（"os" | "risky" | "tested" | "api"）。虚拟屏本身、能正常处理的屏返回 None。
 /// 引擎运行中才发现的原因（"came_back" 被系统反复接回、"disconnect_failed" 系统拒绝）由引擎自己记。
 pub fn notice(m: &Monitor, monitors: &[Monitor]) -> Option<&'static str> {
     if m.virtual_ { return None; }
     if m.power == Some("disconnect") && !disconnect_ok(m, monitors) {
-        return Some(if monitors.iter().any(|o| o.id != m.id && o.virtual_) { "virtual_only" } else { "only_display" });
+        return Some("only_display");
     }
     m.note
 }
@@ -132,7 +135,6 @@ pub fn notice(m: &Monitor, monitors: &[Monitor]) -> Option<&'static str> {
 /// `notice` / 引擎原因码的英文日志文字
 pub fn notice_text(code: &str) -> &'static str {
     match code {
-        "virtual_only" => "Built-in display can't be disconnected: the other displays are virtual (macOS won't keep a virtual display as the only one); brightness untouched, overlay only",
         "only_display" => "Built-in display can't be disconnected: there is no other display; brightness untouched, overlay only",
         "came_back" => "Built-in display can't be disconnected: macOS keeps re-enabling it; stopped trying, brightness untouched, overlay only",
         "disconnect_failed" => "Built-in display can't be disconnected: the system refused; brightness untouched, overlay only",
@@ -219,7 +221,7 @@ pub fn plan(d: &DisplayConfig, monitors: &[Monitor], global_ok: bool, remote: bo
     let per = monitors.iter().map(|m| {
         if !targeted(m) { Method::Skip }
         else if global_off || d.method == DisplayMethod::Overlay || m.power.is_none() || pref(d, m) == "overlay" || unresponsive(d, m) { Method::Overlay }
-        // 断不开（没有别的物理屏：只剩虚拟屏或只有它自己）：亮度不动，只盖遮罩
+        // 断不开（它是唯一的显示器）：亮度不动，只盖遮罩
         else if m.power == Some("disconnect") && !disconnect_ok(m, monitors) { Method::Overlay }
         else { Method::Off }
     }).collect();
@@ -415,7 +417,7 @@ mod tests {
         let v = mon("V", true, None);
         assert!(disconnect_ok(&b, &[b.clone(), ext.clone()]));
         assert!(!disconnect_ok(&b, &[b.clone()]), "唯一的屏");
-        assert!(!disconnect_ok(&b, &[b.clone(), v]), "只剩虚拟屏，macOS 不让它当唯一的显示器");
+        assert!(disconnect_ok(&b, &[b.clone(), v]), "还有虚拟屏在线：可以断开（v0.1.9 的行为）");
         let bl = Monitor { power: Some("backlight"), ..b.clone() };
         assert!(!disconnect_ok(&bl, &[bl.clone(), ext]));
         // 断开的屏照样算「单独断电」，计划里是 Off、不走系统级关屏
@@ -425,26 +427,23 @@ mod tests {
     }
 
     #[test]
-    fn virtual_display_does_not_enable_disconnect() {
-        // 用户的 MacBook：内建屏 + BetterDisplay 的虚拟屏 VirtMitm。选中内建屏，不能断开它（macOS 会立刻接回来、屏幕闪一下）
+    fn virtual_display_counts_as_another_display() {
+        // 用户的 MacBook：内建屏 + BetterDisplay 的虚拟屏 VirtMitm，选中内建屏：要真正断开，不能只盖遮罩（v0.1.10 的回归）
         let b = Monitor { power: Some("disconnect"), label: "Color LCD".into(), ..mon("Monitor #41055", false, None) };
         let v = Monitor { label: "VirtMitm".into(), ..mon("Monitor #38145", true, None) };
         let ms = [b.clone(), v.clone()];
-        assert!(!disconnect_ok(&b, &ms));
+        assert!(disconnect_ok(&b, &ms));
         let d = cfg("selected", &["Monitor #41055"], DisplayMethod::Auto);
-        for remote in [false, true] {
-            let p = plan(&d, &ms, true, remote);
-            assert_eq!(p.per, vec![Overlay, Skip], "内建屏只盖遮罩、虚拟屏不处理 (remote={remote})");
-        }
-        assert_eq!(notice(&b, &ms), Some("virtual_only"));
+        // 开着「放行远程控制」：逐块断电，内建屏断开、虚拟屏不处理
+        assert_eq!(plan(&d, &ms, true, true).per, vec![Off, Skip]);
+        assert_eq!(notice(&b, &ms), None);
         assert_eq!(notice(&v, &ms), None);
-        // 接上一块真实外接屏：可以断开
+        // 接上一块真实外接屏：照样断开
         let ext = mon("Monitor #1", false, Some("ddc"));
         let ms2 = [b.clone(), v, ext];
         assert!(disconnect_ok(&b, &ms2));
         assert_eq!(plan(&d, &ms2, true, false).per, vec![Off, Skip, Skip]);
-        assert_eq!(notice(&b, &ms2), None);
-        // 只有它自己
+        // 只有它自己：断开会被系统立刻接回，只能盖遮罩
         assert_eq!(notice(&b, &[b.clone()]), Some("only_display"));
         assert_eq!(plan(&d, &[b.clone()], true, true).per, vec![Overlay]);
     }
