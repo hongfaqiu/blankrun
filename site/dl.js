@@ -1,7 +1,7 @@
 // 下载按钮：识别访问者的系统，一键直接下载对应安装包（不跳发布页）。
-// 版本号与大小先用写在页面里的值；GitHub API 可用时再刷新为最新发布（CSP connect-src 已放行 api.github.com）。
-// 本域名的更新镜像（tools/update-mirror，Cloudflare Worker）上线后，下载改走 /dl/<tag>/<文件名>；
-// 镜像没部署或出错（/update/latest.json 不是有效 JSON）时保持 GitHub 链接。
+// 版本号与大小先用写在页面里的值（兜底），再刷新为最新发布。
+// 优先用同域接口 /api/latest（Pages Function，见 functions/ 和 mirror/）：国内常连不上 api.github.com。
+// 它可用时下载也改走同域镜像 /dl/<tag>/<文件名>；不可用时退回 GitHub API 和 GitHub 下载链接。
 (function () {
   var REPO = 'hongfaqiu/blankrun';
   var BASE = 'https://github.com/' + REPO + '/releases/latest/download/';
@@ -74,37 +74,44 @@
   }
 
   render();
-  // 先探测本域名的镜像（同源请求，CSP 的 'self' 已放行）
-  if (window.fetch) {
-    fetch('/update/latest.json', { cache: 'no-store' })
-      .then(function (res) { return res.ok ? res.json() : null; })
-      .then(function (j) {
-        if (!j || typeof j.version !== 'string' || !/^\d+\.\d+\.\d+$/.test(j.version)) return;
-        MIRROR = '/dl/v' + j.version + '/';
-        info.ver = j.version;
-        render();
-      })
-      .catch(function () {});
-  }
   if (os === 'win' && uad && uad.getHighEntropyValues) {
     uad.getHighEntropyValues(['architecture', 'bitness']).then(function (h) {
       if (h && h.architecture === 'arm') { arch = 'arm'; render(); }
     }).catch(function () {});
   }
-  try {
-    var cached = JSON.parse(sessionStorage.getItem('blankrun-rel') || 'null');
-    if (cached) { applyRelease(cached); return; }
-  } catch (e) {}
+  function viaGitHub() {
+    try {
+      var cached = JSON.parse(sessionStorage.getItem('blankrun-rel') || 'null');
+      if (cached) { applyRelease(cached); return; }
+    } catch (e) {}
+    if (!window.fetch) return;
+    var ctl = window.AbortController ? new AbortController() : null;
+    if (ctl) setTimeout(function () { ctl.abort(); }, 5000);
+    fetch('https://api.github.com/repos/' + REPO + '/releases/latest', { headers: { Accept: 'application/vnd.github+json' }, signal: ctl ? ctl.signal : undefined })
+      .then(function (res) { return res.ok ? res.json() : null; })
+      .then(function (r) {
+        if (!r) return;
+        var slim = { tag_name: r.tag_name, assets: (r.assets || []).map(function (a) { return { name: a.name, size: a.size }; }) };
+        try { sessionStorage.setItem('blankrun-rel', JSON.stringify(slim)); } catch (e) {}
+        applyRelease(slim);
+      })
+      .catch(function () {});
+  }
+
+  // 同域接口（同源请求，CSP 的 'self' 已放行）；失败再走 GitHub API
   if (!window.fetch) return;
-  var ctl = window.AbortController ? new AbortController() : null;
-  if (ctl) setTimeout(function () { ctl.abort(); }, 5000);
-  fetch('https://api.github.com/repos/' + REPO + '/releases/latest', { headers: { Accept: 'application/vnd.github+json' }, signal: ctl ? ctl.signal : undefined })
+  var c2 = window.AbortController ? new AbortController() : null;
+  if (c2) setTimeout(function () { c2.abort(); }, 4000);
+  fetch('/api/latest', { signal: c2 ? c2.signal : undefined })
     .then(function (res) { return res.ok ? res.json() : null; })
-    .then(function (r) {
-      if (!r) return;
-      var slim = { tag_name: r.tag_name, assets: (r.assets || []).map(function (a) { return { name: a.name, size: a.size }; }) };
-      try { sessionStorage.setItem('blankrun-rel', JSON.stringify(slim)); } catch (e) {}
-      applyRelease(slim);
+    .then(function (j) {
+      if (!j || typeof j.version !== 'string' || !/^\d+\.\d+\.\d+$/.test(j.version)) return viaGitHub();
+      info.ver = j.version;
+      MIRROR = '/dl/v' + j.version + '/';
+      var sz = j.size || {};
+      if (sz.mac > 0) info.size.mac = mb(sz.mac);
+      if (sz.win > 0) info.size.win = mb(sz.win);
+      render();
     })
-    .catch(function () {});
+    .catch(viaGitHub);
 })();

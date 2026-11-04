@@ -2,7 +2,7 @@
 //! 有新版本只在设置和面板里安静地提示，用户点「更新并重启」才下载安装；息屏时不更新。
 //! 安装包用 minisign 签名（公钥在 tauri.conf.json），签名不对就拒绝安装——不管从哪里下载的。
 //! 更新源（general.update_source）：
-//! - "mirror"（默认）：先查 blankrun.cosfoc.com 的镜像（Cloudflare Worker，见 tools/update-mirror），安装包也从镜像下；
+//! - "mirror"（默认）：先查 blankrun.cosfoc.com 的镜像（官网 Pages Functions，见 functions/ 和 mirror/），安装包也从镜像下；
 //!   镜像查不到 / 下载失败（网络错误、非 2xx）再回到 GitHub。镜像还没部署时它返回 404，等于直接走 GitHub。
 //! - "github"：只走 GitHub。
 use std::path::PathBuf;

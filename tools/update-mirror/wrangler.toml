@@ -1,9 +1,0 @@
-# 黑着跑更新镜像。未部署；部署步骤见同目录 README.md（需要仓库主人确认后手动执行）
-name = "blankrun-update-mirror"
-main = "src/index.js"
-compatibility_date = "2026-11-01"
-workers_dev = false
-routes = [
-  { pattern = "blankrun.cosfoc.com/update/*", zone_name = "cosfoc.com" },
-  { pattern = "blankrun.cosfoc.com/dl/*", zone_name = "cosfoc.com" },
-]

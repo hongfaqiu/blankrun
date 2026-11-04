@@ -25,7 +25,7 @@ pub fn due(last_check_unix: Option<u64>, now_unix: u64) -> bool {
     match last_check_unix { None => true, Some(t) => now_unix < t || now_unix - t >= INTERVAL_S }
 }
 
-/// 更新镜像（用户自己的 Cloudflare Worker，见 tools/update-mirror）：latest.json 和安装包都从这里走，失败再回 GitHub。
+/// 更新镜像（官网 Cloudflare Pages Functions，见 functions/ 和 mirror/，随 main 自动部署）：latest.json 和安装包都从这里走，失败再回 GitHub。
 /// 两条路下到的安装包都用 tauri.conf.json 里内置的公钥校验 minisign 签名，镜像改不了内容。
 pub const MIRROR_BASE: &str = "https://blankrun.cosfoc.com";
 pub const MIRROR_JSON: &str = "https://blankrun.cosfoc.com/update/latest.json";
